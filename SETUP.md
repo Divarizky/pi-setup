@@ -22,7 +22,7 @@ Script memasang repository langsung ke direktori global Pi:
 
 Script menjalankan `npm ci` di staging lalu hanya menempatkan resource runtime Pi (`AGENTS.md`, `extensions/`, `skills/`, `prompts/`, dan `node_modules/`) ke agent directory. Metadata Git, README, lockfile, `package.json`, TypeScript config, dan script installer tidak ikut dideploy.
 
-State pribadi seperti `auth.json`, `settings.json`, session, model store, `bin/`, dan `npm/` tidak ditimpa.
+State pribadi seperti `auth.json`, `settings.json`, session, model store, `bin/`, dan `npm/` tidak ditimpa. Skill lokal yang tidak ada di repository juga di-merge kembali dari backup.
 
 ## Instal manual
 

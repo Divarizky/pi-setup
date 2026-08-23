@@ -109,6 +109,16 @@ for item in "${PI_ITEMS[@]}"; do
   cp -a "$source" "$destination"
 done
 
+# Merge skill lokal yang tidak ada di repository (mis. skill pribadi/shared).
+if [[ "$REPAIR" == true && -d "$BACKUP_DIR/skills" && -d "$AGENT_DIR/skills" ]]; then
+  for item in "$BACKUP_DIR/skills"/* "$BACKUP_DIR/skills"/.[!.]*; do
+    [[ -e "$item" || -L "$item" ]] || continue
+    name="$(basename "$item")"
+    [[ -e "$AGENT_DIR/skills/$name" || -L "$AGENT_DIR/skills/$name" ]] && continue
+    cp -a "$item" "$AGENT_DIR/skills/$name"
+  done
+fi
+
 for item in extensions skills prompts node_modules; do
   [[ -e "$AGENT_DIR/$item" ]] || { echo "Instalasi tidak lengkap: $item tidak ditemukan." >&2; exit 1; }
 done

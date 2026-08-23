@@ -93,6 +93,18 @@ try {
     }
   }
 
+  # Merge skill lokal yang tidak ada di repository (mis. skill pribadi/shared).
+  $BackupSkills = Join-Path $BackupDir "skills"
+  $TargetSkills = Join-Path $AgentDir "skills"
+  if ($Repair -and (Test-Path -LiteralPath $BackupSkills) -and (Test-Path -LiteralPath $TargetSkills)) {
+    Get-ChildItem -LiteralPath $BackupSkills -Force | ForEach-Object {
+      $Destination = Join-Path $TargetSkills $_.Name
+      if (-not (Test-Path -LiteralPath $Destination)) {
+        Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
+      }
+    }
+  }
+
   foreach ($Item in @("extensions", "skills", "prompts", "node_modules")) {
     if (-not (Test-Path -LiteralPath (Join-Path $AgentDir $Item))) {
       throw "Instalasi tidak lengkap: $Item tidak ditemukan."
