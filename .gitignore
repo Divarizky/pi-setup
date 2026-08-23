@@ -1,0 +1,28 @@
+node_modules/
+.env
+.env.*
+!.env.example
+
+# Pi runtime/private state
+sessions/
+workspace/state/
+auth.json
+settings.json
+trust.json
+models.json
+models-store.json
+
+# Generated/local binaries and logs
+bin/
+*.log
+*.tmp
+*.swp
+.DS_Store
+
+# Private extension configuration
+extensions/run-summaries/config.private.json
+extensions/run-summaries/config.private.json.*.tmp
+
+# Editors
+.vscode/
+.idea/

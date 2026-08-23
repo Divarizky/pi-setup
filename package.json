@@ -1,0 +1,28 @@
+{
+  "name": "pi-setup",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "check:extensions": "for d in extensions/*/; do if [ -f \"$d/package.json\" ]; then npm --prefix \"$d\" run check; fi; done",
+    "test:git-info": "npm --prefix extensions/git-info test",
+    "test:run-summaries": "npm --prefix extensions/run-summaries test",
+    "test:subagents": "npm --prefix extensions/subagents test",
+    "test:todos": "node --test --experimental-strip-types extensions/todos/reducer.test.ts",
+    "format:check": "prettier --check \"extensions/**/*.{ts,tsx}\" \"skills/**/*.md\" \"prompts/*.md\" \"*.json\""
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.82.0",
+    "@earendil-works/pi-coding-agent": "^0.82.0",
+    "@earendil-works/pi-tui": "^0.82.0",
+    "@effect/platform-node": "^4.0.0-beta.99",
+    "effect": "^4.0.0-beta.102",
+    "get-east-asian-width": "^1.6.0",
+    "typebox": "^1.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "prettier": "^3.9.5",
+    "typescript": "^7.0.2"
+  }
+}
