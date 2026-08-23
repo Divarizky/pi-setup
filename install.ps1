@@ -21,15 +21,17 @@ $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $BackupDir = Join-Path $BackupRoot $Stamp
 $StageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("pi-setup-" + [guid]::NewGuid().ToString("N"))
 
-$ManagedItems = @(
-  ".git", ".github", ".gitignore", "AGENTS.md", "README.md", "SETUP.md",
-  "install.sh", "install.ps1", "package.json", "package-lock.json", "tsconfig.json",
-  "extensions", "skills", "prompts"
+# Hanya path ini yang dideploy ke direktori agent Pi.
+$PiItems = @("AGENTS.md", "extensions", "skills", "prompts", "themes", "APPEND_SYSTEM.md", "SYSTEM.md", "node_modules")
+# Metadata repository dan file development/installer tidak dideploy.
+$CleanItems = @(
+  ".git", ".github", ".gitignore", "README.md", "SETUP.md",
+  "install.sh", "install.ps1", "package.json", "package-lock.json", "tsconfig.json"
 )
 # State Pi dan tools lokal tidak pernah diganti.
 $StateItems = @(
   "auth.json", "settings.json", "trust.json", "models.json", "models-store.json", "usage-tracker.json",
-  "mcp.json", "mcp-cache.json", "sessions", "bin", "npm", "themes", "APPEND_SYSTEM.md", "SYSTEM.md"
+  "mcp.json", "mcp-cache.json", "sessions", "bin", "npm"
 )
 
 try {
@@ -47,10 +49,16 @@ try {
     throw "$AgentDir sudah ada tetapi bukan repository Git. Jalankan ulang dengan -Repair untuk backup dan sinkronisasi bersih."
   }
 
+  New-Item -ItemType Directory -Force -Path $AgentParent | Out-Null
+  git clone --depth 1 $RepoUrl $StageDir
+  Push-Location $StageDir
+  try { npm ci --ignore-scripts --no-audit --no-fund }
+  finally { Pop-Location }
+
   if ($Repair -and $AgentExists) {
     New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
     Write-Host "Membuat backup ke: $BackupDir"
-    foreach ($Item in @($ManagedItems + $StateItems)) {
+    foreach ($Item in @($CleanItems + $PiItems + $StateItems)) {
       $Source = Join-Path $AgentDir $Item
       if (Test-Path -LiteralPath $Source) {
         $Destination = Join-Path $BackupDir $Item
@@ -58,27 +66,34 @@ try {
         Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
       }
     }
-    $ManagedItems | Set-Content -LiteralPath (Join-Path $BackupDir "managed-items.txt")
+    $CleanItems | Set-Content -LiteralPath (Join-Path $BackupDir "excluded-items.txt")
+    $PiItems | Set-Content -LiteralPath (Join-Path $BackupDir "pi-items.txt")
     $StateItems | Set-Content -LiteralPath (Join-Path $BackupDir "state-items.txt")
 
-    foreach ($Item in $ManagedItems) {
+    foreach ($Item in $CleanItems) {
       $Path = Join-Path $AgentDir $Item
       if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Recurse -Force }
     }
+    foreach ($Item in $PiItems) {
+      $StagePath = Join-Path $StageDir $Item
+      $Path = Join-Path $AgentDir $Item
+      if (Test-Path -LiteralPath $StagePath) {
+        if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Recurse -Force }
+      }
+    }
   }
 
-  New-Item -ItemType Directory -Force -Path $AgentParent | Out-Null
-  git clone --depth 1 $RepoUrl $StageDir
   New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
-  Get-ChildItem -LiteralPath $StageDir -Force | ForEach-Object {
-    Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $AgentDir $_.Name) -Recurse -Force
+  foreach ($Item in $PiItems) {
+    $Source = Join-Path $StageDir $Item
+    if (Test-Path -LiteralPath $Source) {
+      $Destination = Join-Path $AgentDir $Item
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
+      Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
+    }
   }
 
-  Push-Location $AgentDir
-  try { npm ci --ignore-scripts --no-audit --no-fund }
-  finally { Pop-Location }
-
-  foreach ($Item in @("extensions", "skills", "prompts")) {
+  foreach ($Item in @("extensions", "skills", "prompts", "node_modules")) {
     if (-not (Test-Path -LiteralPath (Join-Path $AgentDir $Item))) {
       throw "Instalasi tidak lengkap: $Item tidak ditemukan."
     }

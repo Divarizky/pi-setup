@@ -20,7 +20,9 @@ Script memasang repository langsung ke direktori global Pi:
 - Windows: `$HOME\.pi\agent`
 - Override resmi Pi: `PI_CODING_AGENT_DIR`
 
-Script menjalankan `npm ci` dan tidak menimpa state pribadi seperti `auth.json`, `settings.json`, session, atau model store.
+Script menjalankan `npm ci` di staging lalu hanya menempatkan resource runtime Pi (`AGENTS.md`, `extensions/`, `skills/`, `prompts/`, dan `node_modules/`) ke agent directory. Metadata Git, README, lockfile, `package.json`, TypeScript config, dan script installer tidak ikut dideploy.
+
+State pribadi seperti `auth.json`, `settings.json`, session, model store, `bin/`, dan `npm/` tidak ditimpa.
 
 ## Instal manual
 
@@ -38,9 +40,9 @@ Jika direktori agent sudah ada tetapi bukan repository Git, gunakan mode repair.
 
 1. Membuat backup bertimestamp di `../pi-agent-backups/`.
 2. Membackup state Pi dan file lokal seperti `auth.json`, `settings.json`, `sessions/`, `bin/`, dan `npm/`.
-3. Menghapus hanya file/folder yang dikelola repository.
-4. Meng-clone ulang repository ke root agent yang benar.
-5. Menjalankan `npm ci` dan memvalidasi `extensions/`, `skills/`, dan `prompts/`.
+3. Menghapus metadata/file setup lama serta resource runtime yang akan diganti.
+4. Meng-clone repository ke staging, lalu hanya menyalin resource runtime Pi ke root agent.
+5. Menjalankan `npm ci` di staging dan memvalidasi `extensions/`, `skills/`, `prompts/`, serta `node_modules/`.
 
 Windows PowerShell:
 

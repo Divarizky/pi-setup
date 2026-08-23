@@ -46,7 +46,7 @@ irm https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.ps1 | iex
 curl -fsSL https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.sh | bash
 ```
 
-Installer menempatkan repository langsung ke root agent Pi, menjalankan `npm ci`, dan mempertahankan state pribadi. Untuk direktori lama yang bukan Git repository, gunakan mode repair di [SETUP.md](SETUP.md).
+Installer menempatkan resource runtime Pi (`extensions/`, `skills/`, `prompts/`, dan `node_modules/`) ke root agent Pi, tanpa metadata Git atau file setup repository. State pribadi tetap dipertahankan. Untuk direktori lama, gunakan mode repair di [SETUP.md](SETUP.md).
 
 ### Instal manual
 

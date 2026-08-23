@@ -44,15 +44,17 @@ STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pi-setup.XXXXXX")"
 cleanup() { rm -rf "$STAGE_DIR"; }
 trap cleanup EXIT
 
-MANAGED_ITEMS=(
-  .git .github .gitignore AGENTS.md README.md SETUP.md
-  install.sh install.ps1 package.json package-lock.json tsconfig.json
-  extensions skills prompts
+# Only these repository paths are deployed into the Pi agent directory.
+PI_ITEMS=(AGENTS.md extensions skills prompts themes APPEND_SYSTEM.md SYSTEM.md node_modules)
+# Repository metadata and development/install files are never deployed.
+CLEAN_ITEMS=(
+  .git .github .gitignore README.md SETUP.md install.sh install.ps1
+  package.json package-lock.json tsconfig.json
 )
 # These are local Pi state or locally installed tools. They are never replaced.
 STATE_ITEMS=(
   auth.json settings.json trust.json models.json models-store.json usage-tracker.json
-  mcp.json mcp-cache.json sessions bin npm themes APPEND_SYSTEM.md SYSTEM.md
+  mcp.json mcp-cache.json sessions bin npm
 )
 
 if [[ -d "$AGENT_DIR/.git" && "$REPAIR" == false ]]; then
@@ -69,33 +71,46 @@ if [[ -e "$AGENT_DIR" && "$REPAIR" == false ]]; then
   exit 1
 fi
 
+rm -rf "$STAGE_DIR/repo"
+git clone --depth 1 "$REPO_URL" "$STAGE_DIR/repo"
+(
+  cd "$STAGE_DIR/repo"
+  npm ci --ignore-scripts --no-audit --no-fund
+)
+
 if [[ "$REPAIR" == true && -e "$AGENT_DIR" ]]; then
   mkdir -p "$BACKUP_DIR"
   echo "Membuat backup ke: $BACKUP_DIR"
-  for item in "${MANAGED_ITEMS[@]}" "${STATE_ITEMS[@]}"; do
+  for item in "${CLEAN_ITEMS[@]}" "${PI_ITEMS[@]}" "${STATE_ITEMS[@]}"; do
     source="$AGENT_DIR/$item"
     [[ -e "$source" || -L "$source" ]] || continue
     destination="$BACKUP_DIR/$item"
     mkdir -p "$(dirname "$destination")"
     cp -a "$source" "$destination"
   done
-  printf '%s\n' "${MANAGED_ITEMS[@]}" > "$BACKUP_DIR/managed-items.txt"
+  printf '%s\n' "${CLEAN_ITEMS[@]}" > "$BACKUP_DIR/excluded-items.txt"
+  printf '%s\n' "${PI_ITEMS[@]}" > "$BACKUP_DIR/pi-items.txt"
   printf '%s\n' "${STATE_ITEMS[@]}" > "$BACKUP_DIR/state-items.txt"
 
-  for item in "${MANAGED_ITEMS[@]}"; do
+  for item in "${CLEAN_ITEMS[@]}"; do
     rm -rf "$AGENT_DIR/$item"
+  done
+  for item in "${PI_ITEMS[@]}"; do
+    [[ -e "$STAGE_DIR/repo/$item" || -L "$STAGE_DIR/repo/$item" ]] && rm -rf "$AGENT_DIR/$item"
   done
 fi
 
-rm -rf "$STAGE_DIR/repo"
-git clone --depth 1 "$REPO_URL" "$STAGE_DIR/repo"
 mkdir -p "$AGENT_DIR"
-cp -a "$STAGE_DIR/repo/." "$AGENT_DIR/"
-cd "$AGENT_DIR"
-npm ci --ignore-scripts --no-audit --no-fund
+for item in "${PI_ITEMS[@]}"; do
+  source="$STAGE_DIR/repo/$item"
+  [[ -e "$source" || -L "$source" ]] || continue
+  destination="$AGENT_DIR/$item"
+  mkdir -p "$(dirname "$destination")"
+  cp -a "$source" "$destination"
+done
 
-for item in extensions skills prompts; do
-  [[ -d "$AGENT_DIR/$item" ]] || { echo "Instalasi tidak lengkap: $item tidak ditemukan." >&2; exit 1; }
+for item in extensions skills prompts node_modules; do
+  [[ -e "$AGENT_DIR/$item" ]] || { echo "Instalasi tidak lengkap: $item tidak ditemukan." >&2; exit 1; }
 done
 
 if [[ "$REPAIR" == true ]]; then
