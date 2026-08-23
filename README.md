@@ -1,6 +1,6 @@
 # pi-setup
 
-Personal Pi Coding Agent setup. Clone to `~/.pi/agent`, run `npm install`, restart Pi.
+Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (atau `PI_CODING_AGENT_DIR` jika dioverride).
 
 ## What's Included
 
@@ -34,14 +34,29 @@ Personal Pi Coding Agent setup. Clone to `~/.pi/agent`, run `npm install`, resta
 
 ## Quick Start
 
+### Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.ps1 | iex
+```
+
+### macOS/Linux
+
 ```bash
-# Clone to Pi agent directory
+curl -fsSL https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.sh | bash
+```
+
+Installer menempatkan repository langsung ke root agent Pi, menjalankan `npm ci`, dan mempertahankan state pribadi. Untuk direktori lama yang bukan Git repository, gunakan mode repair di [SETUP.md](SETUP.md).
+
+### Instal manual
+
+```bash
 git clone https://github.com/Divarizky/pi-setup.git ~/.pi/agent
 cd ~/.pi/agent
-npm install
-
-# Restart Pi
+npm ci
 ```
+
+Restart Pi setelah instalasi.
 
 ## Project-Aware Mode
 
