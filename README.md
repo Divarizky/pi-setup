@@ -40,10 +40,6 @@ git clone https://github.com/Divarizky/pi-setup.git ~/.pi/agent
 cd ~/.pi/agent
 npm install
 
-# Optional: copy env example for Firecrawl (if using firecrawl-search extension)
-cp .env.example .env
-# Edit .env with your FIRECRAWL_API_KEY
-
 # Restart Pi
 ```
 

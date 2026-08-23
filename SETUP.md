@@ -28,7 +28,6 @@ Restart Pi setelah instalasi.
 
 ## Konfigurasi lokal
 
-- Salin `.env.example` menjadi `.env` hanya jika membutuhkan konfigurasi environment.
 - Credential provider tetap dikelola Pi melalui `/login` dan `auth.json` lokal.
 - Konfigurasi summary model dibuat dari command `/summary-model`; file private tidak masuk repository.
 - Tambahkan konfigurasi Pi pribadi ke `~/.pi/agent/settings.json` setelah instalasi.
