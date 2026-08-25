@@ -110,7 +110,7 @@ Setelah satu varian menang:
 
 Full set variants = primary source → throwaway branch, bukan bin. Varian + switcher yang tertinggal di main branch cepet basi dan bingungin pembaca selanjutnya.
 
-Project-aware mode: tulis decision di `.workspace/.scratch/<slug>/prototype-decision.md`. Universal mode: tampilkan decision capture dan statusnya di chat sesuai format [SKILL.md](../SKILL.md); jangan membuat file.
+Tulis decision di `.workspace/.scratch/<slug>/prototype-decision.md` sesuai format [SKILL.md](SKILL.md).
 
 ## Anti-patterns
 

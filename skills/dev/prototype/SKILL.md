@@ -19,16 +19,16 @@ Ambigu & user tidak reachable → default LOGIC (backend-heavy) atau UI (fronten
 
 ## Prasyarat
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — `.workspace/project-meta.md` opsional. Universal mode tetap berjalan dengan context terbatas dan capture chat-only; Project-aware mode dapat memakai context/artifact yang tersedia.
+[Prasyarat](../shared/COMMON.md#prasyarat) — warning "tanpa setup, context terbatas".
 
 ## Aturan Universal
 
 1. **Throwaway sejak hari pertama, jelas tandanya.** Nama file/fungsi/route mengandung `prototype` atau `_proto`. Jangan samar jadi production code.
 2. **Satu command untuk run.** Apapun task runner — `dart run`, `flutter run`, `npm run`, `swift run`, `python`, `bun`. User tinggal ketik tanpa mikir path.
-3. **Tanpa persistence.** State in-memory. Persistence hanya jika pertanyaan eksplisit tentang DB. Project-aware mode boleh memakai scratch DB/file `PROTOTYPE-wipe-me`; Universal mode jangan membuat persistence artifact dan tampilkan hasilnya di chat.
+3. **Tanpa persistence.** State in-memory. Persistence cuma kalau pertanyaan eksplisit tentang DB — pakai scratch DB/file `PROTOTYPE-wipe-me`.
 4. **Skip polish.** Tanpa test, tanpa error handling di luar yang bikin runnable, tanpa abstraksi. Poin: belajar secepat mungkin.
 5. **Surface state.** Setiap action (LOGIC) atau switch variant (UI), tampilkan state penuh — user lihat apa yang berubah.
-6. **Capture saat selesai.** Validated decision → fold ke real code. Prototipe → commit ke throwaway branch (jangan main). Project-aware mode → tulis ke `.workspace/.scratch/<slug>/prototype-decision.md`. Universal mode → tampilkan decision capture dan statusnya di chat; jangan membuat file.
+6. **Capture saat selesai.** Validated decision → fold ke real code. Prototipe → commit ke throwaway branch (jangan main). Jawaban → tulis di `.workspace/.scratch/<slug>/prototype-decision.md`.
 
 ## Format Capture
 
@@ -66,4 +66,4 @@ Ambigu & user tidak reachable → default LOGIC (backend-heavy) atau UI (fronten
 
 ## Saran Skills Lain
 
-[Workflow](../WORKFLOW.md) — Validasi desain sebelum implement → `prototype` dulu, baru `to-issues`/`implement`.
+[Cross-ref](../shared/COMMON.md#saran-skills-lain) — Validasi desain sebelum implement → `prototype` dulu, baru `to-issues`/`implement`.

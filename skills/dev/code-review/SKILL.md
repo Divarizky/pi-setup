@@ -13,7 +13,7 @@ Dua axis review, dijalankan terpisah supaya tidak saling pengaruh:
 
 ## Prasyarat
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — izinkan lanjut dengan warning. Universal mode selalu menampilkan hasil review di chat dan tidak membuat artifact workflow; Project-aware mode boleh membaca sumber `.workspace` yang tersedia.
+[Prasyarat](../shared/COMMON.md#prasyarat) — izinkan lanjut dengan warning.
 
 ### Dipanggil dari Chain (implement)
 
@@ -29,22 +29,19 @@ Diff kosong → stop, beri tahu user tidak ada perubahan.
 ## Step 2 — Cari Sumber Spec (prioritas, stop kalau ketemu)
 
 1. **Inline dari caller** — dipanggil dari `implement`: Detail + Done criteria di konteks
-2. **File PRD** — Project-aware: `.workspace/.scratch/<slug>/PRD.md` (slug = segment terakhir branch: `feature/user-auth` → `user-auth`)
-3. **Detail task** — Project-aware: `.workspace/.scratch/<slug>/tasks.md` (format: `## Queue`/`## In Progress`/`## Done`, ambil `Detail:`)
-4. **Path dari user** — validasi file exists/readable. Invalid → kembali ke sumber sebelumnya
-
-Universal mode tidak mengasumsikan PRD/tasks `.workspace`; gunakan inline spec, file yang user berikan, atau laporkan "no spec available".
+2. **File PRD** — `.workspace/.scratch/<slug>/PRD.md` (slug = segment terakhir branch: `feature/user-auth` → `user-auth`)
+3. **Detail task** — `.workspace/.scratch/<slug>/tasks.md` (format: `## Queue`/`## In Progress`/`## Done`, ambil `Detail:`)
+4. **Path dari user** — validasi file exists/readable. Invalid → kembali ke 1-3
 
 Tidak ketemu → tanya user. User bilang tidak ada → sub-agent Spec skip, laporkan "no spec available".
 
 ## Step 3 — Cari Sumber Standards
 
-Gunakan Context Resolver. Cari file dokumentasi coding style (`CODING_STANDARDS.md`, `CONTRIBUTING.md`, dll) jika tersedia.
+File apapun dokumentasi coding style (`CODING_STANDARDS.md`, `CONTRIBUTING.md`, dll).
 
-**Gold standard file** (Project-aware dari AGENT.md frontmatter `style_reference_path`):
-- Parse YAML frontmatter AGENT.md jika tersedia → `style_reference_path`
+**Gold standard file** (dari AGENT.md frontmatter `style_reference_path`):
+- Parse YAML frontmatter AGENT.md → `style_reference_path`
 - File exists → baseline pembanding axis Standards
-- Universal mode: gunakan style reference hanya jika user memberi path atau ada konvensi project yang jelas; jangan membuat asumsi
 
 **Smell baseline** (selalu bawa, Fowler *Refactoring* ch.3):
 - Speculative Generality → hapus, inline sampai kebutuhan nyata
@@ -72,18 +69,6 @@ Salah satu gagal → jangan block total. Laporkan partial: "Standards: [result],
 
 Tampilkan dua laporan di `## Standards` dan `## Spec`, verbatim/sedikit dirapikan. **Jangan merge/re-rank** — dua axis sengaja dipisah.
 
-Universal mode: tampilkan kedua laporan lengkap di chat, lalu tambahkan:
-
-```text
-Mode: Universal
-Persistence: chat-only
-Status: review-complete | partial | blocked
-Spec: available | no spec available
-Next Step: <aksi yang disarankan, tanpa auto-apply>
-```
-
-Jangan menulis hasil review ke file dalam Universal mode. Jika salah satu sub-agent gagal, gunakan `Status: partial` dan tampilkan error di axis terkait.
-
 ## Saran Skills Lain
 
-[Workflow](../WORKFLOW.md) — Belum ada diff → kerjakan perubahan dulu. Hanya 1 axis → jalanin utuh (axis lain report "tidak ada data"). Butuh deepening arsitektur → `improve-architecture`.
+[Cross-ref](../shared/COMMON.md#saran-skills-lain) — Belum ada diff → kerjakan perubahan dulu. Hanya 1 axis → jalanin utuh (axis lain report "tidak ada data"). Butuh deepening arsitektur → `improve-architecture`.

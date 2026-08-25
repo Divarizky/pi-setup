@@ -18,7 +18,7 @@ Manual invoke only. Health check periodik: tiap beberapa hari, atau codebase ter
 
 ## Prasyarat
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — `.workspace/project-meta.md` opsional. Gunakan Context Resolver; tanpa setup, Universal mode tetap berjalan dengan analisis terbatas dan tanpa artifact workflow.
+[Prasyarat](../shared/COMMON.md#prasyarat) — warning "tanpa setup, AGENT.md/CONTEXT.md/ADR.md tidak tersedia — analisis terbatas".
 
 ## Deepening Opportunities
 
@@ -29,7 +29,7 @@ Cari tanda shallow (lihat [VOCABULARY](../shared/VOCABULARY.md#arsitektur)):
 - Modul bocor lintas seam
 - Konsep butuh buka banyak file buat dipahami
 
-Kandidat pakai istilah domain dari `AGENT.md` (+ `CONTEXT.md` untuk detail) jika tersedia: "Deepen the Order intake module", bukan "refactor FooBarHandler". Jika tidak tersedia, gunakan istilah yang terlihat dari source code dan nyatakan keterbatasannya.
+Kandidat pakai istilah domain dari `AGENT.md` (+ `CONTEXT.md` untuk detail): "Deepen the Order intake module", bukan "refactor FooBarHandler".
 
 ## Laporan, Lalu Interview
 
@@ -63,9 +63,9 @@ Klasifikasi dependency (dasar solusi):
 
 **Seam rule**: jangan buat seam kecuali ada yang benar-benar bervariasi. 1 adapter = hipotetis. 2 adapter = nyata.
 
-Gunakan Context Resolver dan baca `.workspace/context/ADR.md` hanya jika tersedia — jangan re-litigasi keputusan lama. Munculkan konflik ADR cuma kalau friksi nyata cukup dipertimbangkan ulang.
+Baca `ADR.md` dulu — jangan re-litigasi keputusan lama. Munculkan konflik ADR cuma kalau friksi nyata cukup dipertimbangkan ulang.
 
-Setelah laporan → berhenti, tanya kandidat mana mau di-interview. User pilih satu → interview: constraint, apa di balik seam, test apa yang bertahan. Project-aware mode: update `.workspace/context/AGENT.md` inline jika modul dinamai konsep baru. Universal mode: tampilkan definisi/keputusan di chat, jangan menulis context artifact. Tawarkan ADR kalau user tolak kandidat dengan alasan load-bearing.
+Setelah laporan → berhenti, tanya kandidat mana mau di-interview. User pilih satu → interview: constraint, apa di balik seam, test apa yang bertahan. Update `AGENT.md` inline kalau modul dinamai konsep baru. Tawarkan ADR kalau user tolak kandidat dengan alasan load-bearing.
 
 **Escape hatch**: interview >8 pertanyaan masih bergulir → sarankan `handoff` ke sesi baru. Jangan paksa selesai 1 sesi.
 

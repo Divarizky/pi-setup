@@ -1,6 +1,6 @@
 ---
 name: setup-workflow
-description: "Setup kumpulan skill dev untuk sebuah repo/project. Deteksi status project (baru/existing), generate .workspace/ sebagai tracker lokal: AGENT.md (quick refs) + CONTEXT.md (full detail). Jalankan jika user membutuhkan context dan persistence lintas sesi; workflow universal tetap bisa dipakai tanpa setup."
+description: "Setup kumpulan skill dev untuk sebuah repo/project. Deteksi status project (baru/existing), generate .workspace/ sebagai tracker lokal: AGENT.md (quick refs) + CONTEXT.md (full detail). Jalankan sekali per repo sebelum skill lain dipakai pertama kali. Skill dengan prasyarat keras (implement, to-prd, to-issues) akan arahkan ke sini; skill lain izinkan lanjut dengan warning."
 disable-model-invocation: true
 ---
 
@@ -10,7 +10,7 @@ Tulis config yang skill lain baca. Run sekali per repo. Deteksi state repo nyata
 
 ## Flags
 
-- `--refresh` — Re-scan codebase, update AGENT.md + CONTEXT.md + ARCHITECTURE.md (kalau ada) secara merge-safe, bump `context_updated` di project-meta.md. No overwrite ADR.md/issue-tracker.md/.scratch/.
+- `--refresh` — Re-scan codebase, update AGENT.md + CONTEXT.md + ARCHITECTURE.md (kalau ada) secara merge-safe, bump `context_updated` di project-meta.md. No overwrite ADR.md/TDD.md/issue-tracker.md/.scratch/
 - `--refresh --force` — `--refresh` + full overwrite AGENT.md/CONTEXT.md (abaikan marker manual, semua section ditulis ulang dari scan)
 - `--migrate-structure` — One-shot migrasi struktur lama (flat di `.workspace/`) ke baru (`context/`, `tracking/`). Hanya jalan kalau struktur lama terdeteksi.
 - `--no-context` — Setup tanpa CONTEXT.md (project kecil). Default: CONTEXT.md aktif.
@@ -40,8 +40,8 @@ Cek exist: `.workspace/project-meta.md`
 - **Ada** → setup sudah jalan. Baca, tampilkan ringkasan (status, setup_date, context_updated, has_context, has_architecture).
   - `--refresh` → Step 7
   - `--migrate-structure` → Step 6
-  - Tanpa flag → beri tahu setup sudah tersedia, lalu arahkan ke `ask-me`.
-- **Tidak ada** → lanjut Step 2.
+  - Else → arahkan ke `ask-me`, **STOP**
+- **Tidak ada** → Step 2
 
 ## Step 2 — Deteksi Status Project
 
@@ -77,7 +77,7 @@ Buat folder `.workspace/context/`, `.workspace/tracking/` kalau belum ada.
 
 Tulis jika belum ada. Sudah ada & format valid → skip. Format rusak/kosong → tanya: `"<file> ada tapi formatnya rusak. Overwrite dengan default?"` — jangan overwrite diam-diam.
 
-- Aturan canonical berada di `../shared/TDD.md` dan selalu dibaca oleh `implement`.
+- `.workspace/context/TDD.md` — copy dari `setup-workflow/seeds/TDD.md` apa adanya
 - `.workspace/tracking/issue-tracker.md` — index per fitur, schema:
   ```yaml
   tracker: local
@@ -111,7 +111,7 @@ migrated_at: <YYYY-MM-DD>  # hanya kalau --migrate-structure jalan
 
 ## Step 6 — Migration (--migrate-structure only)
 
-HANYA kalau flag `--migrate-structure`. Trigger: struktur lama terdeteksi (file `.workspace/CONTEXT.md`, `.workspace/ADR.md`, `.workspace/ARCHITECTURE.md`, `.workspace/issue-tracker.md` di root) ATAU `has_context: false` (AGENT.md campur quick+detail, belum ada CONTEXT.md). Aturan TDD canonical berada di `../shared/TDD.md`.
+HANYA kalau flag `--migrate-structure`. Trigger: struktur lama terdeteksi (file `.workspace/CONTEXT.md`, `.workspace/ADR.md`, `.workspace/ARCHITECTURE.md`, `.workspace/TDD.md`, `.workspace/issue-tracker.md` di root) ATAU `has_context: false` (AGENT.md campur quick+detail, belum ada CONTEXT.md).
 
 A. Struktur lama terdeteksi → v1→v2:
 1. Buat folder `.workspace/context/`, `.workspace/tracking/`
@@ -119,8 +119,8 @@ A. Struktur lama terdeteksi → v1→v2:
    - `.workspace/CONTEXT.md` → `.workspace/context/AGENT.md`
    - `.workspace/ADR.md` → `.workspace/context/ADR.md`
    - `.workspace/ARCHITECTURE.md` (kalau ada) → `.workspace/context/ARCHITECTURE.md`
+   - `.workspace/TDD.md` → `.workspace/context/TDD.md`
    - `.workspace/issue-tracker.md` → `.workspace/tracking/issue-tracker.md`
-   - File TDD lama: jangan dimigrasikan; gunakan `../shared/TDD.md` sebagai satu-satunya aturan TDD.
 3. Update `project-meta.md`: `migrated_at: <today>`, `has_architecture` berdasarkan keberadaan ARCHITECTURE.md
 4. (Optional) Symlink compat: `.workspace/CONTEXT.md` → `context/AGENT.md`
 

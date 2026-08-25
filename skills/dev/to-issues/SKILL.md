@@ -1,28 +1,28 @@
 ---
 name: to-issues
-description: "Pecah PRD/plan jadi task vertical-slice. Dipanggil oleh user atau route workflow. Jangan gunakan kalau belum ada input jelas; tanyakan apakah perlu PRD dulu atau breakdown dari percakapan."
-disable-model-invocation: true
+description: "Pecah PRD/plan jadi task vertical-slice (full local). Auto-trigger saat user bilang: \"pecah jadi task\", \"breakdown plan ini\", \"buat daftar task implementasi\", \"split task\". Jangan trigger kalau belum ada input jelas (PRD/plan) — tanya user mau buat PRD dulu atau langsung breakdown dari percakapan."
+model-invocation: enabled
 ---
 
 # To Issues
 
-Pecah spec jadi task vertical-slice. Project-aware mode menyimpan ke `tasks.md`; Universal mode menampilkan checklist di chat. Input: PRD, percakapan, atau split task existing.
+Pecah spec jadi task vertical-slice, tulis ke tasks.md. Input: PRD.md, percakapan, atau split task existing.
 
-## Invocation
+## Chat Trigger
 
-Dipanggil eksplisit atau melalui route `ask-me`: "pecah jadi task", "breakdown plan ini", "buat daftar task implementasi", "split task".
+Auto-trigger: "pecah jadi task", "breakdown plan ini", "buat daftar task implementasi", "split task".
 
 ## Prasyarat
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — `.workspace/project-meta.md` opsional. Tanpa workspace, gunakan universal mode: input dari percakapan atau PRD yang user berikan; output hanya berupa checklist di chat dan status di respons.
+[Prasyarat](../shared/COMMON.md#prasyarat) — **hard-check**: `.workspace/project-meta.md` harus ada. Belum → arahkan ke `setup-workflow`, stop.
 Input dari PRD.md → pastikan `status: approved` di frontmatter. Masih `draft` → konfirmasi: "PRD ini masih draft. Lanjut breakdown anyway atau approve dulu?"
 
 [Subagent Detection](../shared/COMMON.md#subagent-detection) — cek sekali per sesi.
 
 ## Step 1 — Deteksi Sumber Input
 
-### Sumber A: PRD.md (Project-aware mode atau path yang user berikan)
-1. Project-aware: baca `.workspace/.scratch/<slug>/PRD.md`. Universal: gunakan PRD yang ditempelkan/tersedia di percakapan. Ambil Problem, Acceptance Criteria, User Stories, dan Testing Decisions.
+### Sumber A: PRD.md (path langsung atau chain dari `to-prd`)
+1. Baca `.workspace/.scratch/<slug>/PRD.md` — ambil Problem, Acceptance Criteria, User Stories, Testing Decisions
 2. `status: draft` → tanya user: "PRD masih draft. Lanjut breakdown atau approve dulu?"
 3. `status: approved` → Step 2
 
@@ -32,9 +32,9 @@ Input dari PRD.md → pastikan `status: approved` di frontmatter. Masih `draft` 
 3. User pilih langsung → ekstrak problem, solution, behavior → Step 2
 
 ### Sumber C: Split task existing
-1. Project-aware: baca `.workspace/.scratch/<slug>/tasks.md`. Universal: gunakan task/checklist yang user berikan di percakapan. Cari task di Queue dengan deskripsi >5 baris atau scope lebar.
-2. Proposal: "TASK-3 terlalu besar. Pecah jadi sub-task?" User setuju → sub-task list.
-3. Skip Step 2 (ini sub-division, bukan slice baru) → Step 3 dengan format khusus split.
+1. Baca `.workspace/.scratch/<slug>/tasks.md` — cari task di Queue dengan deskripsi >5 baris atau scope lebar
+2. Proposal: "TASK-3 terlalu besar. Pecah jadi sub-task?" User setuju → sub-task list
+3. Skip Step 2 (ini sub-division, bukan slice baru) → Step 3 dengan format khusus split
 4. Tidak ada task oversized → beri tahu user, stop
 
 ## Step 2 — Vertical Slices + Greenfield Branch
@@ -44,9 +44,7 @@ Input dari PRD.md → pastikan `status: approved` di frontmatter. Masih `draft` 
 - **Vertical slice** (tracer bullet): satu jalur sempit tembus SEMUA layer — bisa langsung di-demo
 
 ### Branching Status Project
-
-Project-aware mode: baca `.workspace/project-meta.md`.
-Universal mode: tentukan existing/new dari current directory dan file yang terlihat; jika tidak jelas, tanyakan user.
+Baca `.workspace/project-meta.md`:
 
 **Existing** (`status: existing`):
 - Eksplorasi codebase terfokus — 5 file atau 3 menit. Cari layer stack dari struktur folder
@@ -99,17 +97,7 @@ Dua task `Parallel: yes` menyentuh layer/area sama → risiko konflik file. Gabu
 ### Cycle Detection
 Setiap user setuju dependency chain → cek cycle (topological sort Kahn/DFS+back edge). Cycle terdeteksi → "TASK-1, TASK-3, TASK-5 cycle — tidak ada task yang bisa dimulai. Hapus/reorder salah satu dependency?" Lanjut Step 4 setelah cycle resolved.
 
-## Step 4 — Tampilkan Hasil Breakdown
-
-Project-aware mode: tulis ke `.workspace/.scratch/<feature-slug>/tasks.md` dan update tracker.
-Universal mode: jangan membuat atau memperbarui file. Tampilkan proposal/final checklist di chat dan catat status breakdown di respons:
-
-```text
-Status breakdown: proposed | approved
-Task count: <jumlah>
-Eligible berikutnya: <TASK-ID atau none>
-Persistence: chat-only (Universal mode)
-```
+## Step 4 — Tulis ke tasks.md
 
 ### Format Standar
 
@@ -137,7 +125,7 @@ Urutan `## Queue`: priority critical→high→medium→low. Sama level: unblocke
 - **Depends**: koma + spasi (`TASK-1, TASK-2`). Tidak ada dependency: `none`
 - **Priority**: huruf kecil semua — `critical|high|medium|low` (konsisten dengan proposal)
 - **Parallel**: `yes|no` (default `no`). `yes` HANYA kalau SEMUA: `subagent_supported` true, `Depends: none` (atau semua dependency `[x]` di Done), scope/layers tidak overlap task eligible lain, bukan `Uncertainty: High`/`Complexity: High`. Agent tanpa subagent → wajib `no`. `Parallel` cuma penanda eksekusi paralel di `implement` — bukan pengganti dependency.
-- **Nomor TASK**: sequential, lanjut dari nomor tertinggi existing; jika tidak ada task sebelumnya, mulai dari `TASK-1`
+- **Nomor TASK**: sequential, lanjut dari nomor tertinggi existing
 - **Detail**: 2-5 kalimat. Fokus behavior — apa yang harus muncul, bukan gimana implementasinya
 - **Done criteria**: minimal 2. Bisa verifikasi tanpa buka kode (test pass, API response, screenshot)
 - **Group heading**: `## Queue`/`## In Progress`/`## Done`/`## Superseded` — dipakai `implement` & `status` untuk navigasi
@@ -162,9 +150,8 @@ Task lama di-split → pindah ke `## Superseded`:
 - Judul strikethrough, catat superseded-by
 - Transfer dependency: task lain depends on TASK-3 → ganti ke TASK-3a. Beri tahu user.
 
-### Update Index (Project-aware mode)
-
-Hanya Project-aware mode yang menulis atau memperbarui entry slug di `.workspace/tracking/issue-tracker.md`:
+### Update Index
+Tulis/update entry slug di `.workspace/tracking/issue-tracker.md`:
 ```yaml
 tracker: local
 features:
@@ -185,13 +172,12 @@ Slug baru → tambahkan. Slug existing → update `updated`, `task_count`, `task
 
 ## Step 5 — Finalisasi & Chain
 
-- Project-aware: beri tahu user daftar task + path `tasks.md`.
-- Universal: tampilkan daftar task, `Status breakdown`, `Task count`, `Eligible berikutnya`, dan `Persistence: chat-only`; tidak ada path artifact.
-- Cek task tracker jika Project-aware; Universal memakai checklist yang baru ditampilkan: ada task eligible (Todo, dependency none atau sudah Done)?
+- Beri tahu user daftar task + path tasks.md
+- Cek task tracker: ada task eligible (Todo, dependency none atau sudah Done)?
   - **Ada**: tanya "Lanjut execute task pertama via `implement`? (y/n)". `y` → baca `implement/SKILL.md`, jalankan Step 1-5 manual (chain `to-prd`→`to-issues`). User bisa invoke `implement` langsung kapan saja.
   - **Tidak ada (semua blocked)**: "Semua task nunggu dependency. Selesaikan blocker dulu via `implement`."
 - Slice Uncertainty High/butuh sharpen desain → flag: "TASK-4 butuh riset dulu — sarankan `ask-me` grill dalam, atau `prototype` (LOGIC/UI) kalau perlu validasi desain, sebelum eksekusi."
 
 ## Saran Skills Lain
 
-[Workflow](../WORKFLOW.md) — Fitur sudah ada task → `implement`. Belum ada PRD jelas → `to-prd` dulu. Task butuh sharpen → `ask-me` grill dalam. Uncertainty High → `prototype` dulu, answer captured baru breakdown real task.
+[Cross-ref](../shared/COMMON.md#saran-skills-lain) — Fitur sudah ada task → `implement`. Belum ada PRD jelas → `to-prd` dulu. Task butuh sharpen → `ask-me` grill dalam. Uncertainty High → `prototype` dulu, answer captured baru breakdown real task.

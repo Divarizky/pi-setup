@@ -1,7 +1,7 @@
 ---
 name: git-commit
-description: "Generate conventional commit message dari staged changes, chain ke code-review. Dipanggil oleh user atau route workflow. Jangan trigger untuk git push, git add, atau operasi git lain."
-disable-model-invocation: true
+description: "Generate conventional commit message dari staged changes, chain ke code-review. Auto-trigger saat user bilang: \"commit\", \"buat commit\", \"pesan commit\", \"commit message\". Jangan trigger untuk git push, git add, atau operasi git lain."
+model-invocation: enabled
 ---
 
 # Git Commit
@@ -175,7 +175,7 @@ Output: `commit <hash> <subject>`
 
 ## Catatan
 
-- `disable-model-invocation: true` — dipanggil eksplisit atau melalui route workflow
+- `model-invocation: enabled` — auto-jalan saat trigger match
 - Selalu `git commit -F - <<< "$MESSAGE"` untuk multi-line body
 - Breaking change footer: `BREAKING CHANGE: <deskripsi>` per baris
 - Refer [VOCABULARY](../shared/VOCABULARY.md) untuk istilah `Module`, `Interface`, `Seam` di body

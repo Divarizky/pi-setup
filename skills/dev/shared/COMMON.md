@@ -6,74 +6,16 @@ Common utilities referenced by all dev skills. Import via markdown link: `[Prasy
 
 ## Prasyarat
 
-`.workspace/project-meta.md` bersifat opsional.
+```markdown
+## Prasyarat
 
-- User meminta mode tertentu → ikuti permintaan user.
-- Tidak ada permintaan dan marker tersedia → gunakan **project-aware mode**; baca context/artifact yang tersedia.
-- Marker tidak tersedia → gunakan **universal mode**; lanjut dengan context dari percakapan, current directory, file project, dan Git bila tersedia.
-- Dalam Universal mode, artifact workflow tidak ditulis ke file; tampilkan artifact dan statusnya di chat sesuai kontrak skill.
-- Aturan ini berlaku untuk PRD, task, handoff, tracking, dan artifact workflow lain; tidak membatasi perubahan source code yang memang diminta user.
-- Jangan hard-stop hanya karena workspace belum ada, kecuali skill menetapkan Project-aware mode wajib.
-
-`setup-workflow` adalah pengecualian eksplisit: skill ini memang membuat `.workspace/` untuk mengaktifkan penyimpanan context project-aware. `project-migration` adalah skill kompleks yang wajib memakai setup tersebut. Jika user membutuhkan artifact lintas sesi, tawarkan `setup-workflow`; jangan menggantinya dengan penulisan file dalam Universal mode.
-
-Detail mode, fallback artifact, dan ownership ada di [WORKFLOW.md](../WORKFLOW.md).
-
----
-
-## Context Resolver
-
-Semua skill yang membutuhkan context harus mengikuti resolver ini. Jangan mengasumsikan file context tersedia.
-
-### 1. Tentukan Work Root
-
-```text
-Jika `git rev-parse --show-toplevel` berhasil:
-  work_root = Git root
-Jika command gagal atau folder bukan repo Git:
-  work_root = current directory
+`.workspace/project-meta.md` idealnya sudah ada (`setup-workflow` sudah jalan).
+Belum ada → tawarkan `setup-workflow`, izinkan lanjut dengan warning:
+"tanpa setup, context terbatas — AGENT.md/CONTEXT.md/ADR.md tidak tersedia".
+Jangan hard-stop.
 ```
 
-Gunakan `work_root` untuk mencari file project. Jangan scan seluruh filesystem.
-
-### 2. Tentukan Mode
-
-Ikuti aturan [WORKFLOW.md](../WORKFLOW.md#pemilihan-mode):
-
-- User meminta mode tertentu → ikuti permintaan tersebut.
-- Marker `.workspace/project-meta.md` tersedia → Project-aware mode.
-- Marker tidak tersedia → Universal mode.
-
-### 3. Baca Sumber Secara Kondisional
-
-Gunakan sumber sesuai jenis informasinya, bukan satu urutan global:
-
-- **Instruksi user saat ini** — prioritas tertinggi untuk tujuan dan aksi sesi ini.
-- **ADR** — constraint dan keputusan arsitektur final; jangan ubah tanpa alasan eksplisit.
-- **AGENT/CONTEXT** — vocabulary, konvensi, pola, dan detail project.
-- **File project dan Git** — fakta aktual tentang kode, perubahan, dan struktur.
-- **Artifact workflow** — status PRD, task, handoff, dan keputusan yang sudah dipersist.
-
-Aturan baca:
-
-- `read_if_exists(path)`: jika ada dan readable, baca; jika tidak ada, skip tanpa error; jika ada tapi corrupt/tidak readable, laporkan dan jangan overwrite diam-diam.
-- Path relatif selalu di-resolve dari `work_root`.
-- Jangan membuat file context hanya karena file tersebut tidak ada.
-- Jika context yang dibutuhkan tidak tersedia, nyatakan keterbatasannya dan lanjutkan dengan sumber yang ada bila aman.
-- Instruksi user saat ini mengalahkan asumsi context lama, kecuali bertentangan dengan constraint keamanan atau aksi yang memerlukan konfirmasi.
-
-### 4. Catat Context yang Dipakai
-
-Catat ringkasan ini secara internal untuk keputusan biasa:
-
-```text
-Mode: Universal | Project-aware
-Work root: <path relatif atau nama repo>
-Sources: <daftar file/sumber yang benar-benar dibaca>
-Missing optional context: <jika ada>
-```
-
-Tampilkan ringkasan hanya jika context hilang, sumber konflik, user meminta, atau workflow menghasilkan handoff/keputusan penting. Jangan menulis log tambahan ke project kecuali skill memang memiliki artifact output.
+**Exception**: `implement`, `to-prd`, `to-issues` — hard-check, arahkan ke setup, stop.
 
 ---
 
@@ -145,14 +87,30 @@ Scan & redact sebelum tulis handoff:
 - Internal IP `10.`, `172.16-31.`, `192.168.` → redact
 - Env vars `DATABASE_URL`, `REDIS_URL`, `AWS_SECRET_KEY` → redact value
 
-Kalau ragu: tanya user. Contoh: "Ada info sensitif yang perlu diredact?"
+Kalau ragu: tanya user "Ada info sensitif yang perlu diredact?"
 ```
 
 ---
 
-## Routing dan Cross-Reference
+## Cross-Reference Skill Table (Saran Skills Lain)
 
-Routing utama dan saran skill ada di [WORKFLOW.md](../WORKFLOW.md).
+```markdown
+## Saran Skills Lain
+
+| Situasi | Skill |
+|---------|-------|
+| Fitur baru, ide ambigu | `ask-me` (grill dulu) |
+| Sudah punya PRD, butuh task | `to-issues` |
+| Sudah punya task, eksekusi | `implement` |
+| Bug sulit, butuh diagnosis | `bug-diagnosis` |
+| Review perubahan sebelum commit | `code-review` → `git-commit` |
+| Arsitektur butuh deepening | `improve-architecture` |
+| Migrasi project lama → baru | `project-migration` |
+| Validasi desain sebelum implement | `prototype` (LOGIC/UI) |
+| Butuh snapshot posisi kerja | `status` |
+| Ganti sesi/device, bawa konteks | `handoff` |
+| Setup pertama kali repo | `setup-workflow` |
+```
 
 ---
 

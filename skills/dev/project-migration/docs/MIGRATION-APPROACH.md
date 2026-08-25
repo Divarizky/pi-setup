@@ -10,7 +10,7 @@ Kode lama jadi referensi behavior. Kode baru ditulis fresh — bebas ubah strukt
 
 **Contoh**: Android Java View-based → Android Kotlin Jetpack Compose. Logic bisnis dipahami dari kode lama, kode Compose ditulis dari nol.
 
-**Konsekuensi ke flow**: Migration Plan (Step 3) lebih dekat proses `implement` — spec ulang tiap behavior dan ikuti aturan canonical `../../shared/TDD.md` dari nol per modul.
+**Konsekuensi ke flow**: Migration Plan (Step 3) lebih dekat proses `implement` — spec ulang tiap behavior, TDD dari nol per modul.
 
 ## Opsi B — Pindahkan dengan Penyesuaian
 

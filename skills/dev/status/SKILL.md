@@ -10,25 +10,19 @@ Snapshot cepat state kerja saat ini. Pas buka sesi baru dan lupa lagi ngerjain a
 
 ## Prasyarat
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — `.workspace/project-meta.md` opsional. Universal mode bersifat read-only dan chat-only: buat snapshot dari percakapan aktif, current directory, Git bila tersedia, dan file workflow yang user berikan. Project-aware mode membaca state `.workspace` yang tersedia. Jika tidak ada state, laporkan bahwa belum ada pekerjaan yang bisa diringkas; tawarkan `setup-workflow` hanya jika user ingin persistence.
+[Prasyarat](../shared/COMMON.md#prasyarat) — `.workspace/project-meta.md` idealnya ada. Tidak ada → status tetap baca file `.workspace/` yang ada. Tidak ada satapun (bahkan folder `.workspace/` kosong) → arahkan ke `setup-workflow`, stop. Folder ada tapi `project-meta.md` tidak → lanjut dengan warning.
 
 ## Step 1 — Baca State (3 sumber, skip yang tidak ada/corrupt)
-
-### Universal mode
-Gunakan percakapan aktif, current directory, Git bila tersedia, dan file workflow yang user berikan. Jangan mengasumsikan tracker, tasks, atau handoff `.workspace` tersedia; jangan membuat file.
-
-### Project-aware mode
-Gunakan Context Resolver dan baca sumber berikut hanya jika tersedia:
 
 ### 1. Index Fitur
 Baca `.workspace/tracking/issue-tracker.md`:
 - Filter `status: open` dan `status: done`
 - Ambil `task_count` + `task_done` untuk progress bar Step 2
-- Tidak ada/format invalid → laporkan: "issue-tracker.md tidak terbaca. Tawarkan `setup-workflow` untuk memperbaiki persistence."
+- Tidak ada/format invalid → laporkan: "issue-tracker.md tidak terbaca. Invoke `setup-workflow` dulu?"
 
 ### 2. Task Aktif
-Untuk slug `open` di index:
-- Cek folder `.workspace/.scratch/<slug>/` ada? Tidak → laporkan: "Slug `<slug>`: folder `.scratch/<slug>/` hilang." Skip.
+Unti slug `open` di index:
+- Cek folder `.workspace/.scratch/<slug>/` ada? Tidak → laporkan: "Slug `<slug>`: folder `.scratch/<slug>/` hilang. Hapus slug dari index atau restore folder." Skip.
 - Baca `.workspace/.scratch/<slug>/tasks.md` (format: `## Queue`/`## In Progress`/`## Done`, checkbox `[ ]`/`[x]`)
 
 Ekstrak:
@@ -40,8 +34,7 @@ File tidak ada tapi index bilang `open` → laporkan: "Slug X: tasks.md tidak di
 File ada tapi format tidak parse → laporkan: "Slug X: tasks.md format tidak dikenal."
 
 ### 3. Handoff Terakhir
-Project-aware: cari file terbaru di `.workspace/handoffs/` — `ls -t .workspace/handoffs/*.md 2>/dev/null | head -1` (sort by mtime, bukan string filename).
-Universal: gunakan handoff yang ditempelkan atau dirujuk user.
+Cari file terbaru di `.workspace/handoffs/` — `ls -t .workspace/handoffs/*.md 2>/dev/null | head -1` (sort by mtime, bukan string filename).
 Ambil 1 baris ringkasan (biasanya baris pertama setelah judul). Jangan baca seluruh file.
 Folder tidak ada/kosong → skip.
 
@@ -91,4 +84,4 @@ Berdasarkan state, sarankan (user putuskan, bukan auto-invoke):
 
 ## Saran Skills Lain
 
-[Workflow](../WORKFLOW.md) — Awal sesi baru, setelah break panjang, ragu task tertunda, sebelum invoke `implement`.
+[Cross-ref](../shared/COMMON.md#saran-skills-lain) — Awal sesi baru, setelah break panjang, ragu task tertunda, sebelum invoke `implement`.

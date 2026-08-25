@@ -1,6 +1,6 @@
 # Context Scan
 
-Dipakai di dua tempat: `setup-workflow` Step 3 (versi ringan, existing project) dan `project-migration` Step 3 (versi penuh, setelah strategi migrasi ditentukan).
+Dipakai di dua tempat: `setup-workflow` Step 3 (versi ringan, existing project) dan `project-migration` Step 1 (versi penuh, sebelum migrasi).
 
 ## Versi Ringan (setup-workflow)
 
@@ -16,7 +16,7 @@ Output: entry kedua file secukupnya untuk agent tidak "buta" saat mulai kerja. T
 
 ## Versi Penuh (project-migration)
 
-Tujuan: dasar untuk Risk Register (Step 4), jadi harus lebih dalam dari versi ringan.
+Tujuan: dasar untuk Risk Register (Step 2), jadi harus lebih dalam dari versi ringan.
 
 Scan tambahan:
 - Peta dependency antar modul — siapa memanggil siapa, coupling tersembunyi

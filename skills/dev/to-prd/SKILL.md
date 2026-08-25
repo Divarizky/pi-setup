@@ -1,30 +1,30 @@
 ---
 name: to-prd
-description: "Sintesis percakapan/hasil grill jadi PRD. Dipanggil oleh user atau route workflow; tanpa interview — sintesis dari konteks yang sudah dibahas."
-disable-model-invocation: true
+description: "Sintesis percakapan/hasil grill jadi PRD (full local). Auto-trigger saat user bilang: \"buat PRD\", \"tulis spec\", \"dokumentasikan fitur ini\", \"sintesis jadi PRD\". Jangan trigger kalau user baru diskusi eksplorasi tanpa keputusan desain — tanya dulu \"mau saya dokumentasikan sebagai PRD?\". Tanpa interview — sintesis dari konteks yang sudah dibahas."
+model-invocation: enabled
 ---
 
 # To PRD
 
 Sintesis, bukan interview. Input dari percakapan aktif atau hasil `ask-me` grill. Output: dokumen PRD siap di-review user.
 
-## Invocation
+## Chat Trigger
 
-Dipanggil eksplisit atau melalui route `ask-me`: "buat PRD", "tulis spec", "dokumentasikan fitur ini", "sintesis jadi PRD".
+Auto-trigger: "buat PRD", "tulis spec", "dokumentasikan fitur ini", "sintesis jadi PRD".
 
 ## Prasyarat
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — `.workspace/project-meta.md` opsional. Tanpa workspace, gunakan universal mode: draft hanya ditampilkan di chat dan statusnya dicatat di respons.
-`implement` mungkin sudah memiliki tracking tambahan. Project-aware mode: cek `.workspace/.scratch/<slug>/tasks.md` sebagai sumber tambahan jika file tersedia. Universal mode: gunakan hanya context percakapan dan file yang user berikan.
+[Prasyarat](../shared/COMMON.md#prasyarat) — **hard-check**: `.workspace/project-meta.md` harus ada. Tidak ada → arahkan ke `setup-workflow`, stop.
+`implement` sudah tulis tracking minimal di `.workspace/.scratch/<slug>/tasks.md`? Baca dulu — sumber tambahan.
 
 ## Step 1 — Context Sebelum Eksplorasi
 
-Jangan eksplorasi codebase dulu. Gunakan Context Resolver dari `../shared/COMMON.md`.
+Jangan eksplorasi codebase dulu. Urutan:
 
-1. Baca context project hanya jika tersedia: `AGENT.md` untuk vocabulary, `CONTEXT.md` untuk detail, dan `ADR.md` untuk keputusan arsitektur.
-2. Project-aware mode: cek `.workspace/.scratch/<slug>/tasks.md` jika tersedia.
-3. Universal mode: gunakan keputusan dari percakapan dan file project relevan yang dapat diakses.
-4. Eksplorasi codebase terfokus — maks 10 file atau 5 menit. Fokus area relevan fitur (baca nama file/directory di path terkait, bukan seluruh repo).
+1. Baca `.workspace/context/AGENT.md` (quick) + `.workspace/context/CONTEXT.md` (detail) — vocabulary domain, catat istilah relevan
+2. Baca `.workspace/context/ADR.md` — keputusan arsitektur area terkait, jangan re-litigasi tanpa alasan kuat
+3. Cek `.workspace/.scratch/<slug>/tasks.md` — kalau ada dari `implement` (tracking minimal), baca sebagai referensi
+4. Eksplorasi codebase terfokus — maks 10 file atau 5 menit. Fokus area relevan fitur (baca nama file/directory di path terkait, bukan seluruh repo)
 
 ### Seam Detection Heuristic
 
@@ -107,22 +107,16 @@ Label prioritas: MUST (critical path), SHOULD (penting tapi bisa tunda), NICE (n
   - Butuh presisi teknis → link ke file dengan snapshot commit: `// snapshot at a7f3e2`
 - **User Stories cover semua aspek fitur** — prioritas MUST jelas untuk critical path implementasi.
 
-## Step 3 — Tulis PRD
+## Step 3 — Tulis ke PRD.md
 
-### Project-aware mode
+Deteksi: `.workspace/.scratch/<feature-slug>/PRD.md` sudah ada?
 
-Gunakan `.workspace/.scratch/<feature-slug>/PRD.md`.
+- **Belum ada**: tulis baru dengan `version: 1.0.0`, `status: draft`, `created: hari ini`
+- **Sudah ada**: baca isinya. Update konten (jangan overwrite mental). Increment `version` (minor, misal `1.1.0`). Tambah `supersedes` dengan path versi sebelumnya. Update `updated: hari ini`. Jangan ubah `created`. Source field tetap dari asal pertama.
 
-- **Belum ada**: tulis baru dengan `version: 1.0.0`, `status: draft`, `created: hari ini`.
-- **Sudah ada**: baca isinya. Update konten, increment `version` minor, isi `supersedes`, update `updated`, dan pertahankan `created` serta `source`.
+Catatan: `implement` bisa tulis tracking minimal di `.scratch/<slug>/tasks.md` untuk fitur dari konteks — referensi, bukan overwrite PRD.
 
-### Universal mode
-
-Jangan membuat atau memperbarui file PRD. Simpan draft hanya dalam context sesi, tampilkan di chat, dan gunakan `version`/`status` sebagai metadata respons.
-
-Catatan: PRD universal tidak tersedia otomatis di sesi berikutnya. Tawarkan `setup-workflow` jika user membutuhkan persistence.
-
-PRD tidak masuk siklus triage task; triage dilakukan oleh `to-issues`. PRD memiliki lifecycle sendiri melalui metadata `version` dan `status`.
+PRD.md tidak masuk siklus triage task (triage di level task via `to-issues`, bukan PRD). Tapi PRD punya lifecycle sendiri via status frontmatter.
 
 ## Step 4 — Validasi Diri
 
@@ -139,11 +133,7 @@ Ada gap → tanyakan user, jangan publish dulu.
 Tampilkan PRD ke user:
 
 ```
-Project-aware mode:
-Draft PRD: `.workspace/.scratch/<slug>/PRD.md` v<version>
-
-Universal mode:
-Draft PRD: ditampilkan di chat, v<version>
+Draft PRD: .workspace/.scratch/<slug>/PRD.md v<version>
 
 [ringkasan — Problem + Solution + Acceptance Criteria]
 
@@ -151,8 +141,8 @@ Status sekarang: draft
 Approve? (y/n)
 ```
 
-- **y** → Project-aware: update `status: approved` di frontmatter. Universal: catat `status: approved` di respons. Lanjut **chain to-issues** (lihat bawah).
-- **n** / revisi → update konten di file (Project-aware) atau context sesi (Universal). Increment version minor, `status` tetap `draft`. Tanya lagi sampai approve.
+- **y** → update `status: approved` di frontmatter. Lanjut **chain to-issues** (lihat bawah)
+- **n** / revisi → update konten sesuai input. Increment version (minor bump). `status` tetap `draft`. Tanya lagi sampai approve.
 - **Perubahan besar** → tulis ulang section relevan, bump version, present ulang.
 
 ### Chain ke To-Issues
@@ -161,15 +151,16 @@ Setelah PRD approved, tanya:
 
 > PRD sudah approved. Lanjut breakdown ke task via `to-issues`? (y/n)
 
-- **Tidak** → Project-aware: beri tahu path PRD. Universal: beri tahu PRD hanya tersedia di context sesi. Keduanya menyarankan invoke `to-issues` kapan saja.
-- **Ya** → **jangan auto-invoke `to-issues`**. Jalankan manual di sesi yang sama dengan PRD sebagai input inline.
-  1. Baca `to-issues/SKILL.md`.
-  2. Jalankan proposal dan iterasi vertical slice.
-  3. Project-aware: tulis `tasks.md` dan update tracker.
-  4. Universal: tampilkan checklist task di chat dan catat status breakdown di respons.
+- **Tidak** → beri tahu path file PRD + saran: "Invoke `to-issues` kapan saja mau breakdown task."
+- **Ya** → **jangan auto-invoke `to-issues`** (biar tetap 1 sesi, no context loss). Sebagai gantinya:
+  1. Baca `to-issues/SKILL.md` — pahami Step 1 (deteksi subagent), Step 2 (vertical slice), Step 3 (propose slicing + iterasi), Step 4 (tulis tasks.md)
+  2. Jalankan Step 1 (deteksi subagent saja — input source sudah diketahui: PRD) lalu Step 2-4 `to-issues` manual di sesi ini
+  3. Tulis `.workspace/.scratch/<slug>/tasks.md` format & mekanisme sama persis `to-issues`
+  4. Update `.workspace/tracking/issue-tracker.md` — entry slug jadi `status: open`
+  5. Beri tahu user: PRD approved + tasks.md siap. Path kedua file.
 
-Chain manual ini hanya untuk kontinuitas sesi. User bisa invoke `to-issues` langsung kapan saja.
+Chain manual ini hanya untuk kontinuitas sesi. User bisa invoke `to-issues` langsung kapan saja (skill ini `model-invocation: enabled`).
 
 ## Saran Skills Lain
 
-[Workflow](../WORKFLOW.md) — Banyak keputusan ambigu → `ask-me` grill dalam dulu, baru `to-prd`. PRD approved, mau breakdown task → chain ke `to-issues` lewat Step 5. Butuh persistence lintas sesi → `setup-workflow`.
+[Cross-ref](../shared/COMMON.md#saran-skills-lain) — Banyak keputusan ambigu → `ask-me` grill dalam dulu, baru `to-prd`. PRD approved, mau breakdown task → chain ke `to-issues` lewat Step 5. Belum ada `project-meta.md` → `setup-workflow` dulu.

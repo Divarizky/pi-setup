@@ -1,7 +1,7 @@
 ---
 name: bug-diagnosis
-description: "Diagnosis loop disiplin 6-phase untuk bug sulit (reproduce, minimise, hypothesise, instrument, fix, regression-test). Dipanggil oleh user atau route workflow. Jangan gunakan untuk fix sepele — arahkan ke implement. Heavy — konfirmasi user dulu sebelum jalan."
-disable-model-invocation: true
+description: "Diagnosis loop disiplin 6-phase untuk bug sulit (reproduce, minimise, hypothesise, instrument, fix, regression-test). Auto-trigger saat user bilang: \"bug\", \"error\", \"crash\", \"stack trace\", \"exception\", \"regression\", \"kenapa gagal\", \"kok gak jalan\". Jangan trigger untuk fix sepele (typo, config, 1-baris jelas) — arahkan implement langsung. Heavy — konfirmasi user dulu sebelum jalan."
+model-invocation: enabled
 ---
 
 # Bug Diagnosis
@@ -10,7 +10,7 @@ Disiplin untuk bug sulit. Skip phase hanya kalau ada justifikasi eksplisit — j
 
 ## Prasyarat
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — heavy, setup membantu diagnosis lebih akurat tetapi tidak wajib. Universal mode tetap berjalan tanpa artifact workflow.
+[Prasyarat](../shared/COMMON.md#prasyarat) — heavy, setup bantu diagnosis lebih akurat.
 
 ## Step 0 — Konfirmasi
 
@@ -21,7 +21,7 @@ Disiplin untuk bug sulit. Skip phase hanya kalau ada justifikasi eksplisit — j
 
 ## Sebelum Mulai
 
-Gunakan Context Resolver dari `../shared/COMMON.md`. Baca `.workspace/context/AGENT.md`, `CONTEXT.md`, dan `ADR.md` hanya jika tersedia. Universal mode memakai percakapan, file project, dan Git yang tersedia; jangan membuat context artifact.
+Baca `.workspace/context/AGENT.md` (mental model modul, quick) + `.workspace/context/CONTEXT.md` (detail kalau perlu) + `.workspace/context/ADR.md` (keputusan arsitektur area terkait).
 
 ## Phase 1 — Reproduce
 
@@ -85,8 +85,6 @@ Test Phase 5 tetap di suite — cegah regress. Catat hipotesis benar di commit m
 
 Tanya: "Apa mencegah bug ini dari awal?" Jawab melibatkan arsitektur (no good seam, coupling tersembunyi) → sarankan `improve-architecture` terpisah.
 
-Universal mode: tampilkan fase terakhir, akar masalah, perubahan, regression test, dan status diagnosis di respons. Project-aware mode: update artifact hanya sesuai kontrak workflow yang tersedia.
-
 ## AFK
 
 Skill auto-trigger tapi Step 0 stop kalau user tidak respons → tidak jalan saat AFK.
@@ -95,4 +93,4 @@ Rekomendasi `improve-architecture` saat AFK → catat di commit message/log, ber
 
 ## Saran Skills Lain
 
-[Workflow](../WORKFLOW.md) — `bug-diagnosis` temuan arsitektur → `improve-architecture`.
+[Cross-ref](../shared/COMMON.md#saran-skills-lain) — `bug-diagnosis` temuan arsitektur → `improve-architecture`.

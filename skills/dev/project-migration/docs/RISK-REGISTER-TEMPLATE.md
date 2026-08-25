@@ -1,6 +1,6 @@
 # Risk Register Template
 
-Diisi per sesi `project-migration`, Step 4. Satu entry = satu kandidat deepening/area rawan.
+Diisi per sesi `project-migration`, Step 2. Satu entry = satu kandidat deepening/area rawan.
 
 ## Format Entry
 
