@@ -58,7 +58,7 @@ npm ci
 
 Restart Pi setelah instalasi.
 
-## Project-Aware Mode
+## Project Mode
 
 For persistence across sessions, run `setup-workflow` once per repo:
 
