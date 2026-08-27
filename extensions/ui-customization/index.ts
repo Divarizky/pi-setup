@@ -273,7 +273,10 @@ function sessionUsage(ctx: ExtensionContext) {
   let cacheHitRate: number | undefined;
 
   for (const entry of ctx.sessionManager.getEntries()) {
-    const record = entry as { message?: { role?: string; usage?: any }; usage?: any };
+    const record = entry as {
+      message?: { role?: string; usage?: any };
+      usage?: any;
+    };
     const usage = record.message?.usage ?? record.usage;
     if (!usage) continue;
 
@@ -285,9 +288,7 @@ function sessionUsage(ctx: ExtensionContext) {
 
     if (record.message?.role === "assistant") {
       const promptTokens =
-        (usage.input ?? 0) +
-        (usage.cacheRead ?? 0) +
-        (usage.cacheWrite ?? 0);
+        (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
       if (promptTokens > 0) {
         cacheHitRate = ((usage.cacheRead ?? 0) / promptTokens) * 100;
       }

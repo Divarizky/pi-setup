@@ -1,120 +1,72 @@
 # UI Prototype
 
-Generate **beberapa varian UI yang radically berbeda** di satu screen/route/view, switchable via state (bukan URL). User flip antar varian, pilih satu (atau ambil potongan dari tiap varian), sisanya throwaway.
+Branch `UI` menjawab satu pertanyaan tentang layout, hierarchy, interaction, density, accessibility, atau responsive behavior. **Default-nya decision-first:** bandingkan opsi dan susun decision capture (file di Project mode, pesan chat di Universal mode); jangan membuat screen/route/variant code tanpa permintaan eksplisit.
 
-Framework-agnostic. Contoh mapping:
+## When This Is the Right Shape
 
-| Konsep | Flutter | SwiftUI | Compose | React/Vue |
-|---|---|---|---|---|
-| State varian | `ValueNotifier` / `setState` | `@State` | `mutableStateOf` | `useState` / `ref` |
-| Switcher overlay | `Stack` + `Positioned` | `ZStack` + overlay | `Box` + `Modifier.offset` | `position: fixed` bottom |
-| Debug gate | `kDebugMode` | `#if DEBUG` | `BuildConfig.DEBUG` | `process.env.NODE_ENV` |
+- “Layout mana yang membuat action utama lebih mudah ditemukan?”
+- “Dashboard ini lebih baik memakai sidebar atau command surface?”
+- “Bagaimana hierarchy informasi pada settings screen?”
+- “Trade-off responsive dan accessibility dari beberapa struktur UI apa?”
 
-Jangan terjebak framework-specific — tulis switcher component sekali, pakai di mana aja.
+## Decision-First Process
 
-## Kapan ini bentuk yang tepat
+1. **Set host context** — identifikasi screen/route existing, data, auth, navigation, dan design system.
+2. **Tetapkan evaluation criteria** — hierarchy, discoverability, keyboard/focus, contrast, accessibility, responsive behavior, dan density.
+3. **Susun maksimal 3 opsi struktural** — bedakan layout/hierarchy/primary affordance, bukan sekadar warna.
+4. **Bandingkan trade-off** — catat apa yang mudah/sulit ditemukan, constraint breakpoint, focus order, dan risiko implementasi.
+5. **Pilih status** — `validated`, `inconclusive`, atau `rejected` berdasarkan criteria, bukan selera visual semata.
+6. **Capture decision** — Project mode menulis `.workspace/.scratch/<slug>/prototype-decision.md`; Universal mode menampilkan decision capture di chat tanpa membuat file.
 
-- "Gimana kalo halaman ini layoutnya beda?"
-- "Mau liat beberapa opsi dashboard sebelum milih."
-- "Coba tata letak lain buat setting screen."
-- Kapanpun user bakal habiskan sehari milih antara 3 mockup vague di kepala.
+Contoh tabel evaluasi:
 
-## Dua sub-shape — prefer A
+| Opsi    | Hierarchy | Discoverability | Accessibility     | Responsive risk | Decision |
+| ------- | --------- | --------------- | ----------------- | --------------- | -------- |
+| Sidebar | kuat      | baik            | focus order jelas | medium          | kandidat |
 
-UI prototype jauh lebih gampang dinilai kalo **nempel di app beneran** — real header, real sidebar, real density. Route throwaway sendiri itu vacuum: tiap varian keliatan oke diisolasi.
+## Optional Executable Mode
 
-### Sub-shape A — adjustment ke existing screen (preferred)
+Hanya gunakan jika user meminta variant UI runnable secara eksplisit. Setelah disetujui:
 
-Route/screen udah ada. Varian di-render **di route yang sama**, diganti via state (`variant = 'A'`). Data fetching, params, auth — semua tetap. Cuma rendering yang swap. Pilih ini kecuali ada alasan spesifik gak bisa.
+- default maksimal 3 varian yang berbeda secara struktural;
+- lebih baik mount pada existing screen/route;
+- gunakan switcher berbasis state, bukan URL;
+- switcher punya mouse dan keyboard navigation;
+- hidden dari production/debug gate;
+- data fetching dan auth tetap memakai host context;
+- varian read-only, throwaway, tanpa backend mutation;
+- setelah user review, Project mode menulis decision Markdown; Universal mode menampilkannya di chat; lalu hapus/isolasi shell throwaway.
 
-Kalo prototype buat sesuatu yang belum punya page tapi *naturalnya ada di dalam page existing* (section baru di dashboard, card baru di settings, step baru di flow existing) — itu masih sub-shape A. Mount variants di dalam host page.
+## Output yang Diharapkan
 
-### Sub-shape B — screen baru (last resort)
+Decision capture (file di Project mode, pesan chat di Universal mode) harus memuat:
 
-Cuma kalo yang diprototype beneran gak punya existing page — misal surface top-level baru, atau flow yang gak bisa di-embed mana pun.
+- question, hypothesis, dan host context;
+- evaluation criteria;
+- opsi dan trade-off struktural;
+- evidence dari review/user feedback;
+- decision dan rejected alternatives;
+- design requirements untuk real code;
+- open risks;
+- suggested next skill.
 
-Buat **throwaway route/view** ikut routing convention yang project pake. Jangan invent struktur top-level baru. Nama route mengandung `prototype`. Sama: switching via state, bukan URL.
+## Phase Exit
 
-Sebelum commit ke B, sanity check: beneran gak ada existing page yang bisa ditempelin? Empty route nyembunyiin masalah desain.
+Setelah decision capture selesai, sarankan:
 
-## Proses
+- `implement` jika layout tervalidasi;
+- `to-tasks` jika perlu dipecah;
+- `improve-architecture` jika perubahan menyentuh struktur UI/data;
+- `prototype` jika hasil inconclusive;
+- `ask-me` jika requirement atau host context ambigu;
+- `none` jika tidak ada tindakan lanjutan.
 
-### 1. Tulis question dan pilih N
+Jangan menjalankan skill berikutnya otomatis.
 
-Default **3 varian**. Lebih dari 5 berhenti jadi "radically different" dan mulai jadi noise — cap di situ.
+## Anti-Patterns
 
-Tulis satu baris di lokasi prototype atau komentar:
-
-```
-// Tiga varian settings page, switchable via state, di route /settings yang existing
-```
-
-Bisa dicek kalo user ada buat push back atau gak.
-
-### 2. Generate varian radically berbeda
-
-Draft tiap varian. Pegang:
-
-- Purpose page + data yang tersedia.
-- Component library / styling system project (Tailwind, shadcn, MUI, Material, Cupertino, plain CSS — whatever).
-- Nama component ekspor jelas: `VariantA`, `VariantB`, `VariantC`.
-
-Varian harus **structurally berbeda** — layout beda, informasi hierarchy beda, primary affordance beda, bukan cuma warna beda. Tiga card grid yang sedikit di-tweak bukan UI prototype. Kalo dua draft terlalu mirip, ulang satu dengan guidance "jangan pake card grid."
-
-### 3. Wire bersama
-
-Buat satu switcher component:
-
-```pseudo
-// pseudo-code — adapt ke framework project
-state = { currentVariant: 'A' }
-
-render:
-  if currentVariant == 'A' -> VariantA(data)
-  if currentVariant == 'B' -> VariantB(data)
-  if currentVariant == 'C' -> VariantC(data)
-  -> PrototypeSwitcher(currentVariant, onSwitch)
-```
-
-**Sub-shape A** (existing screen): semua data fetching di atas switcher. Hanya rendered subtree yang beda per varian.
-
-**Sub-shape B** (screen baru): throwaway route mount switcher yang sama.
-
-### 4. Floating switcher
-
-Component kecil fixed di bottom-center screen:
-
-- **Arrow kiri** — prev variant (wrap around).
-- **Label** — current variant key + nama kalo ada: `B — Sidebar layout`.
-- **Arrow kanan** — next variant (wrap around).
-
-Behavior:
-
-- Klik arrow update state variant.
-- Keyboard juga: `←` dan `→` arrow keys cycle variant. Jangan intercept kalo `<input>`, `<textarea>`, atau `[contenteditable]` sedang focus.
-- Visually distinct dari page (high-contrast pill, subtle shadow) — jelas bukan bagian dari design yang dievaluasi.
-- **Hidden di production/debug build** — gate di `kDebugMode` / `#if DEBUG` / `BuildConfig.DEBUG` / `NODE_ENV !== 'production'`. Jangan sampai merge stray prototype ke user.
-
-Buat switcher sekali di shared component, reuse di semua UI prototype. Letakkan di folder shared UI project.
-
-### 5. Hand over
-
-Surface informasi: "Ada 3 varian, flip pake arrow atau keyboard kiri/kanan." User flip kapan aja. Feedback menarik biasanya "gw mau header dari B dengan sidebar dari C" — itu design yang mereka mau.
-
-### 6. Capture answer dan cleanup
-
-Setelah satu varian menang:
-
-- **Sub-shape A** — fold winner ke existing screen. Drop losing variants + switcher dari main.
-- **Sub-shape B** — promote winner ke real route. Drop throwaway route + switcher dari main.
-
-Full set variants = primary source → throwaway branch, bukan bin. Varian + switcher yang tertinggal di main branch cepet basi dan bingungin pembaca selanjutnya.
-
-Tulis decision di `.workspace/.scratch/<slug>/prototype-decision.md` sesuai format [SKILL.md](SKILL.md).
-
-## Anti-patterns
-
-- **Varian beda warna doang.** Itu tweak, bukan prototype. Varian beneran beda struktur.
-- **Terlalu banyak shared code antar varian.** `<Header>` shared fine; shared `<Layout>` defeats the point. Tiap varian boleh buang layout.
-- **Wire variants ke real mutations.** Read-only prototype fine. Kalo varian butuh mutate, pake stub — questionnya "gimana keliatannya", bukan "backend jalan gak".
-- **Promote langsung ke production.** Varian ditulis tanpa test, error handling minimal. Tulis ulang proper pas fold ke real code.
+- Langsung membuat tiga varian code sebelum brief disetujui.
+- Varian hanya berbeda warna atau spacing.
+- Membuat route kosong padahal ada existing screen yang bisa menjadi host.
+- Menghubungkan prototype ke mutation/backend nyata.
+- Mempromosikan varian ke production tanpa decision capture dan user approval.

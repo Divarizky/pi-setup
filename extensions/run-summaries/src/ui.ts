@@ -210,8 +210,13 @@ class ModelPickerDashboard {
       const rightWidth = visibleWidth(right);
       const leftMax = Math.max(0, innerWidth - rightWidth - 2);
       const leftTruncated = truncateToWidth(left, leftMax);
-      const gap = Math.max(2, innerWidth - visibleWidth(leftTruncated) - rightWidth);
-      body.push(truncateToWidth(leftTruncated + " ".repeat(gap) + right, innerWidth));
+      const gap = Math.max(
+        2,
+        innerWidth - visibleWidth(leftTruncated) - rightWidth,
+      );
+      body.push(
+        truncateToWidth(leftTruncated + " ".repeat(gap) + right, innerWidth),
+      );
     }
 
     if (start > 0) {
@@ -274,7 +279,15 @@ export async function openModelPicker(
   const index = currentIndex === -1 ? 0 : currentIndex;
   return ctx.ui.custom<Model<Api> | undefined>(
     (tui, theme, keybindings, done) =>
-      new ModelPickerDashboard(tui, theme, keybindings, models, index, currentKey, done),
+      new ModelPickerDashboard(
+        tui,
+        theme,
+        keybindings,
+        models,
+        index,
+        currentKey,
+        done,
+      ),
     {
       overlay: true,
       overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%" },
@@ -307,8 +320,7 @@ export function openReasoningPicker(
           const title = ` reasoning for ${model.provider}/${model.id} `;
           const titleW = visibleWidth(title);
           const dashLen = Math.max(0, width - titleW - 4);
-          const top =
-            theme.fg("border", `╭─${title}${"─".repeat(dashLen)}╮`);
+          const top = theme.fg("border", `╭─${title}${"─".repeat(dashLen)}╮`);
           const body = selector.render(inner);
           const rows = body.map(
             (line) =>
@@ -316,8 +328,7 @@ export function openReasoningPicker(
               padText(line, inner) +
               theme.fg("border", " │"),
           );
-          const bottom =
-            theme.fg("border", `╰${"─".repeat(width - 2)}╯`);
+          const bottom = theme.fg("border", `╰${"─".repeat(width - 2)}╯`);
           const hint = theme.fg(
             "dim",
             `  ↑↓/jk select · ${configuredKeys(keybindings, "tui.select.confirm")} choose · ${configuredKeys(keybindings, "tui.select.cancel")} close`,

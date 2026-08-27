@@ -2,9 +2,11 @@
 description: Deep review seluruh codebase
 argument-hint: "[path-atau-fokus]"
 ---
+
 Lakukan deep review menyeluruh terhadap codebase${1:+ dengan fokus pada $@}.
 
 **Prasyarat — Konteks**: Baca file manifest project untuk identifikasi stack, lalu tailor cek ke ecosystem tooling:
+
 - Web/Backend: `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `composer.json`, `pom.xml`
 - Android: `build.gradle.kts`, `settings.gradle.kts`, `gradle/libs.versions.toml`
 - iOS: `Package.swift` (SwiftPM) atau `Podfile`+`Podfile.lock` (CocoaPods)
@@ -15,6 +17,7 @@ Lakukan deep review menyeluruh terhadap codebase${1:+ dengan fokus pada $@}.
 - Hardening: `proguard-rules.pro`, `r8` config
 
 Cakupan review:
+
 - **Arsitektur & struktur**: organisasi modul, separation of concerns, coupling/cohesion, dependency tidak perlu, **mono-repo drift**.
 - **Bug & logika**: edge case, off-by-one, null/undefined, race condition, error handling hilang/menelan error.
 - **Keamanan**: validasi input di **trust boundary** (API endpoint, DB query, file upload, env var, queue consumer), injection, secret hardcoded, auth/authz, **dependency rentan (supply chain, license, outdated, unused)**.
@@ -23,6 +26,7 @@ Cakupan review:
 - **Test**: coverage area kritis, test rapuh/menyesatkan, kasus hilang, **mutation testing gap**.
 
 Cara kerja:
+
 1. Petakan struktur proyek (file penting, entry point, config, dependency).
 2. Baca file inti, jangan asumsi—buka isinya.
 3. Laporkan temuan per severity:

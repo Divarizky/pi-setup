@@ -84,7 +84,9 @@ function number(value: unknown): number {
 }
 
 function finiteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function sumField(records: readonly JsonRecord[], ...keys: string[]): number {
@@ -116,13 +118,19 @@ function resultRecords(payload: unknown): JsonRecord[] {
 
 function parseTokenTotals(payload: unknown, provider: ProviderId): UsageTotals {
   const records = resultRecords(payload);
-  const input = provider === "anthropic"
-    ? sumField(records, "uncached_input_tokens", "input_tokens")
-    : sumField(records, "input_tokens");
+  const input =
+    provider === "anthropic"
+      ? sumField(records, "uncached_input_tokens", "input_tokens")
+      : sumField(records, "input_tokens");
   const output = sumField(records, "output_tokens");
-  const cached = provider === "anthropic"
-    ? sumField(records, "cache_read_input_tokens", "cache_creation_input_tokens")
-    : sumField(records, "input_cached_tokens", "cached_input_tokens");
+  const cached =
+    provider === "anthropic"
+      ? sumField(
+          records,
+          "cache_read_input_tokens",
+          "cache_creation_input_tokens",
+        )
+      : sumField(records, "input_cached_tokens", "cached_input_tokens");
 
   return { input, output, cached, total: input + output + cached };
 }
@@ -140,7 +148,10 @@ function parseCost(payload: unknown): number | undefined {
   return found ? total : undefined;
 }
 
-function authHeaders(provider: ProviderId, auth: AuthResult): Record<string, string> {
+function authHeaders(
+  provider: ProviderId,
+  auth: AuthResult,
+): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const [key, value] of Object.entries(auth.auth.headers ?? {})) {
     if (typeof value === "string") headers[key] = value;
@@ -193,12 +204,28 @@ async function fetchOpenAI(
   });
   const headers = authHeaders("openai", auth);
   const [usageResult, costResult] = await Promise.allSettled([
-    getJson(`https://api.openai.com/v1/organization/usage/completions?${common}`, headers, fetchImpl, signal),
-    getJson(`https://api.openai.com/v1/organization/costs?${common}`, headers, fetchImpl, signal),
+    getJson(
+      `https://api.openai.com/v1/organization/usage/completions?${common}`,
+      headers,
+      fetchImpl,
+      signal,
+    ),
+    getJson(
+      `https://api.openai.com/v1/organization/costs?${common}`,
+      headers,
+      fetchImpl,
+      signal,
+    ),
   ]);
-  const usage = usageResult.status === "fulfilled" ? usageResult.value : undefined;
+  const usage =
+    usageResult.status === "fulfilled" ? usageResult.value : undefined;
   const cost = costResult.status === "fulfilled" ? costResult.value : undefined;
-  if (!usage && !cost) return { period: period.label, status: "unavailable", message: "data tidak tersedia" };
+  if (!usage && !cost)
+    return {
+      period: period.label,
+      status: "unavailable",
+      message: "data tidak tersedia",
+    };
 
   const totals = parseTokenTotals(usage, "openai");
   const parsedCost = parseCost(cost);
@@ -224,12 +251,28 @@ async function fetchAnthropic(
   });
   const headers = authHeaders("anthropic", auth);
   const [usageResult, costResult] = await Promise.allSettled([
-    getJson(`https://api.anthropic.com/v1/organizations/usage_report/messages?${common}`, headers, fetchImpl, signal),
-    getJson(`https://api.anthropic.com/v1/organizations/cost_report?${common}`, headers, fetchImpl, signal),
+    getJson(
+      `https://api.anthropic.com/v1/organizations/usage_report/messages?${common}`,
+      headers,
+      fetchImpl,
+      signal,
+    ),
+    getJson(
+      `https://api.anthropic.com/v1/organizations/cost_report?${common}`,
+      headers,
+      fetchImpl,
+      signal,
+    ),
   ]);
-  const usage = usageResult.status === "fulfilled" ? usageResult.value : undefined;
+  const usage =
+    usageResult.status === "fulfilled" ? usageResult.value : undefined;
   const cost = costResult.status === "fulfilled" ? costResult.value : undefined;
-  if (!usage && !cost) return { period: period.label, status: "unavailable", message: "data tidak tersedia" };
+  if (!usage && !cost)
+    return {
+      period: period.label,
+      status: "unavailable",
+      message: "data tidak tersedia",
+    };
 
   const totals = parseTokenTotals(usage, "anthropic");
   const parsedCost = parseCost(cost);
@@ -255,9 +298,11 @@ function decodeJwtPayload(token: string): JsonRecord | undefined {
 
 function codexAccountId(auth: AuthResult): string | undefined {
   const configured = Object.entries(auth.auth.headers ?? {}).find(
-    ([key, value]) => key.toLowerCase() === "chatgpt-account-id" && typeof value === "string",
+    ([key, value]) =>
+      key.toLowerCase() === "chatgpt-account-id" && typeof value === "string",
   )?.[1];
-  if (typeof configured === "string" && configured.length > 0) return configured;
+  if (typeof configured === "string" && configured.length > 0)
+    return configured;
 
   const token = auth.auth.apiKey;
   if (!token) return undefined;
@@ -285,11 +330,14 @@ function parseCodexLimits(payload: unknown): UsageLimit[] {
   const addWindow = (value: unknown, fallbackLabel: string): void => {
     const window = asRecord(value);
     const usedPercent = window ? finiteNumber(window.used_percent) : undefined;
-    if (usedPercent === undefined || usedPercent < 0 || usedPercent > 100) return;
+    if (usedPercent === undefined || usedPercent < 0 || usedPercent > 100)
+      return;
     const limitWindowSeconds = finiteNumber(window?.limit_window_seconds);
     const resetValue = finiteNumber(window?.reset_at) ?? 0;
     limits.push({
-      label: limitWindowSeconds ? formatWindowLabel(limitWindowSeconds) : fallbackLabel,
+      label: limitWindowSeconds
+        ? formatWindowLabel(limitWindowSeconds)
+        : fallbackLabel,
       usedPercent,
       limitWindowSeconds,
       resetsAt: resetValue > 0 ? new Date(resetValue * 1000) : undefined,
@@ -320,7 +368,8 @@ async function fetchCodex(
 ): Promise<{ limits: readonly UsageLimit[]; quota?: string }> {
   const token = auth.auth.apiKey;
   const accountId = codexAccountId(auth);
-  if (!token || !accountId) throw new Error("Codex OAuth metadata tidak tersedia");
+  if (!token || !accountId)
+    throw new Error("Codex OAuth metadata tidak tersedia");
 
   const headers = authHeaders("openai-codex", auth);
   headers["chatgpt-account-id"] = accountId;
@@ -343,7 +392,10 @@ export async function fetchProviderUsage(
   options: UsageFetchOptions = {},
 ): Promise<ProviderUsage> {
   const periods = createUsagePeriods(options.now);
-  const unavailablePeriod = (period: UsagePeriod, message: string): ProviderPeriodUsage => ({
+  const unavailablePeriod = (
+    period: UsagePeriod,
+    message: string,
+  ): ProviderPeriodUsage => ({
     period: period.label,
     status: "unavailable",
     message,
@@ -395,22 +447,36 @@ export async function fetchProviderUsage(
       provider,
       source: auth.source,
       status: "unavailable",
-      today: unavailablePeriod(periods[0], "session usage belum didukung untuk provider ini"),
-      billing: unavailablePeriod(periods[1], "session usage belum didukung untuk provider ini"),
+      today: unavailablePeriod(
+        periods[0],
+        "session usage belum didukung untuk provider ini",
+      ),
+      billing: unavailablePeriod(
+        periods[1],
+        "session usage belum didukung untuk provider ini",
+      ),
       message: "data tidak tersedia",
     };
   }
 
   const fetchPeriod = provider === "openai" ? fetchOpenAI : fetchAnthropic;
   const [today, billing] = await Promise.all(
-    periods.map((period) => fetchPeriod(auth!, period, fetchImpl, options.signal).catch(() => unavailablePeriod(period, "data tidak tersedia"))),
+    periods.map((period) =>
+      fetchPeriod(auth!, period, fetchImpl, options.signal).catch(() =>
+        unavailablePeriod(period, "data tidak tersedia"),
+      ),
+    ),
   );
   return {
     provider,
     source: auth.source,
-    status: today.status === "ok" || billing.status === "ok" ? "ok" : "unavailable",
+    status:
+      today.status === "ok" || billing.status === "ok" ? "ok" : "unavailable",
     today,
     billing,
-    message: today.status === "ok" || billing.status === "ok" ? undefined : "data tidak tersedia",
+    message:
+      today.status === "ok" || billing.status === "ok"
+        ? undefined
+        : "data tidak tersedia",
   };
 }

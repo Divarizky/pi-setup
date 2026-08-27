@@ -1,12 +1,12 @@
-import type { BackendName, SubagentMode } from "./domain.ts"
+import type { BackendName, SubagentMode } from "./domain.ts";
 
 export interface ExecutionPolicy {
-  readonly mode: SubagentMode
-  readonly backend: BackendName
+  readonly mode: SubagentMode;
+  readonly backend: BackendName;
   /** The Orca backend launches Pi inside its managed worktree. */
-  readonly agent: "pi"
-  readonly requiresWorktree: boolean
-  readonly readOnly: boolean
+  readonly agent: "pi";
+  readonly requiresWorktree: boolean;
+  readonly readOnly: boolean;
 }
 
 /**
@@ -23,7 +23,9 @@ export function resolveExecutionPolicy(
 ): ExecutionPolicy {
   if (mode === "scout") {
     if (requestedBackend !== undefined && requestedBackend !== "pi") {
-      throw new Error("Scout only supports the Pi backend and never creates a worktree.")
+      throw new Error(
+        "Scout only supports the Pi backend and never creates a worktree.",
+      );
     }
     return {
       mode,
@@ -31,11 +33,13 @@ export function resolveExecutionPolicy(
       agent: "pi",
       requiresWorktree: false,
       readOnly: true,
-    }
+    };
   }
 
   if (requestedBackend !== undefined && requestedBackend !== "orca") {
-    throw new Error("Build requires the Orca backend with a Pi agent and managed worktree.")
+    throw new Error(
+      "Build requires the Orca backend with a Pi agent and managed worktree.",
+    );
   }
   return {
     mode,
@@ -43,5 +47,5 @@ export function resolveExecutionPolicy(
     agent: "pi",
     requiresWorktree: true,
     readOnly: false,
-  }
+  };
 }

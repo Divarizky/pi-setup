@@ -3,7 +3,7 @@
 Definisi shared yang dipakai lintas skill. Satu sumber kebenaran — skill lain refer
 ke sini, jangan redefine.
 
-## Arsitektur
+## Architecture
 
 - **Module** — unit kode: interface (kontrak publik) + implementation (isi di baliknya).
 - **Interface** — semua yang caller wajib tahu buat pakai module. Bukan detail internal.

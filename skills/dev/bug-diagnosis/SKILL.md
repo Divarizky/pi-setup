@@ -1,33 +1,34 @@
 ---
 name: bug-diagnosis
-description: "Diagnosis loop disiplin 6-phase untuk bug sulit (reproduce, minimise, hypothesise, instrument, fix, regression-test). Auto-trigger saat user bilang: \"bug\", \"error\", \"crash\", \"stack trace\", \"exception\", \"regression\", \"kenapa gagal\", \"kok gak jalan\". Jangan trigger untuk fix sepele (typo, config, 1-baris jelas) — arahkan implement langsung. Heavy — konfirmasi user dulu sebelum jalan."
-model-invocation: enabled
+description: "Diagnosis loop disiplin 6-phase untuk bug sulit (reproduce, minimise, hypothesise, instrument, fix, regression-test). Dipanggil oleh user atau route workflow. Jangan gunakan untuk fix sepele — arahkan ke implement. Heavy — konfirmasi user dulu sebelum jalan."
+disable-model-invocation: true
 ---
 
 # Bug Diagnosis
 
 Disiplin untuk bug sulit. Skip phase hanya kalau ada justifikasi eksplisit — jangan lompat ke fix tanpa alasan jelas.
 
-## Prasyarat
+## Prerequisites
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — heavy, setup bantu diagnosis lebih akurat.
+[Prerequisites](../shared/COMMON.md#prerequisites) — heavy, setup membantu diagnosis lebih akurat tetapi tidak wajib. Universal mode tetap berjalan tanpa artifact workflow.
 
-## Step 0 — Konfirmasi
+## Pre-Diagnosis Confirmation
 
 > "Bug ini butuh diagnosis 6-phase. Lanjut? (y/n)"
 
 - **y** → Phase 1
 - **n/tidak respons** → stop. Sarankan `ask-me` (diskusi) atau `implement` (fix trivial)
 
-## Sebelum Mulai
+## Before Starting
 
-Baca `.workspace/context/AGENT.md` (mental model modul, quick) + `.workspace/context/CONTEXT.md` (detail kalau perlu) + `.workspace/context/ADR.md` (keputusan arsitektur area terkait).
+Gunakan Context Resolver dari `../shared/COMMON.md`. Baca `.workspace/context/PROJECT.md`, `CONTEXT.md`, dan `ADR.md` hanya jika tersedia. Universal mode memakai percakapan, file project, dan Git yang tersedia; jangan membuat context artifact.
 
 ## Phase 1 — Reproduce
 
 **Tight loop = skill ini.** Cari sinyal pass/fail cepat, deterministik, repeatable. Tanpa sinyal jelas → tidak ketemu akar masalah.
 
 **Opsi sinyal (prioritas):**
+
 1. Test di seam menjangkau bug (unit/integration/UI)
 2. API/HTTP repro (curl, script, replay request)
 3. Log/grep (logcat, console, crash trace)
@@ -41,21 +42,24 @@ Baca `.workspace/context/AGENT.md` (mental model modul, quick) + `.workspace/con
 
 **Non-deterministic** (repro <100%): target tingkatkan **reproduction rate** — loop trigger, paralelkan, tambah stress, incremental complexity.
 
+**Bukan bug** (expected behavior, env/config mismatch): stop, jelaskan temuan ke user, tutup diagnosis.
+
 ## Phase 2 — Minimise
 
-Perkecil reproduksi ke elemen minimal yang masih memicu bug. Memperkecil ruang hipotesis (Phase 3) + jadi regression test bersih (Phase 5).
+Perkecil reproduksi ke elemen minimal yang masih memicu bug. Memperkecil ruang hipotesis (Phase 3) dan menjadi dasar regression test (Phase 5–6).
 
-**Seam criteria** (lihat [VOCABULARY](../shared/VOCABULARY.md#arsitektur)):
-- **Good seam** — isolate komponen bug dari dependencies, mock interface kecil
-- **Bad/shallow seam** — mock banyak dependency / hanya test surface behavior
+**Seam criteria**: definisi good/bad seam lihat [Vocabulary](../shared/VOCABULARY.md#architecture).
 
 Bad seam → 2 kasus:
+
 1. **Seam minimal untuk debug bug ini** — extract method kecil, buat interface tipis (1-2 method), parameterize dependency. **Wajib buat sekarang**.
 2. **Seam arsitektur penuh** — port/adapter baru, restrukturisasi modul. **Bukan ranah bug fix**. Catat, serahkan ke `improve-architecture`.
 
-## Phase 3 — Hypothesise
+## Phase 3 — Form Hypotheses
 
 Buat daftar hipotesis, ranking paling mungkin. Tiap hipotesis wajib punya **prediksi konkret** — tidak bisa nyatakan prediksi = tebakan, buang/pertajam.
+
+Prioritaskan hipotesis dari perubahan terbaru: `git log`/diff sejak bug pertama muncul.
 
 Tampilkan ranking ke user → user sering re-rank dari konteks domain. No response → lanjut pakai ranking sendiri.
 
@@ -64,9 +68,10 @@ Tampilkan ranking ke user → user sering re-rank dari konteks domain. No respon
 Tiap probe map ke prediksi spesifik Phase 3. Ubah satu variabel per waktu.
 
 **Escape hatch**: max **3 siklus** hypothesis→instrument→gagal → stop, tanya user:
+
 > "3 hipotesis diuji, akar belum ketemu. Lanjut hipotesis baru, atau handoff ke agent/sesi lain?"
 
-- Lanjut → reset counter, max 3 lagi
+- Lanjut → reset counter (maks **2 ronde total**; habis → wajib handoff)
 - Handoff → arahkan ke `handoff`, simpan progres (phase terakhir, hipotesis eliminated, repro steps)
 
 **Prioritas alat**: Debugger/REPL (1 breakpoint > 10 log) → Targeted log di titik beda hipotesis (tag prefix unik `[DEBUG-xxxx]` untuk cleanup).
@@ -81,16 +86,16 @@ Test Phase 5 tetap di suite — cegah regress. Catat hipotesis benar di commit m
 
 **Maintenance**: test flaky/stale setelah refactor → `improve-architecture` health check.
 
-## Setelah Selesai
+## After Completion
 
 Tanya: "Apa mencegah bug ini dari awal?" Jawab melibatkan arsitektur (no good seam, coupling tersembunyi) → sarankan `improve-architecture` terpisah.
 
+Universal mode: tampilkan fase terakhir, akar masalah, perubahan, regression test, dan status diagnosis di respons. Project mode: update artifact hanya sesuai kontrak workflow yang tersedia.
+
 ## AFK
 
-Skill auto-trigger tapi Step 0 stop kalau user tidak respons → tidak jalan saat AFK.
+Tidak jalan otomatis (`disable-model-invocation: true`) — selalu butuh invoke user atau route eksplisit. Rekomendasi `improve-architecture` saat sesi berjalan → catat di commit message/log, berhenti; user invoke manual nanti.
 
-Rekomendasi `improve-architecture` saat AFK → catat di commit message/log, berhenti. User invoke manual nanti.
+## Other Suggested Skills
 
-## Saran Skills Lain
-
-[Cross-ref](../shared/COMMON.md#saran-skills-lain) — `bug-diagnosis` temuan arsitektur → `improve-architecture`.
+[Workflow](../WORKFLOW.md) — `bug-diagnosis` temuan arsitektur → `improve-architecture`.

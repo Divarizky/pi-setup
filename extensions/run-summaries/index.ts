@@ -53,11 +53,12 @@ export default function (pi: ExtensionAPI) {
   const updateStatus = () => {
     const pending = summaryQueue?.pendingCount ?? 0;
     const active = activeSummaries.size;
-    const label = active > 0
-      ? pending > 0
-        ? `▪ summarizing run… (${pending} queued)`
-        : "▪ summarizing run…"
-      : undefined;
+    const label =
+      active > 0
+        ? pending > 0
+          ? `▪ summarizing run… (${pending} queued)`
+          : "▪ summarizing run…"
+        : undefined;
     statusContext?.ui.setStatus(
       STATUS_KEY,
       label ? statusContext.ui.theme.fg("muted", label) : undefined,
@@ -100,15 +101,17 @@ export default function (pi: ExtensionAPI) {
     // Entry IDs are stable for a run and distinguish consecutive runs even
     // when they share the same baseline leaf.
     const runKey = entries.map((entry) => entry.id).join(",");
-    const branchAlreadyHasRecap = ctx.sessionManager.getBranch().some(
-      (entry) =>
-        entry.type === "custom" &&
-        entry.customType === RECAP_ENTRY_TYPE &&
-        typeof entry.data === "object" &&
-        entry.data !== null &&
-        "runKey" in entry.data &&
-        entry.data.runKey === runKey,
-    );
+    const branchAlreadyHasRecap = ctx.sessionManager
+      .getBranch()
+      .some(
+        (entry) =>
+          entry.type === "custom" &&
+          entry.customType === RECAP_ENTRY_TYPE &&
+          typeof entry.data === "object" &&
+          entry.data !== null &&
+          "runKey" in entry.data &&
+          entry.data.runKey === runKey,
+      );
     if (branchAlreadyHasRecap || scheduledRunKeys.has(runKey)) return;
     scheduledRunKeys.add(runKey);
 
@@ -133,7 +136,8 @@ export default function (pi: ExtensionAPI) {
             controller.signal.aborted ||
             !sessionActive ||
             generation !== sessionGeneration
-          ) return;
+          )
+            return;
 
           const currentModel = ctx.model;
           if (
@@ -186,19 +190,22 @@ export default function (pi: ExtensionAPI) {
           !sessionActive ||
           generation !== sessionGeneration ||
           controller.signal.aborted
-        ) return;
+        )
+          return;
 
         // Re-check immediately before append. This closes the race where two
         // extension instances summarize the same run concurrently.
-        const recapAlreadyAppended = ctx.sessionManager.getBranch().some(
-          (entry) =>
-            entry.type === "custom" &&
-            entry.customType === RECAP_ENTRY_TYPE &&
-            typeof entry.data === "object" &&
-            entry.data !== null &&
-            "runKey" in entry.data &&
-            entry.data.runKey === runKey,
-        );
+        const recapAlreadyAppended = ctx.sessionManager
+          .getBranch()
+          .some(
+            (entry) =>
+              entry.type === "custom" &&
+              entry.customType === RECAP_ENTRY_TYPE &&
+              typeof entry.data === "object" &&
+              entry.data !== null &&
+              "runKey" in entry.data &&
+              entry.data.runKey === runKey,
+          );
         if (recapAlreadyAppended) return;
         pi.appendEntry(RECAP_ENTRY_TYPE, { ...recap, runKey });
       })();

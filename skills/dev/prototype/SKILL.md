@@ -1,69 +1,141 @@
 ---
 name: prototype
-description: "Buat prototipe throwaway untuk jawab pertanyaan desain — eksplorasi state/logic lewat TUI terminal, atau perbandingan varian UI. Pakai saat user mau validasi state model, eksplorasi edge case logic, atau bandingkan opsi layout sebelum commit ke implementasi."
+description: "Hasilkan keputusan desain/logic dalam Markdown sebelum implementasi. Gunakan prototype executable hanya jika user meminta eksplisit."
 disable-model-invocation: true
 ---
 
-# Prototipe
+# Prototype
 
-**Kode throwaway yang jawab satu pertanyaan.** Pertanyaan nentuin bentuknya.
+**Decision-first, bukan code-first.** Skill ini menjawab satu pertanyaan desain atau logic dan menghasilkan decision capture dalam Markdown. Jangan membuat TUI, UI, test, persistence, atau production code kecuali user secara eksplisit meminta prototype executable.
 
-Cabang otomatis dari pertanyaan user:
+## Default Output
 
-| Pertanyaan | Cabang |
-|---|---|
-| "Apakah state machine / reducer ini handle edge case X?" | `docs/LOGIC.md` — terminal TUI |
-| "Gimana kalo tampilannya beda?" | `docs/UI.md` — variant switcher |
+Output bergantung pada mode ([deteksi mode](../shared/COMMON.md#prerequisites): marker `.workspace/project-meta.md` tersedia → Project mode; tidak tersedia → Universal mode):
 
-Ambigu & user tidak reachable → default LOGIC (backend-heavy) atau UI (frontend-heavy). State assumption di atas prototipe.
+- Project mode: tulis decision capture ke `.workspace/.scratch/<slug>/prototype-decision.md`.
+- Universal mode: tampilkan decision capture langsung sebagai pesan chat; **jangan membuat file `.md`**.
 
-## Prasyarat
+Jangan mengubah production code dalam skill ini.
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — warning "tanpa setup, context terbatas".
+## Design Brief and Review Gate
 
-## Aturan Universal
-
-1. **Throwaway sejak hari pertama, jelas tandanya.** Nama file/fungsi/route mengandung `prototype` atau `_proto`. Jangan samar jadi production code.
-2. **Satu command untuk run.** Apapun task runner — `dart run`, `flutter run`, `npm run`, `swift run`, `python`, `bun`. User tinggal ketik tanpa mikir path.
-3. **Tanpa persistence.** State in-memory. Persistence cuma kalau pertanyaan eksplisit tentang DB — pakai scratch DB/file `PROTOTYPE-wipe-me`.
-4. **Skip polish.** Tanpa test, tanpa error handling di luar yang bikin runnable, tanpa abstraksi. Poin: belajar secepat mungkin.
-5. **Surface state.** Setiap action (LOGIC) atau switch variant (UI), tampilkan state penuh — user lihat apa yang berubah.
-6. **Capture saat selesai.** Validated decision → fold ke real code. Prototipe → commit ke throwaway branch (jangan main). Jawaban → tulis di `.workspace/.scratch/<slug>/prototype-decision.md`.
-
-## Format Capture
+Sebelum analisis, buat brief singkat dan minta persetujuan user. Jangan mulai dari asumsi yang belum terlihat.
 
 ```markdown
-# Prototype Decision — <nama>
+# Prototype Brief — <name>
 
-**Pertanyaan:** <satu kalimat>
-**Cabang:** LOGIC | UI
-**Jawaban:** <kesimpulan>
-**Tanggal:** <YYYY-MM-DD>
-**Branch prototipe:** <nama branch>
-
-**Yang divalidasi:** <bagian yang diambil ke real code>
-**Yang dibuang:** <bagian yang di-throwaway>
+**Question:** <satu pertanyaan yang harus dijawab>
+**Hypothesis:** <jawaban/dugaan yang ingin diuji>
+**Branch:** LOGIC | UI
+**Context:** <screen, module, data, dan sumber yang sudah tersedia>
+**Success criteria:** <sinyal observable yang membuktikan jawaban>
+**Constraints:** <runtime, platform, accessibility, waktu, atau batasan lain>
+**Out of scope:** <hal yang sengaja tidak diuji>
+**Research needed:** <none atau pertanyaan/sumber yang perlu dicek>
 ```
 
-## Anti-pola
+Aturan gate:
 
-- **Test** — prototipe butuh test bukan prototipe lagi
-- **Generalisasi** — "nanti kalo perlu X tinggal tambah" — stop, jawab satu pertanyaan
-- **Campur logic & TUI** (LOGIC) — pure module harus bisa di-lift tanpa terminal code
-- **Varian beda warna doang** (UI) — beda struktur, bukan beda skin
-- **Promote langsung ke production** — prototipe tanpa test/error handling/abstraksi. Tulis ulang proper saat fold.
+1. Brief harus menjawab **satu** pertanyaan dan punya success criteria yang bisa diamati.
+2. Jika `Research needed` tidak kosong, lakukan riset terfokus dan rangkum temuan + sumber sebelum menyusun keputusan.
+3. Tampilkan brief dan minta konfirmasi eksplisit (gunakan `ask_user` bila tersedia). Revisi brief bila user memberi feedback.
+4. Setelah brief disetujui, lakukan analisis decision-first. Jangan membuat kode executable tanpa opt-in eksplisit.
+5. Satu sesi hanya mengerjakan satu prototype question.
 
-## Kapan Pakai vs Skip
+## Branch Selection
 
-| Situasi | Aksi |
-|---|---|
-| State machine rawan edge case | LOGIC |
-| API contract belum fix | LOGIC (mock + terminal) |
-| Layout UI belum decided | UI |
-| Task sederhana, behavior jelas | Skip — `implement` langsung |
-| Refactor code existing | Skip — `improve-architecture` |
-| Persistensi / network call real | Skip — prototipe tanpa persistence |
+| Pertanyaan                                               | Branch                                          |
+| -------------------------------------------------------- | ----------------------------------------------- |
+| "Apakah state machine / reducer ini handle edge case X?" | `LOGIC` — analisis state, transition, invariant |
+| "Gimana kalau tampilannya beda?"                         | `UI` — analisis varian layout dan interaction   |
 
-## Saran Skills Lain
+Jika ambigu, default ke `LOGIC` untuk pertanyaan backend/state atau `UI` untuk frontend/layout, lalu tuliskan asumsi di brief.
 
-[Cross-ref](../shared/COMMON.md#saran-skills-lain) — Validasi desain sebelum implement → `prototype` dulu, baru `to-issues`/`implement`.
+## Decision-First Workflow
+
+1. **Brief** — tulis question, hypothesis, criteria, context, dan batasan.
+2. **Approval** — minta user menyetujui brief.
+3. **Research/context review** — baca code, docs, data shape, design system, dan constraint yang relevan.
+4. **Compare options** — susun opsi, evidence, trade-off, edge case, accessibility/responsive concern, dan risiko.
+5. **Recommend** — pilih `validated`, `inconclusive`, atau `rejected` berdasarkan success criteria.
+6. **Capture** — Project mode menulis hasil ke `prototype-decision.md`; Universal mode menampilkannya sebagai pesan chat tanpa membuat file.
+7. **Phase exit** — sarankan skill berikutnya, tetapi jangan otomatis menjalankannya.
+
+## Executable Prototype Is Opt-In
+
+Boleh membuat prototype runnable hanya jika user meminta eksplisit, misalnya:
+
+- “buat prototype runnable”
+- “buat TUI untuk validasi state”
+- “buat variant UI yang bisa dicoba”
+
+Jika diaktifkan:
+
+- tetap throwaway dan nama file/fungsi/route harus mengandung `prototype` atau `_proto`;
+- tetap tanpa persistence dan tanpa production code;
+- gunakan satu command untuk menjalankan;
+- tampilkan state penuh setelah setiap action atau switch variant;
+- setelah user review, Project mode menulis decision Markdown; Universal mode menampilkannya di chat; lalu berhenti.
+
+## Capture Format
+
+```markdown
+# Prototype Decision — <name>
+
+**Question:** <satu kalimat>
+**Hypothesis:** <dugaan sebelum analisis>
+**Branch:** LOGIC | UI
+**Status:** validated | inconclusive | rejected
+**Success criteria:** <sinyal observable>
+**Evidence:** <observasi dan sumber, bukan asumsi>
+**Options considered:** <opsi + trade-off>
+**Decision:** <kesimpulan>
+**Date:** <DD-MM-YYYY>
+
+**Validated for real code:** <bagian yang boleh dibawa ke implementasi>
+**Rejected/discarded:** <bagian yang dibuang dan alasannya>
+**Design requirements carried forward:** <behavior, state, hierarchy, atau constraint>
+**Open risks:** <risiko yang belum terjawab atau `none`>
+**Suggested next skill:** `implement` | `to-tasks` | `improve-architecture` | `prototype` | `ask-me` | `none`
+```
+
+## Phase Exit
+
+Setelah decision capture selesai:
+
+1. Project mode: tampilkan ringkasan keputusan dan path `.workspace/.scratch/<slug>/prototype-decision.md`. Universal mode: tampilkan ringkasan keputusan langsung di chat.
+2. Sarankan skill berikutnya berdasarkan hasil:
+   - `implement` — keputusan tervalidasi dan siap dibuat;
+   - `to-tasks` — keputusan perlu dipecah menjadi task;
+   - `improve-architecture` — keputusan membutuhkan refactor/desain teknis;
+   - `prototype` — hasil inconclusive dan perlu eksplorasi ulang;
+   - `ask-me` — requirement masih ambigu;
+   - `none` — tidak ada tindakan lanjutan.
+3. Jangan auto-invoke skill tersebut; tunggu pilihan eksplisit user.
+4. Setelah capture selesai, berhenti. Universal mode tidak membuat file decision.
+
+Jika success criteria belum terjawab, status wajib `inconclusive`. Jika user menolak hasil, status `rejected` dan alasan penolakan harus dicatat.
+
+## When to Use or Skip
+
+| Situasi                            | Aksi                                                            |
+| ---------------------------------- | --------------------------------------------------------------- |
+| State machine rawan edge case      | Pakai `prototype` decision-first, branch `LOGIC`                |
+| API contract belum fix             | Pakai `prototype` untuk membandingkan contract dan failure mode |
+| Layout UI belum decided            | Pakai `prototype` decision-first, branch `UI`                   |
+| User perlu melihat interaksi nyata | Tanyakan/konfirmasi executable prototype secara eksplisit       |
+| Task sederhana, behavior jelas     | Skip — `implement` langsung                                     |
+| Refactor code existing             | Skip — `improve-architecture`                                   |
+| Persistensi/network real           | Skip — `prototype` tidak menjalankan dependency real            |
+
+## Anti-Patterns
+
+- Langsung membuat kode sebelum brief disetujui.
+- Menganggap prototype harus selalu berupa TUI/UI runnable.
+- Menambah test, persistence, atau production integration.
+- Membuat lebih dari satu pertanyaan/keputusan dalam satu prototype.
+- Auto-invoke `implement` atau skill lain setelah decision capture.
+
+## Other Suggested Skills
+
+[Workflow](../WORKFLOW.md) — Validasi desain sebelum implement → `prototype` decision-first, lalu pilih `to-tasks` atau `implement` setelah user menyetujui keputusan.

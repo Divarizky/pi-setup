@@ -1,43 +1,65 @@
-import type { Theme } from "@earendil-works/pi-coding-agent"
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
   truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
-} from "@earendil-works/pi-tui"
-import type { SubagentSnapshot, TranscriptItem } from "../domain.ts"
+} from "@earendil-works/pi-tui";
+import type { SubagentSnapshot, TranscriptItem } from "../domain.ts";
 
 const ANSI_PATTERN =
-  /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g
+  /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
+
+const renderCache = new WeakMap<
+  SubagentSnapshot,
+  {
+    readonly width: number;
+    readonly theme: Theme;
+    readonly key: string;
+    readonly lines: string[];
+  }
+>();
 
 export function sanitizeText(text: string): string {
   return text
     .replace(ANSI_PATTERN, "")
     .replaceAll("\t", "  ")
-    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
 }
 
-function renderUserText(theme: Theme, text: string, width: number, out: string[]) {
-  const clean = sanitizeText(text).trim()
-  if (!clean) return
-  const wrapped = wrapTextWithAnsi(clean, Math.max(10, width - 2))
+function renderUserText(
+  theme: Theme,
+  text: string,
+  width: number,
+  out: string[],
+) {
+  const clean = sanitizeText(text).trim();
+  if (!clean) return;
+  const wrapped = wrapTextWithAnsi(clean, Math.max(10, width - 2));
   for (let i = 0; i < wrapped.length; i++) {
-    const prefix = i === 0 ? theme.fg("accent", "> ") : "  "
-    out.push(truncateToWidth(prefix + theme.fg("userMessageText", wrapped[i]), width))
+    const prefix = i === 0 ? theme.fg("accent", "> ") : "  ";
+    out.push(
+      truncateToWidth(prefix + theme.fg("userMessageText", wrapped[i]), width),
+    );
   }
 }
 
-function renderThinking(theme: Theme, text: string, width: number, out: string[]) {
-  const reasoning = sanitizeText(text).trim()
-  if (!reasoning) return
-  const prefix = theme.fg("dim", "~ ")
-  const wrapped = wrapTextWithAnsi(reasoning, Math.max(10, width - 2))
+function renderThinking(
+  theme: Theme,
+  text: string,
+  width: number,
+  out: string[],
+) {
+  const reasoning = sanitizeText(text).trim();
+  if (!reasoning) return;
+  const prefix = theme.fg("dim", "~ ");
+  const wrapped = wrapTextWithAnsi(reasoning, Math.max(10, width - 2));
   for (let i = 0; i < wrapped.length; i++) {
     out.push(
       truncateToWidth(
         (i === 0 ? prefix : "  ") + theme.fg("muted", theme.italic(wrapped[i])),
         width,
       ),
-    )
+    );
   }
 }
 
@@ -49,18 +71,23 @@ function renderAssistantItem(
 ) {
   for (const part of item.parts) {
     if (part.type === "text") {
-      const text = sanitizeText(part.text).trim()
-      if (!text) continue
-      out.push(...wrapTextWithAnsi(text, width))
+      const text = sanitizeText(part.text).trim();
+      if (!text) continue;
+      out.push(...wrapTextWithAnsi(text, width));
     } else if (part.type === "thinking") {
-      renderThinking(theme, part.redacted ? "[redacted reasoning]" : part.text, width, out)
+      renderThinking(
+        theme,
+        part.redacted ? "[redacted reasoning]" : part.text,
+        width,
+        out,
+      );
     } else if (part.type === "toolCall") {
-      const preview = part.argsPreview ? sanitizeText(part.argsPreview) : ""
+      const preview = part.argsPreview ? sanitizeText(part.argsPreview) : "";
       const line =
         theme.fg("muted", "→ ") +
         theme.fg("toolTitle", part.name) +
-        (preview && preview !== "{}" ? theme.fg("dim", ` ${preview}`) : "")
-      out.push(truncateToWidth(line, width))
+        (preview && preview !== "{}" ? theme.fg("dim", ` ${preview}`) : "");
+      out.push(truncateToWidth(line, width));
     }
   }
 }
@@ -72,13 +99,15 @@ function renderToolResultItem(
   out: string[],
 ) {
   const firstLine =
-    sanitizeText(item.outputPreview ?? "").split("\n").find((line) => line.trim()) ?? ""
+    sanitizeText(item.outputPreview ?? "")
+      .split("\n")
+      .find((line) => line.trim()) ?? "";
   const state = item.isError
     ? theme.fg("error", "error")
-    : theme.fg("success", "done")
-  const name = theme.fg("toolTitle", sanitizeText(item.name))
-  const preview = theme.fg("dim", firstLine || "(no output)")
-  out.push(truncateToWidth(`  ${name} · ${state} · ${preview}`, width))
+    : theme.fg("success", "done");
+  const name = theme.fg("toolTitle", sanitizeText(item.name));
+  const preview = theme.fg("dim", firstLine || "(no output)");
+  out.push(truncateToWidth(`  ${name} · ${state} · ${preview}`, width));
 }
 
 export function buildTranscriptLines(
@@ -86,50 +115,70 @@ export function buildTranscriptLines(
   width: number,
   theme: Theme,
 ): string[] {
-  const out: string[] = []
+  const key = [
+    snap.metrics.lastEventAt,
+    snap.transcript.length,
+    snap.liveAssistant?.text.length ?? 0,
+    snap.liveAssistant?.thinking.length ?? 0,
+    snap.liveTools.length,
+    snap.queued.length,
+    snap.finalText.length,
+  ].join(":");
+  const cached = renderCache.get(snap);
+  if (
+    cached &&
+    cached.width === width &&
+    cached.theme === theme &&
+    cached.key === key
+  ) {
+    return cached.lines;
+  }
+
+  const out: string[] = [];
 
   for (const item of snap.transcript) {
-    const before = out.length
+    const before = out.length;
     if (item.kind === "user") {
-      renderUserText(theme, item.text, width, out)
+      renderUserText(theme, item.text, width, out);
     } else if (item.kind === "assistant") {
-      renderAssistantItem(theme, item, width, out)
+      renderAssistantItem(theme, item, width, out);
     } else {
-      renderToolResultItem(theme, item, width, out)
+      renderToolResultItem(theme, item, width, out);
     }
-    if (out.length > before) out.push("")
+    if (out.length > before) out.push("");
   }
-  while (out.length > 0 && out[out.length - 1] === "") out.pop()
+  while (out.length > 0 && out[out.length - 1] === "") out.pop();
 
   if (snap.liveAssistant) {
-    const { thinking, text } = snap.liveAssistant
-    const before = out.length
-    if (out.length > 0) out.push("")
-    if (thinking.trim()) renderThinking(theme, thinking, width, out)
-    if (text.trim()) out.push(...wrapTextWithAnsi(sanitizeText(text).trim(), width))
-    if (out.length === before + 1) out.pop()
+    const { thinking, text } = snap.liveAssistant;
+    const before = out.length;
+    if (out.length > 0) out.push("");
+    if (thinking.trim()) renderThinking(theme, thinking, width, out);
+    if (text.trim())
+      out.push(...wrapTextWithAnsi(sanitizeText(text).trim(), width));
+    if (out.length === before + 1) out.pop();
   }
 
   for (const tool of snap.liveTools) {
-    if (out.length > 0) out.push("")
+    if (out.length > 0) out.push("");
     const marker = tool.done
       ? tool.isError
         ? theme.fg("error", "error")
         : theme.fg("success", "done")
-      : theme.fg("warning", "running")
-    let line = `${theme.fg("toolTitle", tool.name)} · ${marker}`
-    const preview = tool.outputPreview && sanitizeText(tool.outputPreview)
-    if (preview) line += theme.fg("dim", ` · ${preview}`)
-    out.push(truncateToWidth(line, width))
+      : theme.fg("warning", "running");
+    let line = `${theme.fg("toolTitle", tool.name)} · ${marker}`;
+    const preview = tool.outputPreview && sanitizeText(tool.outputPreview);
+    if (preview) line += theme.fg("dim", ` · ${preview}`);
+    out.push(truncateToWidth(line, width));
   }
 
   for (const message of snap.queued) {
-    if (out.length > 0) out.push("")
-    const prefix = theme.fg("warning", `> [queued ${message.kind}] `)
+    if (out.length > 0) out.push("");
+    const prefix = theme.fg("warning", `> [queued ${message.kind}] `);
     const wrapped = wrapTextWithAnsi(
       sanitizeText(message.text),
       Math.max(10, width - visibleWidth(prefix)),
-    )
+    );
     for (let i = 0; i < wrapped.length; i++) {
       out.push(
         truncateToWidth(
@@ -137,9 +186,10 @@ export function buildTranscriptLines(
             theme.fg("muted", wrapped[i]),
           width,
         ),
-      )
+      );
     }
   }
 
-  return out
+  renderCache.set(snap, { width, theme, key, lines: out });
+  return out;
 }

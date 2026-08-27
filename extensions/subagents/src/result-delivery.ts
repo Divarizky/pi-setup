@@ -6,22 +6,22 @@
  */
 
 export function createDeferredResultDelivery<T extends { id: string }>() {
-  const pending = new Map<string, T>()
+  const pending = new Map<string, T>();
 
   return {
     defer(result: T) {
-      pending.set(result.id, result)
+      pending.set(result.id, result);
     },
     consume(ids: Iterable<string>) {
-      for (const id of ids) pending.delete(id)
+      for (const id of ids) pending.delete(id);
     },
     drain() {
-      const results = [...pending.values()]
-      pending.clear()
-      return results
+      const results = [...pending.values()];
+      pending.clear();
+      return results;
     },
     clear() {
-      pending.clear()
+      pending.clear();
     },
-  }
+  };
 }

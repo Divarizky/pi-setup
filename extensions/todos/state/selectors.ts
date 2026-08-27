@@ -7,49 +7,57 @@ import type { TaskState } from "./store.ts";
 
 /** Tasks excluding deleted tombstones — the canonical "what's visible". */
 export function selectVisibleTasks(state: TaskState): readonly Task[] {
-	return state.tasks.filter((t) => t.status !== "deleted");
+  return state.tasks.filter((t) => t.status !== "deleted");
 }
 
 export interface TasksByStatus {
-	pending: readonly Task[];
-	inProgress: readonly Task[];
-	completed: readonly Task[];
+  pending: readonly Task[];
+  inProgress: readonly Task[];
+  completed: readonly Task[];
 }
 
 export function selectTasksByStatus(state: TaskState): TasksByStatus {
-	const visible = selectVisibleTasks(state);
-	return {
-		pending: visible.filter((t) => t.status === "pending"),
-		inProgress: visible.filter((t) => t.status === "in_progress"),
-		completed: visible.filter((t) => t.status === "completed"),
-	};
+  const visible = selectVisibleTasks(state);
+  return {
+    pending: visible.filter((t) => t.status === "pending"),
+    inProgress: visible.filter((t) => t.status === "in_progress"),
+    completed: visible.filter((t) => t.status === "completed"),
+  };
 }
 
 export interface TodoCounts {
-	total: number;
-	pending: number;
-	inProgress: number;
-	completed: number;
+  total: number;
+  pending: number;
+  inProgress: number;
+  completed: number;
 }
 
 export function selectTodoCounts(state: TaskState): TodoCounts {
-	const groups = selectTasksByStatus(state);
-	return {
-		total: groups.pending.length + groups.inProgress.length + groups.completed.length,
-		pending: groups.pending.length,
-		inProgress: groups.inProgress.length,
-		completed: groups.completed.length,
-	};
+  const groups = selectTasksByStatus(state);
+  return {
+    total:
+      groups.pending.length +
+      groups.inProgress.length +
+      groups.completed.length,
+    pending: groups.pending.length,
+    inProgress: groups.inProgress.length,
+    completed: groups.completed.length,
+  };
 }
 
 /** Any visible task carries a `blockedBy` reference → show `#id` prefixes. */
 export function selectShowTaskIds(state: TaskState): boolean {
-	return selectVisibleTasks(state).some((t) => t.blockedBy && t.blockedBy.length > 0);
+  return selectVisibleTasks(state).some(
+    (t) => t.blockedBy && t.blockedBy.length > 0,
+  );
 }
 
 /** Resolve a task's subject by id for renderCall's accent label. */
-export function selectTaskSubjectById(state: TaskState, id: number): string | undefined {
-	return state.tasks.find((t) => t.id === id)?.subject;
+export function selectTaskSubjectById(
+  state: TaskState,
+  id: number,
+): string | undefined {
+  return state.tasks.find((t) => t.id === id)?.subject;
 }
 
 /**
@@ -59,37 +67,51 @@ export function selectTaskSubjectById(state: TaskState, id: number): string | un
  * summary row.
  */
 export interface OverlayLayout {
-	visible: readonly Task[];
-	hiddenCompleted: number;
-	truncatedTail: number;
+  visible: readonly Task[];
+  hiddenCompleted: number;
+  truncatedTail: number;
 }
 
-export function selectOverlayLayout(state: TaskState, budget: number): OverlayLayout {
-	const all = selectVisibleTasks(state);
-	if (all.length <= budget) {
-		return { visible: all, hiddenCompleted: 0, truncatedTail: 0 };
-	}
-	const innerBudget = budget - 1;
-	const nonCompleted = all.filter((t) => t.status !== "completed");
-	const totalCompleted = all.length - nonCompleted.length;
-	if (nonCompleted.length <= innerBudget) {
-		const kept = new Set<Task>(nonCompleted);
-		for (const t of all) {
-			if (kept.size >= innerBudget) break;
-			if (t.status === "completed") kept.add(t);
-		}
-		const visible = all.filter((t) => kept.has(t));
-		const shownCompleted = visible.filter((t) => t.status === "completed").length;
-		return { visible, hiddenCompleted: totalCompleted - shownCompleted, truncatedTail: 0 };
-	}
-	const visible = nonCompleted.slice(0, innerBudget);
-	const truncatedTail = nonCompleted.length - innerBudget;
-	return { visible, hiddenCompleted: totalCompleted, truncatedTail };
+export function selectOverlayLayout(
+  state: TaskState,
+  budget: number,
+): OverlayLayout {
+  const all = selectVisibleTasks(state);
+  if (all.length <= budget) {
+    return { visible: all, hiddenCompleted: 0, truncatedTail: 0 };
+  }
+  const innerBudget = budget - 1;
+  const nonCompleted = all.filter((t) => t.status !== "completed");
+  const totalCompleted = all.length - nonCompleted.length;
+  if (nonCompleted.length <= innerBudget) {
+    const kept = new Set<Task>(nonCompleted);
+    for (const t of all) {
+      if (kept.size >= innerBudget) break;
+      if (t.status === "completed") kept.add(t);
+    }
+    const visible = all.filter((t) => kept.has(t));
+    const shownCompleted = visible.filter(
+      (t) => t.status === "completed",
+    ).length;
+    return {
+      visible,
+      hiddenCompleted: totalCompleted - shownCompleted,
+      truncatedTail: 0,
+    };
+  }
+  const visible = nonCompleted.slice(0, innerBudget);
+  const truncatedTail = nonCompleted.length - innerBudget;
+  return { visible, hiddenCompleted: totalCompleted, truncatedTail };
 }
 
 /** Any visible task pending/in_progress → heading icon/color choice. */
 export function selectHasActive(state: TaskState): boolean {
-	return selectVisibleTasks(state).some((t) => t.status === "in_progress" || t.status === "pending");
+  return selectVisibleTasks(state).some(
+    (t) => t.status === "in_progress" || t.status === "pending",
+  );
 }
 
-export const ACTIVE_STATUSES: ReadonlySet<TaskStatus> = new Set(["pending", "in_progress"]);
+export const ACTIVE_STATUSES: ReadonlySet<TaskStatus> = new Set([
+  "pending",
+  "in_progress",
+]);

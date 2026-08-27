@@ -67,16 +67,17 @@ function capped(text: string, maxBytes: number, notice: string) {
 }
 
 export function redactSecrets(text: string) {
-  return text
-    // PEM/private-key material is multiline and must be removed as a block.
-    .replace(
-      /-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/gi,
-      "[REDACTED PRIVATE KEY]",
-    )
-    // Credentials embedded in URLs are easy to overlook in command output.
-    .replace(/(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, "$1[REDACTED]@")
-    // Authorization headers and common provider token formats.
-    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
+  return (
+    text
+      // PEM/private-key material is multiline and must be removed as a block.
+      .replace(
+        /-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/gi,
+        "[REDACTED PRIVATE KEY]",
+      )
+      // Credentials embedded in URLs are easy to overlook in command output.
+      .replace(/(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, "$1[REDACTED]@")
+      // Authorization headers and common provider token formats.
+      .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
       .replace(
         /\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,}|npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,})\b/g,
         "[REDACTED TOKEN]",
@@ -89,7 +90,8 @@ export function redactSecrets(text: string) {
       .replace(
         /([?&](?:api[_-]?key|access[_-]?token|key|secret|token)=)[^&#\s]+/gi,
         "$1[REDACTED]",
-      );
+      )
+  );
 }
 
 function sanitizeValue(value: unknown, key?: string, depth = 0): unknown {

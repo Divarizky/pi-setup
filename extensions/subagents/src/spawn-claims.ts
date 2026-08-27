@@ -1,25 +1,29 @@
-import { createHash } from "node:crypto"
-import type { BackendName, SubagentMode } from "./domain.ts"
+import { createHash } from "node:crypto";
+import type {
+  BackendName,
+  LeadAgentProposalId,
+  SubagentJobId,
+  SubagentMode,
+} from "./domain.ts";
 
 export interface SpawnClaim {
-  readonly id: string
-  readonly title: string
-  readonly backend: BackendName
-  readonly mode: SubagentMode
-  readonly cwd: string
-  readonly branch?: string
+  /** Compatibility field name; this is the claimed SubagentJobId. */
+  readonly id: SubagentJobId;
+  readonly title: string;
+  readonly backend: BackendName;
+  readonly mode: SubagentMode;
+  readonly cwd: string;
+  readonly branch?: string;
 }
 
 export function createSpawnFingerprint(options: {
-  readonly backend: BackendName
-  readonly mode: SubagentMode
-  readonly sourceCwd: string
-  readonly prompt: string
-  readonly proposalId?: string
+  readonly backend: BackendName;
+  readonly mode: SubagentMode;
+  readonly sourceCwd: string;
+  readonly prompt: string;
+  readonly proposalId?: LeadAgentProposalId;
 }) {
-  return createHash("sha256")
-    .update(JSON.stringify(options))
-    .digest("hex")
+  return createHash("sha256").update(JSON.stringify(options)).digest("hex");
 }
 
 /**
@@ -28,19 +32,19 @@ export function createSpawnFingerprint(options: {
  * until settlement so repeated model calls reuse the same job.
  */
 export class SpawnClaimRegistry {
-  private readonly claims = new Map<string, SpawnClaim>()
+  private readonly claims = new Map<string, SpawnClaim>();
 
   get(fingerprint: string) {
-    return this.claims.get(fingerprint)
+    return this.claims.get(fingerprint);
   }
 
   set(fingerprint: string, claim: SpawnClaim) {
-    this.claims.set(fingerprint, claim)
+    this.claims.set(fingerprint, claim);
   }
 
-  release(jobId: string) {
+  release(jobId: SubagentJobId) {
     for (const [fingerprint, claim] of this.claims) {
-      if (claim.id === jobId) this.claims.delete(fingerprint)
+      if (claim.id === jobId) this.claims.delete(fingerprint);
     }
   }
 }

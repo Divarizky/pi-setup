@@ -15,7 +15,8 @@ import {
   Key,
   matchesKey,
   Text,
-  truncateToWidth,
+  visibleWidth,
+  wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { Cause, Effect, Exit } from "effect";
 import { Type, type Static } from "typebox";
@@ -80,38 +81,9 @@ interface DisplayOption {
 }
 
 function wrapText(text: string, width: number): string[] {
-  const lines: string[] = [];
-  for (const paragraph of text.split("\n")) {
-    // ponytail: chunk by code points, not graphemes; upgrade to Intl.Segmenter for ZWJ emoji
-    const words = paragraph
-      .split(/\s+/)
-      .filter(Boolean)
-      .flatMap((w) => {
-        const chars = Array.from(w);
-        if (chars.length <= width) return [w];
-        const chunks: string[] = [];
-        for (let i = 0; i < chars.length; i += width) {
-          chunks.push(chars.slice(i, i + width).join(""));
-        }
-        return chunks;
-      });
-    if (words.length === 0) {
-      lines.push("");
-      continue;
-    }
-    let current = "";
-    for (const word of words) {
-      const candidate = current ? `${current} ${word}` : word;
-      if (candidate.length > width && current) {
-        lines.push(current);
-        current = word;
-      } else {
-        current = candidate;
-      }
-    }
-    if (current) lines.push(current);
-  }
-  return lines;
+  // Use terminal-cell width and grapheme-aware wrapping so wide characters and
+  // compound emoji do not overflow into the truncation guard below.
+  return wrapTextWithAnsi(text, Math.max(1, width));
 }
 
 export default function askUser(pi: ExtensionAPI) {
@@ -158,7 +130,7 @@ export default function askUser(pi: ExtensionAPI) {
 
       const allOptions: DisplayOption[] = [
         ...params.options,
-        { label: "Tulis jawaban sendiri…", isOther: true },
+        { label: "Tulis jawaban sendiri...", isOther: true },
       ];
       const compact = params.compact === true;
 
@@ -167,6 +139,7 @@ export default function askUser(pi: ExtensionAPI) {
           let optionIndex = 0;
           let editMode = false;
           let cachedLines: string[] | undefined;
+          let cachedWidth: number | undefined;
 
           let settled = false;
 
@@ -273,27 +246,29 @@ export default function askUser(pi: ExtensionAPI) {
           }
 
           function render(width: number): string[] {
-            if (cachedLines) return cachedLines;
+            if (cachedLines && cachedWidth === width) return cachedLines;
 
             const lines: string[] = [];
-            const add = (s: string) => lines.push(truncateToWidth(s, width));
+            // Wrapping is the normal path. This final wrapper only protects the
+            // component contract for styled/static lines and never adds ellipsis.
+            const add = (s: string) => {
+              lines.push(...wrapTextWithAnsi(s, Math.max(1, width)));
+            };
 
             const title = compact ? " Pilih " : " Question ";
             add(
               theme.fg(
                 "accent",
-                `─${title}${"─".repeat(Math.max(0, width - title.length - 1))}`,
+                `-${title}${"-".repeat(Math.max(0, width - title.length - 1))}`,
               ),
             );
-            const questionLines = wrapText(
+
+            // Compact mode changes the layout, not the amount of information:
+            // the complete question must remain visible in every mode.
+            for (const line of wrapText(
               params.question,
-              Math.max(10, width - 2),
-            );
-            const shownQuestion =
-              compact && questionLines.length > 1
-                ? [`${questionLines[0].slice(0, -1)}…`]
-                : questionLines;
-            for (const line of shownQuestion) {
+              Math.max(1, width - 1),
+            )) {
               add(` ${theme.fg("text", theme.bold(line))}`);
             }
             if (!compact) lines.push("");
@@ -301,20 +276,36 @@ export default function askUser(pi: ExtensionAPI) {
             for (let i = 0; i < allOptions.length; i++) {
               const opt = allOptions[i];
               const selected = i === optionIndex;
-              const prefix = selected ? theme.fg("accent", " ❯ ") : "   ";
+              const prefix = selected ? theme.fg("accent", " > ") : "   ";
+              const prefixWidth = visibleWidth(prefix);
               const marker = `${i + 1}.`;
-              const suffix = opt.isOther ? " ✎" : "";
+              const suffix = opt.isOther ? " [edit]" : "";
               const label = `${marker} ${opt.label}${suffix}`;
+              const labelColor =
+                selected || (opt.isOther && editMode)
+                  ? "accent"
+                  : opt.isOther
+                    ? "muted"
+                    : "text";
+              const labelLines = wrapText(
+                label,
+                Math.max(1, width - prefixWidth),
+              );
 
-              if (selected || (opt.isOther && editMode)) {
-                add(prefix + theme.fg("accent", label));
-              } else {
-                add(prefix + theme.fg(opt.isOther ? "muted" : "text", label));
+              for (const [lineIndex, labelLine] of labelLines.entries()) {
+                const linePrefix =
+                  lineIndex === 0 ? prefix : " ".repeat(prefixWidth);
+                add(linePrefix + theme.fg(labelColor, labelLine));
               }
 
-              if (opt.description && (!compact || selected || (opt.isOther && editMode))) {
-                // ponytail: wrap keeps full text visible; raise ceiling if desc needs styling per-line
-                for (const dl of wrapText(opt.description, Math.max(10, width - 7))) {
+              if (
+                opt.description &&
+                (!compact || selected || (opt.isOther && editMode))
+              ) {
+                for (const dl of wrapText(
+                  opt.description,
+                  Math.max(1, width - 6),
+                )) {
                   add(`      ${theme.fg("muted", dl)}`);
                 }
               }
@@ -323,26 +314,27 @@ export default function askUser(pi: ExtensionAPI) {
             if (editMode) {
               lines.push("");
               add(theme.fg("muted", " Your answer:"));
-              for (const line of editor.render(width - 2)) {
+              for (const line of editor.render(Math.max(1, width - 2))) {
                 add(` ${line}`);
               }
             }
 
             lines.push("");
             if (editMode) {
-              add(theme.fg("dim", " Enter kirim • Esc kembali"));
+              add(theme.fg("dim", " Enter kirim / Esc kembali"));
             } else {
               add(
                 theme.fg(
                   "dim",
                   compact
-                    ? ` ↑↓ atau 1-${allOptions.length} pilih • Enter lanjut • Esc batal`
-                    : ` ↑↓ or 1-${allOptions.length} select • Enter confirm • Esc dismiss`,
+                    ? ` Up/Down atau 1-${allOptions.length} pilih / Enter lanjut / Esc batal`
+                    : ` Up/Down or 1-${allOptions.length} select / Enter confirm / Esc dismiss`,
                 ),
               );
             }
-            add(theme.fg("accent", "─".repeat(width)));
+            add(theme.fg("accent", "-".repeat(width)));
 
+            cachedWidth = width;
             cachedLines = lines;
             return lines;
           }
@@ -351,6 +343,7 @@ export default function askUser(pi: ExtensionAPI) {
             render,
             invalidate: () => {
               cachedLines = undefined;
+              cachedWidth = undefined;
             },
             handleInput,
             dispose: () => {
@@ -423,12 +416,12 @@ export default function askUser(pi: ExtensionAPI) {
       }
 
       if (details.cancelled || details.answer === null) {
-        return new Text(theme.fg("warning", "✗ dismissed"), 0, 0);
+        return new Text(theme.fg("warning", "[dismissed]"), 0, 0);
       }
 
       if (details.wasCustom) {
         return new Text(
-          theme.fg("success", "✓ ") +
+          theme.fg("success", "[ok] ") +
             theme.fg("muted", "(wrote) ") +
             theme.fg("accent", details.answer),
           0,
@@ -439,7 +432,7 @@ export default function askUser(pi: ExtensionAPI) {
       const idx = details.options.indexOf(details.answer) + 1;
       const display = idx > 0 ? `${idx}. ${details.answer}` : details.answer;
       return new Text(
-        theme.fg("success", "✓ ") + theme.fg("accent", display),
+        theme.fg("success", "[ok] ") + theme.fg("accent", display),
         0,
         0,
       );

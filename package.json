@@ -4,12 +4,12 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
-    "check:extensions": "for d in extensions/*/; do if [ -f \"$d/package.json\" ]; then npm --prefix \"$d\" run check; fi; done",
+    "check:extensions": "node scripts/check-extensions.mjs",
     "test:git-info": "npm --prefix extensions/git-info test",
     "test:run-summaries": "npm --prefix extensions/run-summaries test",
     "test:subagents": "npm --prefix extensions/subagents test",
     "test:todos": "node --test --experimental-strip-types extensions/todos/reducer.test.ts",
-    "format:check": "prettier --check \"extensions/**/*.{ts,tsx}\" \"skills/**/*.md\" \"prompts/*.md\" \"*.json\""
+    "format:check": "prettier --check \"extensions/**/*.{ts,tsx}\" \"skills/**/*.md\" \"prompts/*.md\" \"scripts/*.mjs\" \"*.json\""
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.82.0",

@@ -61,12 +61,8 @@ export default function gitInfo(pi: ExtensionAPI) {
 
   const getRuntime = () => (runtime ??= createRuntime());
   const publish = () => pi.events.emit(GIT_INFO_CHANNEL, { ...state });
-  const run = (
-    command: string,
-    args: string[],
-    cwd: string,
-    timeout: number,
-  ) => runCommand(command, args, cwd, timeout);
+  const run = (command: string, args: string[], cwd: string, timeout: number) =>
+    runCommand(command, args, cwd, timeout);
 
   const lookupPullRequest = (cwd: string, branch: string) =>
     Effect.gen(function* () {

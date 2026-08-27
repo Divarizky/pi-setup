@@ -6,7 +6,7 @@ export const ASK_USER_PARAMETER_DESCRIPTIONS = {
   options:
     "Between 2 and 5 answer options. A free-form option is always appended automatically - never include one yourself.",
   compact:
-    "Optional compact layout for short orientation menus: one-line question and only the selected option's description.",
+    "Optional compact layout for short orientation menus: the question still wraps fully, while only the selected option's description is shown.",
 };
 
 /** Describes the ask_user tool's question shape and dismissible free-form fallback. */

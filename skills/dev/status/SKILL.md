@@ -1,6 +1,6 @@
 ---
 name: status
-description: "Jawab \"gua lagi di mana?\" — baca state workflow lokal (feature aktif, task berjalan, handoff terakhir), ringkas jadi snapshot + saran skill berikutnya. Read-only, tidak menulis apapun. User-invoked."
+description: 'Jawab "gua lagi di mana?" — baca state workflow lokal (feature aktif, task berjalan, handoff terakhir), ringkas jadi snapshot + saran skill berikutnya. Read-only, tidak menulis apapun. User-invoked.'
 disable-model-invocation: true
 ---
 
@@ -8,24 +8,37 @@ disable-model-invocation: true
 
 Snapshot cepat state kerja saat ini. Pas buka sesi baru dan lupa lagi ngerjain apa. Read-only — cuma baca + ringkas, tidak ubah file apapun.
 
-## Prasyarat
+## Prerequisites
 
-[Prasyarat](../shared/COMMON.md#prasyarat) — `.workspace/project-meta.md` idealnya ada. Tidak ada → status tetap baca file `.workspace/` yang ada. Tidak ada satapun (bahkan folder `.workspace/` kosong) → arahkan ke `setup-workflow`, stop. Folder ada tapi `project-meta.md` tidak → lanjut dengan warning.
+[Prerequisites](../shared/COMMON.md#prerequisites) — `.workspace/project-meta.md` opsional. Universal mode bersifat read-only dan chat-only: buat snapshot dari percakapan aktif, current directory, Git bila tersedia, dan file workflow yang user berikan. Project mode membaca state `.workspace` yang tersedia. Jika tidak ada state, laporkan bahwa belum ada pekerjaan yang bisa diringkas; tawarkan `setup-workflow` hanya jika user ingin persistence.
 
-## Step 1 — Baca State (3 sumber, skip yang tidak ada/corrupt)
+## Step 1 — Read State (3 sources, skip missing/corrupt)
 
-### 1. Index Fitur
-Baca `.workspace/tracking/issue-tracker.md`:
+### Universal Mode
+
+Gunakan percakapan aktif, current directory, Git bila tersedia, dan file workflow yang user berikan. Jangan mengasumsikan tracker, tasks, atau handoff `.workspace` tersedia; jangan membuat file.
+
+### Project Mode
+
+Gunakan Context Resolver dan baca sumber berikut hanya jika tersedia:
+
+### 1. Feature Index
+
+Baca `.workspace/context/TRACKER.md`:
+
 - Filter `status: open` dan `status: done`
 - Ambil `task_count` + `task_done` untuk progress bar Step 2
-- Tidak ada/format invalid → laporkan: "issue-tracker.md tidak terbaca. Invoke `setup-workflow` dulu?"
+- Tidak ada/format invalid → laporkan: ".workspace/context/TRACKER.md tidak terbaca. Tawarkan `setup-workflow` untuk memperbaiki persistence."
 
-### 2. Task Aktif
-Unti slug `open` di index:
-- Cek folder `.workspace/.scratch/<slug>/` ada? Tidak → laporkan: "Slug `<slug>`: folder `.scratch/<slug>/` hilang. Hapus slug dari index atau restore folder." Skip.
+### 2. Active Tasks
+
+Untuk slug `open` di index:
+
+- Cek folder `.workspace/.scratch/<slug>/` ada? Tidak → laporkan: "Slug `<slug>`: folder `.scratch/<slug>/` hilang." Skip.
 - Baca `.workspace/.scratch/<slug>/tasks.md` (format: `## Queue`/`## In Progress`/`## Done`, checkbox `[ ]`/`[x]`)
 
 Ekstrak:
+
 - **In Progress**: semua `[ ]` di bawah `## In Progress` → TASK-ID + nama
 - **Queue eligible**: di `## Queue`, `[ ]` yang `Depends:` sudah `[x]` di `## Done` → task teratas
 - **Queue count**: total `[ ]` di `## Queue`
@@ -33,12 +46,14 @@ Ekstrak:
 File tidak ada tapi index bilang `open` → laporkan: "Slug X: tasks.md tidak ditemukan."
 File ada tapi format tidak parse → laporkan: "Slug X: tasks.md format tidak dikenal."
 
-### 3. Handoff Terakhir
-Cari file terbaru di `.workspace/handoffs/` — `ls -t .workspace/handoffs/*.md 2>/dev/null | head -1` (sort by mtime, bukan string filename).
+### 3. Latest Handoff
+
+Project: cari file terbaru di `.workspace/handoffs/` — `ls -t .workspace/handoffs/*.md 2>/dev/null | head -1` (sort by mtime, bukan string filename).
+Universal: gunakan handoff yang ditempelkan atau dirujuk user.
 Ambil 1 baris ringkasan (biasanya baris pertama setelah judul). Jangan baca seluruh file.
 Folder tidak ada/kosong → skip.
 
-## Step 2 — Ringkas
+## Step 2 — Summarise
 
 ```
 ## Status
@@ -64,24 +79,27 @@ Folder tidak ada/kosong → skip.
 Jangan dump seluruh isi tasks.md/handoff — cukup baris relevan. Reference by path kalau user mau detail.
 
 ### Stale Task Detection
+
 Cek task In Progress tanpa aktivitas:
+
 - Bukan git repo (`git rev-parse --git-dir 2>/dev/null` gagal) → "tidak bisa deteksi staleness (bukan git repo)"
 - Git repo: `git log --since="7 days ago" --all --oneline` — ada output = ada commit 7 hari terakhir. Atau `git log -1 --format="%ar" HEAD` → "3 hours ago", "2 weeks ago".
 - Tampilkan: "TASK-N — last commit: <N hari> lalu — <slug>."
 
 ### Stale Features
-Cek `issue-tracker.md` fitur `status: done` dengan `updated` >30 hari lalu → tampilkan: "<slug> — done sejak <tanggal>. Masih di `.scratch/`."
 
-## Step 3 — Saran Skill Berikutnya
+Cek `.workspace/context/TRACKER.md` fitur `status: done` dengan `updated` >30 hari lalu → tampilkan: "<slug> — done sejak <tanggal>. Masih di `.scratch/`."
+
+## Step 3 — Suggest Next Skill
 
 Berdasarkan state, sarankan (user putuskan, bukan auto-invoke):
 
 - Ada task In Progress / Queue eligible → `implement`
-- Tidak ada feature open, mau mulai fitur baru → `ask-me` (grill dulu) atau `to-prd` langsung kalau ide sudah jelas
+- Tidak ada feature open, mau mulai fitur baru → `ask-me` (grill dulu) atau `to-requirements` langsung kalau ide sudah jelas
 - Handoff terakhir punya "Suggested Skills" → tampilkan saran itu
 - Semua feature `done`, tidak ada kerja tertunda → beri tahu, saran `improve-architecture` (health check) opsional
 - Queue penuh tapi semua blocked → "Semua task nunggu dependency. Kerjakan blocker dulu via `implement`."
 
-## Saran Skills Lain
+## Other Suggested Skills
 
-[Cross-ref](../shared/COMMON.md#saran-skills-lain) — Awal sesi baru, setelah break panjang, ragu task tertunda, sebelum invoke `implement`.
+[Workflow](../WORKFLOW.md) — Awal sesi baru, setelah break panjang, ragu task tertunda, sebelum invoke `implement`.

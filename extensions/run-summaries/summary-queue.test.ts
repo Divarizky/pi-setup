@@ -7,7 +7,8 @@ test("summary queue never exceeds its concurrency limit and preserves order", as
   let active = 0;
   let peak = 0;
   const order: number[] = [];
-  const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  const wait = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
 
   for (const value of [1, 2, 3]) {
     queue.enqueue(async () => {

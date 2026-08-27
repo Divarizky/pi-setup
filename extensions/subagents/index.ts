@@ -5,16 +5,15 @@
  * written fresh. Supports in-process Pi and Orca-hosted Pi backends.
  */
 
-import * as fs from "node:fs"
-import * as path from "node:path"
-import { StringEnum } from "@earendil-works/pi-ai"
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { StringEnum } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
   ExtensionUIContext,
-  Theme,
-} from "@earendil-works/pi-coding-agent"
+} from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -23,48 +22,59 @@ import {
   getMarkdownTheme,
   ProjectTrustStore,
   truncateHead,
-} from "@earendil-works/pi-coding-agent"
-import { Markdown, Text } from "@earendil-works/pi-tui"
-import { Type } from "typebox"
-import { deriveQuickAskTitle, isModelVisible } from "./src/quick-ask.ts"
-import { ActionQueue } from "./src/action-queue.ts"
-import { SubagentMonitor } from "./src/subagent-monitor.ts"
-import { ApprovalGate, type ApprovalRequest } from "./src/approval.ts"
+} from "@earendil-works/pi-coding-agent";
+import { Markdown, Text } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
+import { deriveQuickAskTitle, isModelVisible } from "./src/quick-ask.ts";
+import { ActionQueue } from "./src/action-queue.ts";
+import { SubagentMonitor } from "./src/subagent-monitor.ts";
+import { ApprovalGate, type ApprovalRequest } from "./src/approval.ts";
 import {
   commitWorktree,
   createPullRequest,
   mergeWorktree,
   validateWorktree,
   pushWorktree,
-} from "./src/delivery.ts"
-import { JobPersistence } from "./src/persistence.ts"
-import { JobQueue } from "./src/job-queue.ts"
-import { LeadAgentStore } from "./src/lead-agent.ts"
-import { WorkflowEventQueue } from "./src/workflow/wake-queue.ts"
-import { LeadAgentProposalStore } from "./src/workflow/lead-agent-proposals.ts"
-import { OrchestrationCoordinator } from "./src/workflow/coordinator.ts"
-import { LEAD_AGENT_EVENT_TYPES, parseLeadAgentEvent, type LeadAgentEvent } from "./src/workflow/orchestration.ts"
-import { TaskLedger } from "./src/workflow/task-ledger.ts"
-import type { WorkflowTaskRole, WorkflowTaskStatus } from "./src/workflow/state.ts"
-import { ConcurrencyLimitError } from "./src/domain.ts"
+} from "./src/delivery.ts";
+import { JobPersistence } from "./src/persistence.ts";
+import { JobQueue } from "./src/job-queue.ts";
+import { LeadAgentStore } from "./src/lead-agent.ts";
+import { WorkflowEventQueue } from "./src/workflow/wake-queue.ts";
+import { LeadAgentProposalStore } from "./src/workflow/lead-agent-proposals.ts";
+import { OrchestrationCoordinator } from "./src/workflow/coordinator.ts";
+import {
+  LEAD_AGENT_EVENT_TYPES,
+  parseLeadAgentEvent,
+  type LeadAgentEvent,
+} from "./src/workflow/orchestration.ts";
+import { TaskLedger } from "./src/workflow/task-ledger.ts";
+import type {
+  WorkflowTaskRole,
+  WorkflowTaskStatus,
+} from "./src/workflow/state.ts";
+import { ConcurrencyLimitError } from "./src/domain.ts";
 import {
   BACKEND_NAMES,
   formatElapsed,
+  isSubagentBooting,
   latestText,
   REASONING_EFFORTS,
   SUBAGENT_MODES,
   type BackendName,
+  type LeadAgentId,
+  type SubagentJobId,
+  type WorkflowTaskId,
   type ReasoningEffort,
   type SubagentInitialTerminal,
   type SpawnTask,
   type SubagentMode,
   type SubagentSnapshot,
-} from "./src/domain.ts"
+} from "./src/domain.ts";
 import {
   formatActivityStatus,
   formatContextUtilization,
-} from "./src/format.ts"
-import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts"
+} from "./src/format.ts";
+import { SubagentManager, type SubagentManagerShape } from "./src/manager.ts";
 import {
   buildSubagentResultMessage,
   buildSubagentSpawnResult,
@@ -99,28 +109,41 @@ import {
   SUBAGENT_SPAWN_TOOL_DESCRIPTION,
   SUBAGENT_WAIT_PARAMETER_DESCRIPTIONS,
   SUBAGENT_WAIT_TOOL_DESCRIPTION,
-} from "./src/prompt.ts"
-import { createDeferredResultDelivery } from "./src/result-delivery.ts"
-import { SpawnClaimRegistry, createSpawnFingerprint } from "./src/spawn-claims.ts"
-import { resolveExecutionPolicy } from "./src/execution-policy.ts"
-import { createSubagentRuntime, runTool, type SubagentRuntime } from "./src/runtime.ts"
+} from "./src/prompt.ts";
+import { createDeferredResultDelivery } from "./src/result-delivery.ts";
+import {
+  SpawnClaimRegistry,
+  createSpawnFingerprint,
+} from "./src/spawn-claims.ts";
+import { resolveExecutionPolicy } from "./src/execution-policy.ts";
+import {
+  createSubagentRuntime,
+  runTool,
+  type SubagentRuntime,
+} from "./src/runtime.ts";
 import {
   assertBranchAvailable,
   CONVENTIONAL_BRANCH_TYPES,
   createBranchName,
   createJobId,
+  createLeadJobId,
   createSubagentWorktree,
   deleteSubagentBranch,
   removeSubagentWorktree,
   resolveRepoRoot,
   type ConventionalBranchType,
-} from "./src/worktree.ts"
-import { OrcaCli } from "./src/transports/orca-cli.ts"
-import { confirmSubagentDeletion, openSubagentPicker, openSubagentTakeover } from "./src/ui/takeover.ts"
+} from "./src/worktree.ts";
+import { OrcaCli, samePath } from "./src/transports/orca-cli.ts";
+import { acquireStateLease, type StateLease } from "./src/state-lock.ts";
+import {
+  confirmSubagentDeletion,
+  openSubagentPicker,
+  openSubagentTakeover,
+} from "./src/ui/takeover.ts";
 
-const SUBAGENT_OUTPUT_MAX_BYTES = 24 * 1024
-const WAIT_OUTPUT_MAX_BYTES = 48 * 1024
-const WAIT_PER_AGENT_MAX_BYTES = 16 * 1024
+const SUBAGENT_OUTPUT_MAX_BYTES = 24 * 1024;
+const WAIT_OUTPUT_MAX_BYTES = 48 * 1024;
+const WAIT_PER_AGENT_MAX_BYTES = 16 * 1024;
 
 const THINKING_LEVELS: ReadonlyArray<ReasoningEffort> = [
   "off",
@@ -130,36 +153,39 @@ const THINKING_LEVELS: ReadonlyArray<ReasoningEffort> = [
   "high",
   "xhigh",
   "max",
-]
+];
 
-function parseThinkingLevel(value: string | number | undefined): ReasoningEffort | undefined {
-  if (value === undefined) return undefined
+function parseThinkingLevel(
+  value: string | number | undefined,
+): ReasoningEffort | undefined {
+  if (value === undefined) return undefined;
   if (typeof value === "number") {
-    return THINKING_LEVELS[value] ?? undefined
+    return THINKING_LEVELS[value] ?? undefined;
   }
-  const trimmed = String(value).trim().toLowerCase()
-  if (THINKING_LEVELS.includes(trimmed as ReasoningEffort)) return trimmed as ReasoningEffort
-  return undefined
+  const trimmed = String(value).trim().toLowerCase();
+  if (THINKING_LEVELS.includes(trimmed as ReasoningEffort))
+    return trimmed as ReasoningEffort;
+  return undefined;
 }
 
 interface PreparedOrcaWorktree {
   readonly worktree: {
-    readonly jobId: string
-    readonly repoRoot: string
-    readonly path: string
-    readonly branch: string
-  }
-  readonly initialTerminal: SubagentInitialTerminal
+    readonly jobId: string;
+    readonly repoRoot: string;
+    readonly path: string;
+    readonly branch: string;
+  };
+  readonly initialTerminal: SubagentInitialTerminal;
 }
 
 interface QuickAskResultData {
-  readonly id: string
-  readonly title: string
-  readonly status: SubagentSnapshot["status"]
-  readonly errorText?: string
-  readonly prompt: string
-  readonly answer: string
-  readonly sessionFilePath?: string
+  readonly id: string;
+  readonly title: string;
+  readonly status: SubagentSnapshot["status"];
+  readonly errorText?: string;
+  readonly prompt: string;
+  readonly answer: string;
+  readonly sessionFilePath?: string;
 }
 
 function describeSubagent(snap: SubagentSnapshot) {
@@ -175,103 +201,128 @@ function describeSubagent(snap: SubagentSnapshot) {
     formatContextUtilization(snap.usage),
     formatElapsed(snap),
     snap.cwd,
-  ].filter(Boolean)
-  return `${snap.id} [${snap.status}] "${snap.title}" (${details.join(", ")})`
+  ].filter(Boolean);
+  return `${snap.id} [${snap.status}] "${snap.title}" (${details.join(", ")})`;
 }
 
 function truncatedOutput(
   snap: SubagentSnapshot,
   maxBytes = SUBAGENT_OUTPUT_MAX_BYTES,
 ): string {
-  const output = snap.finalText || "(no output)"
+  const output = snap.finalText || "(no output)";
   const truncation = truncateHead(output, {
     maxBytes: Math.min(maxBytes, DEFAULT_MAX_BYTES),
     maxLines: Math.min(600, DEFAULT_MAX_LINES),
-  })
-  let text = truncation.content
+  });
+  let text = truncation.content;
   if (truncation.truncated) {
-    text += `\n\n[Output truncated: ${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)} shown. Full transcript in session file: ${snap.meta.sessionFilePath ?? "?"}]`
+    text += `\n\n[Output truncated: ${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)} shown. Full transcript in session file: ${snap.meta.sessionFilePath ?? "?"}]`;
   }
-  return text
+  return text;
 }
 
 function resolveTrustedChildCwd(options: {
-  parentCwd: string
-  requestedCwd: string
-  parentTrusted: boolean
+  parentCwd: string;
+  requestedCwd: string;
+  parentTrusted: boolean;
 }) {
-  let parentCwd: string
-  let childCwd: string
+  let parentCwd: string;
+  let childCwd: string;
   try {
-    parentCwd = fs.realpathSync(options.parentCwd)
-    childCwd = fs.realpathSync(options.requestedCwd)
+    parentCwd = fs.realpathSync(options.parentCwd);
+    childCwd = fs.realpathSync(options.requestedCwd);
   } catch {
-    throw new Error(`working_dir is not a resolvable directory: ${options.requestedCwd}`)
+    throw new Error(
+      `working_dir is not a resolvable directory: ${options.requestedCwd}`,
+    );
   }
 
-  const relative = path.relative(parentCwd, childCwd)
-  const insideParent = relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+  const relative = path.relative(parentCwd, childCwd);
+  const insideParent =
+    relative === "" ||
+    (!relative.startsWith(`..${path.sep}`) &&
+      relative !== ".." &&
+      !path.isAbsolute(relative));
   if (insideParent && options.parentTrusted) {
-    return { cwd: childCwd, projectTrusted: true }
+    return { cwd: childCwd, projectTrusted: true };
   }
 
   try {
-    const trustStore = new ProjectTrustStore(getAgentDir())
+    const trustStore = new ProjectTrustStore(getAgentDir());
     if (trustStore.get(childCwd) === true) {
-      return { cwd: childCwd, projectTrusted: true }
+      return { cwd: childCwd, projectTrusted: true };
     }
   } catch {
     // Treat unreadable trust state as untrusted.
   }
-  throw new Error(`working_dir must be inside the current project or explicitly trusted: ${childCwd}`)
+  throw new Error(
+    `working_dir must be inside the current project or explicitly trusted: ${childCwd}`,
+  );
 }
 
 export default function activate(pi: ExtensionAPI) {
-  let runtime: SubagentRuntime | undefined
-  let managerPromise: Promise<SubagentManagerShape> | undefined
-  let activeManager: SubagentManagerShape | undefined
-  let sessionContext: ExtensionContext | undefined
-  let ui: ExtensionUIContext | undefined
-  let unsubStatus: (() => void) | undefined
-  const resultDelivery = createDeferredResultDelivery<SubagentSnapshot>()
-  const approvalGate = new ApprovalGate()
-  const persistence = new JobPersistence(path.join(getAgentDir(), "workspace", "state"))
-  const jobQueue = new JobQueue(path.join(getAgentDir(), "workspace", "state"))
-  const leadAgentStore = new LeadAgentStore(path.join(getAgentDir(), "workspace", "state"))
-  const leadAgentProposalStore = new LeadAgentProposalStore(path.join(getAgentDir(), "workspace", "state"))
-  let jobQueueDispatchTimer: ReturnType<typeof setInterval> | undefined
-  let sessionReconcileTimer: ReturnType<typeof setInterval> | undefined
-  const actionQueue = new ActionQueue(path.join(getAgentDir(), "workspace", "state"))
-  const workflowQueue = new WorkflowEventQueue(path.join(getAgentDir(), "workspace", "state"))
-  const taskLedger = new TaskLedger(path.join(getAgentDir(), "workspace", "state"))
-  const subagentMonitor = new SubagentMonitor(actionQueue)
-  const orcaCli = new OrcaCli()
-  const pendingSettled: Array<{ snap: SubagentSnapshot; consumed: boolean }> = []
+  let runtime: SubagentRuntime | undefined;
+  let managerPromise: Promise<SubagentManagerShape> | undefined;
+  let stateLease: StateLease | undefined;
+  let activeManager: SubagentManagerShape | undefined;
+  let sessionContext: ExtensionContext | undefined;
+  let ui: ExtensionUIContext | undefined;
+  let unsubStatus: (() => void) | undefined;
+  const resultDelivery = createDeferredResultDelivery<SubagentSnapshot>();
+  const approvalGate = new ApprovalGate();
+  const persistence = new JobPersistence(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
+  const jobQueue = new JobQueue(path.join(getAgentDir(), "workspace", "state"));
+  const leadAgentStore = new LeadAgentStore(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
+  const leadAgentProposalStore = new LeadAgentProposalStore(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
+  let sessionReconcileTimer: ReturnType<typeof setInterval> | undefined;
+  const actionQueue = new ActionQueue(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
+  const workflowQueue = new WorkflowEventQueue(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
+  const taskLedger = new TaskLedger(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
+  const subagentMonitor = new SubagentMonitor(actionQueue);
+  const orcaCli = new OrcaCli();
+  const pendingSettled: Array<{ snap: SubagentSnapshot; consumed: boolean }> =
+    [];
   /**
    * Claims protect the window before manager.spawn() registers a live session.
    * Orca's agent-first worktree creation is an external side effect, so a
    * duplicate tool call during that window must return the original job id.
    */
-  const spawnClaims = new SpawnClaimRegistry()
-  const releaseSpawnClaim = (id: string) => spawnClaims.release(id)
+  const spawnClaims = new SpawnClaimRegistry();
+  const releaseSpawnClaim = (jobId: SubagentJobId) =>
+    spawnClaims.release(jobId);
   /** Destructive operations suppress late persistence/monitor callbacks. */
-  const deletingJobs = new Set<string>()
+  const deletingJobs = new Set<string>();
 
   const createOrcaManagedWorktree = async (options: {
-    readonly sourceDir: string
-    readonly jobId: string
-    readonly branchName: string
-    readonly prompt: string
-    readonly mode: SubagentMode
+    readonly sourceDir: string;
+    readonly jobId: string;
+    readonly branchName: string;
+    readonly title: string;
+    readonly prompt: string;
+    readonly mode: SubagentMode;
   }): Promise<PreparedOrcaWorktree> => {
-    const repoRoot = await resolveRepoRoot(options.sourceDir)
-    await assertBranchAvailable(repoRoot, options.branchName)
+    // Fail closed before any external mutation when the Orca runtime is down.
+    await orcaCli.assertReady();
+    const repoRoot = await resolveRepoRoot(options.sourceDir);
+    await assertBranchAvailable(repoRoot, options.branchName);
     const created = await orcaCli.createPiWorktree({
       repoPath: repoRoot,
       name: options.branchName,
+      title: options.title,
       prompt: options.prompt,
-      mode: options.mode,
-    })
+    });
     return {
       worktree: {
         jobId: options.jobId,
@@ -280,26 +331,28 @@ export default function activate(pi: ExtensionAPI) {
         branch: created.branch,
       },
       initialTerminal: created.terminal,
-    }
-  }
+    };
+  };
 
   const prepareOrcaTask = async (task: SpawnTask): Promise<SpawnTask> => {
-    if (task.worktree && task.initialTerminal) return task
-    if (!task.jobId) throw new Error("Orca subagent requires a durable job id.")
+    if (task.worktree && task.initialTerminal) return task;
+    if (!task.jobId)
+      throw new Error("Orca subagent requires a durable job id.");
     const prepared = await createOrcaManagedWorktree({
       sourceDir: task.cwd,
       jobId: task.jobId,
       branchName: task.branchName ?? createBranchName(task.title),
+      title: task.title,
       prompt: task.prompt,
       mode: task.mode ?? "build",
-    })
+    });
     return {
       ...task,
       cwd: prepared.worktree.path,
       worktree: prepared.worktree,
       initialTerminal: prepared.initialTerminal,
-    }
-  }
+    };
+  };
 
   const cleanupManagedWorktree = async (
     backend: BackendName,
@@ -308,29 +361,62 @@ export default function activate(pi: ExtensionAPI) {
     force = false,
   ) => {
     if (backend === "orca" && nativeWorktreeId) {
-      await orcaCli.removeWorktree(nativeWorktreeId, { force })
-      if (force && worktree) await deleteSubagentBranch(worktree.repoRoot, worktree.branch)
-      return
+      if (!worktree)
+        throw new Error(
+          "Refusing Orca cleanup without recorded worktree metadata.",
+        );
+      const shown = await orcaCli.showWorktree(nativeWorktreeId);
+      if (
+        shown.id !== nativeWorktreeId ||
+        !shown.path ||
+        !samePath(shown.path, worktree.path)
+      ) {
+        throw new Error(
+          `Refusing Orca cleanup: native worktree identity/path does not match recorded job metadata (${nativeWorktreeId}).`,
+        );
+      }
+      await orcaCli.removeWorktree(nativeWorktreeId, { force });
+      if (force) await deleteSubagentBranch(worktree.repoRoot, worktree.branch);
+      return;
     }
-    if (!worktree) return
+    if (!worktree) return;
     // If Orca's native identity is gone, fall back to the same verified Git
     // path/branch checks used by the Pi backend instead of deleting unscoped data.
-    await removeSubagentWorktree(worktree, { force, deleteBranch: force })
-  }
+    await removeSubagentWorktree(worktree, { force, deleteBranch: force });
+  };
 
-  const persistSnapshot = async (snap: SubagentSnapshot, event: string, clearWorktree = false) => {
-    if (deletingJobs.has(snap.id)) return
+  const persistSnapshot = async (
+    snap: SubagentSnapshot,
+    event: string,
+    clearWorktree = false,
+  ) => {
+    if (deletingJobs.has(snap.id)) return;
     try {
       await persistence.upsert({
         jobId: snap.id,
+        origin: snap.origin,
         backend: snap.backend,
-        ...(snap.meta.sessionFilePath === undefined ? {} : { sessionFilePath: snap.meta.sessionFilePath }),
-        ...(snap.meta.nativeSessionId === undefined ? {} : { nativeSessionId: snap.meta.nativeSessionId }),
-        ...(snap.meta.nativeTerminalHandle === undefined ? {} : { nativeTerminalHandle: snap.meta.nativeTerminalHandle }),
-        ...(snap.meta.nativeWorktreeId === undefined ? {} : { nativeWorktreeId: snap.meta.nativeWorktreeId }),
-        ...(snap.meta.nativeTabId === undefined ? {} : { nativeTabId: snap.meta.nativeTabId }),
-        ...(snap.meta.nativePaneKey === undefined ? {} : { nativePaneKey: snap.meta.nativePaneKey }),
-        ...(snap.meta.nativeLaunchToken === undefined ? {} : { nativeLaunchToken: snap.meta.nativeLaunchToken }),
+        ...(snap.meta.sessionFilePath === undefined
+          ? {}
+          : { sessionFilePath: snap.meta.sessionFilePath }),
+        ...(snap.meta.nativeSessionId === undefined
+          ? {}
+          : { nativeSessionId: snap.meta.nativeSessionId }),
+        ...(snap.meta.nativeTerminalHandle === undefined
+          ? {}
+          : { nativeTerminalHandle: snap.meta.nativeTerminalHandle }),
+        ...(snap.meta.nativeWorktreeId === undefined
+          ? {}
+          : { nativeWorktreeId: snap.meta.nativeWorktreeId }),
+        ...(snap.meta.nativeTabId === undefined
+          ? {}
+          : { nativeTabId: snap.meta.nativeTabId }),
+        ...(snap.meta.nativePaneKey === undefined
+          ? {}
+          : { nativePaneKey: snap.meta.nativePaneKey }),
+        ...(snap.meta.nativeLaunchToken === undefined
+          ? {}
+          : { nativeLaunchToken: snap.meta.nativeLaunchToken }),
         title: snap.title,
         mode: snap.meta.mode ?? "build",
         cwd: snap.cwd,
@@ -341,223 +427,346 @@ export default function activate(pi: ExtensionAPI) {
         branch: clearWorktree ? undefined : snap.meta.worktree?.branch,
         repoRoot: clearWorktree ? undefined : snap.meta.worktree?.repoRoot,
         errorText: snap.errorText,
-      })
-      await persistence.appendEvent({ at: Date.now(), jobId: snap.id, event })
+        report: snap.report,
+        finalText: snap.finalText,
+      });
+      await persistence.appendEvent({ at: Date.now(), jobId: snap.id, event });
     } catch (error) {
-      ui?.notify(`Subagent state persistence failed: ${String(error)}`, "warning")
+      ui?.notify(
+        `Subagent state persistence failed: ${String(error)}`,
+        "warning",
+      );
     }
-  }
+  };
 
   const executeApprovedDelivery = async (
     manager: SubagentManagerShape,
     request: ApprovalRequest,
   ) => {
-    const snap = await runTool(getRuntime(), manager.get(request.jobId))
-    if (!snap) throw new Error(`Unknown subagent id: ${request.jobId}`)
-    if (snap.status === "running") throw new Error("Cannot deliver a running subagent.")
+    const snap = await runTool(getRuntime(), manager.get(request.jobId));
+    if (!snap) throw new Error(`Unknown subagent id: ${request.jobId}`);
+    if (snap.status === "running")
+      throw new Error("Cannot deliver a running subagent.");
     if (snap.meta.mode !== "build" || !snap.meta.worktree) {
-      throw new Error("Only settled build subagents with a worktree can be delivered.")
+      throw new Error(
+        "Only settled build subagents with a worktree can be delivered.",
+      );
     }
-    const worktree = snap.meta.worktree
-    let detail = ""
-    approvalGate.begin(request.id)
+    const worktree = snap.meta.worktree;
+    let detail = "";
+    approvalGate.begin(request.id);
     try {
       // Persist the executing intent before any external side effect. A crash
       // after this point restores an executing approval and refuses an unsafe
       // blind retry instead of replaying commit/merge/push/PR.
-      await persistApprovals()
+      await persistApprovals();
     } catch (error) {
-      approvalGate.fail(request.id)
-      throw error
+      approvalGate.fail(request.id);
+      throw error;
     }
     try {
       if (request.operation === "review") {
-        const validation = await validateWorktree(worktree)
-        detail = `reviewed ${validation.changedFiles.length} changed path(s); checks: ${validation.checks.join(", ")}`
+        const validation = await validateWorktree(worktree);
+        detail = `reviewed ${validation.changedFiles.length} changed path(s); checks: ${validation.checks.join(", ")}`;
       } else if (request.operation === "commit") {
-        const validation = await commitWorktree(worktree, snap.title)
-        detail = `committed ${validation.changedFiles.length} changed path(s)`
+        const validation = await commitWorktree(worktree, snap.title);
+        detail = `committed ${validation.changedFiles.length} changed path(s)`;
       } else if (request.operation === "merge") {
-        await mergeWorktree(worktree, worktree.repoRoot, snap.title)
-        detail = `merged ${worktree.branch} into the coordinator checkout`
+        await mergeWorktree(worktree, worktree.repoRoot, snap.title);
+        detail = `merged ${worktree.branch} into the coordinator checkout`;
       } else if (request.operation === "push") {
-        await pushWorktree(worktree)
-        detail = `pushed ${worktree.branch} to origin`
+        await pushWorktree(worktree);
+        detail = `pushed ${worktree.branch} to origin`;
       } else if (request.operation === "pr") {
         detail = await createPullRequest(
           worktree,
           snap.title,
           `Automated delivery for subagent ${snap.id}.\\n\\n${latestText(snap).slice(0, 12_000)}`,
-        )
+        );
       } else {
-        throw new Error(`Operation ${request.operation} is not handled by the delivery pipeline.`)
+        throw new Error(
+          `Operation ${request.operation} is not handled by the delivery pipeline.`,
+        );
       }
-      const consumed = approvalGate.complete(request.id)
-      await persistApprovals()
-      await persistSnapshot(snap, `delivered:${request.operation}`)
-      return { consumed, detail }
+      const consumed = approvalGate.complete(request.id);
+      await persistApprovals();
+      await persistSnapshot(snap, `delivered:${request.operation}`);
+      return { consumed, detail };
     } catch (error) {
-      approvalGate.fail(request.id)
-      try { await persistApprovals() } catch { /* preserve the original delivery failure */ }
-      throw error
+      approvalGate.fail(request.id);
+      try {
+        await persistApprovals();
+      } catch {
+        /* preserve the original delivery failure */
+      }
+      throw error;
     }
-  }
+  };
 
   const deletePiSessionFile = async (sessionFilePath: string) => {
-    const sessionRoot = path.resolve(getAgentDir(), "sessions")
-    const target = path.resolve(sessionFilePath)
-    const relative = path.relative(sessionRoot, target)
+    const sessionRoot = path.resolve(getAgentDir(), "sessions");
+    const target = path.resolve(sessionFilePath);
+    const relative = path.relative(sessionRoot, target);
     if (relative.startsWith("..") || path.isAbsolute(relative)) {
-      throw new Error("Refusing to delete a Pi session outside the managed session directory.")
+      throw new Error(
+        "Refusing to delete a Pi session outside the managed session directory.",
+      );
     }
     try {
-      await fs.promises.unlink(target)
+      await fs.promises.unlink(target);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
-  }
+  };
 
   /**
    * Explicit user deletion is destructive and cascades through the Thread,
    * session, durable records, and managed worktree. Recovery paths must never
    * call this function; a missing terminal is not user intent to delete.
    */
-  const deleteSubagentCompletely = async (manager: SubagentManagerShape, id: string) => {
-    if (deletingJobs.has(id)) return true
-    deletingJobs.add(id)
+  const deleteSubagentCompletely = async (
+    manager: SubagentManagerShape,
+    id: string,
+  ) => {
+    if (deletingJobs.has(id)) return true;
+    deletingJobs.add(id);
     try {
-      const snap = await runTool(getRuntime(), manager.get(id))
-      const durable = (await persistence.load()).find((job) => job.jobId === id)
-      const leadAgents = leadAgentStore.list().filter((item) => item.jobId === id)
-      const queued = jobQueue.get(id)
-      const approvals = approvalGate.list().filter((item) => item.jobId === id)
-      const actions = actionQueue.list().filter((item) => item.event.jobId === id)
-      if (!snap && !durable && !queued && leadAgents.length === 0 && approvals.length === 0 && actions.length === 0) return false
+      const snap = await runTool(getRuntime(), manager.get(id));
+      const durable = (await persistence.load()).find(
+        (job) => job.jobId === id,
+      );
+      const leadAgents = leadAgentStore
+        .list()
+        .filter((item) => item.jobId === id);
+      const queued = jobQueue.get(id);
+      const approvals = approvalGate.list().filter((item) => item.jobId === id);
+      const actions = actionQueue
+        .list()
+        .filter((item) => item.event.jobId === id);
+      if (
+        !snap &&
+        !durable &&
+        !queued &&
+        leadAgents.length === 0 &&
+        approvals.length === 0 &&
+        actions.length === 0
+      )
+        return false;
 
       // Stop producers first. This also prevents monitor/status callbacks from
       // writing new action records while the cascade is in progress.
-      await subagentMonitor.forgetJob(id)
-      resultDelivery.consume([id])
+      await subagentMonitor.forgetJob(id);
+      resultDelivery.consume([id]);
       for (let index = pendingSettled.length - 1; index >= 0; index--) {
-        if (pendingSettled[index]?.snap.id === id) pendingSettled.splice(index, 1)
+        if (pendingSettled[index]?.snap.id === id)
+          pendingSettled.splice(index, 1);
       }
-      if (snap?.status === "running" || snap?.restarting) await runTool(getRuntime(), manager.cancel([id]))
-      if (snap) await runTool(getRuntime(), manager.closeSession(id))
+      if (snap?.status === "running" || snap?.restarting)
+        await runTool(getRuntime(), manager.cancel([id]));
+      if (snap) await runTool(getRuntime(), manager.closeSession(id));
 
-      const current = await runTool(getRuntime(), manager.get(id)) ?? snap
-      const backend = current?.backend ?? durable?.backend ?? queued?.backend ?? leadAgents[0]?.backend ?? "pi"
-      const worktree = current?.meta.worktree
-        ?? queued?.task.worktree
-        ?? (durable?.worktreePath && durable.branch && durable.repoRoot
-          ? { jobId: id, path: durable.worktreePath, branch: durable.branch, repoRoot: durable.repoRoot }
-          : leadAgents.find((item) => item.worktreePath && item.branch && item.repoRoot)
+      const current = (await runTool(getRuntime(), manager.get(id))) ?? snap;
+      const backend =
+        current?.backend ??
+        durable?.backend ??
+        queued?.backend ??
+        leadAgents[0]?.backend ??
+        "pi";
+      const worktree =
+        current?.meta.worktree ??
+        queued?.task.worktree ??
+        (durable?.worktreePath && durable.branch && durable.repoRoot
+          ? {
+              jobId: id,
+              path: durable.worktreePath,
+              branch: durable.branch,
+              repoRoot: durable.repoRoot,
+            }
+          : leadAgents.find(
+                (item) => item.worktreePath && item.branch && item.repoRoot,
+              )
             ? (() => {
-                const leadAgent = leadAgents.find((item) => item.worktreePath && item.branch && item.repoRoot)!
-                return { jobId: id, path: leadAgent.worktreePath!, branch: leadAgent.branch!, repoRoot: leadAgent.repoRoot! }
+                const leadAgent = leadAgents.find(
+                  (item) => item.worktreePath && item.branch && item.repoRoot,
+                )!;
+                return {
+                  jobId: id,
+                  path: leadAgent.worktreePath!,
+                  branch: leadAgent.branch!,
+                  repoRoot: leadAgent.repoRoot!,
+                };
               })()
-            : undefined)
-      const nativeWorktreeId = current?.meta.nativeWorktreeId
-        ?? durable?.nativeWorktreeId
-        ?? queued?.task.initialTerminal?.worktreeId
+            : undefined);
+      const nativeWorktreeId =
+        current?.meta.nativeWorktreeId ??
+        durable?.nativeWorktreeId ??
+        queued?.task.initialTerminal?.worktreeId;
       const sessionFiles = new Set<string>([
-        ...(current?.meta.sessionFilePath ? [current.meta.sessionFilePath] : []),
+        ...(current?.meta.sessionFilePath
+          ? [current.meta.sessionFilePath]
+          : []),
         ...(durable?.sessionFilePath ? [durable.sessionFilePath] : []),
         ...(queued?.task.sessionFilePath ? [queued.task.sessionFilePath] : []),
-        ...leadAgents.flatMap((item) => item.sessionFilePath ? [item.sessionFilePath] : []),
-      ])
+        ...leadAgents.flatMap((item) =>
+          item.sessionFilePath ? [item.sessionFilePath] : [],
+        ),
+      ]);
 
       // Remove external resources before dropping the snapshot, so a failed
       // cleanup leaves an actionable visible job that can be retried.
-      await cleanupManagedWorktree(backend, worktree, nativeWorktreeId, true)
-      for (const sessionFile of sessionFiles) await deletePiSessionFile(sessionFile)
-      await runTool(getRuntime(), manager.forget(id))
-      await leadAgentStore.removeByJobId(id)
-      approvalGate.forgetJob(id)
-      await persistApprovals()
-      await jobQueue.remove(id)
-      await persistence.deleteJob(id)
-      return true
+      try {
+        await cleanupManagedWorktree(backend, worktree, nativeWorktreeId, true);
+      } catch (error) {
+        if (snap) {
+          const recovered = await runTool(
+            getRuntime(),
+            manager.markRecoveryRequired(
+              id,
+              `Cleanup verification failed: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+          if (recovered)
+            await persistSnapshot(recovered, "cleanup-recovery-required");
+        }
+        throw error;
+      }
+      for (const sessionFile of sessionFiles)
+        await deletePiSessionFile(sessionFile);
+      await fs.promises.rm(
+        path.join(getAgentDir(), "workspace", "state", "orca-inbox", id),
+        { recursive: true, force: true },
+      );
+      await runTool(getRuntime(), manager.forget(id));
+      await leadAgentStore.removeByJobId(id);
+      approvalGate.forgetJob(id);
+      await persistApprovals();
+      await jobQueue.remove(id);
+      await workflowQueue.removeTask(id);
+      await taskLedger.remove(id);
+      await persistence.deleteJob(id);
+      return true;
     } finally {
-      deletingJobs.delete(id)
+      deletingJobs.delete(id);
     }
-  }
+  };
 
   const reconcileDeletedSessions = async (manager: SubagentManagerShape) => {
     for (const snap of manager.view.list()) {
-      if (snap.status !== "running" && !snap.restarting) continue
+      if (snap.status !== "running" && !snap.restarting) continue;
       if (snap.backend === "pi") {
         // A live in-process session is authoritative even before its JSONL
         // transcript reaches disk. Only a restored snapshot with no live
         // session may use missing-file evidence for recovery.
-        if (await runTool(getRuntime(), manager.hasLiveSession(snap.id))) continue
-        const sessionFilePath = snap.meta.sessionFilePath
+        if (await runTool(getRuntime(), manager.hasLiveSession(snap.id)))
+          continue;
+        const sessionFilePath = snap.meta.sessionFilePath;
         if (sessionFilePath && !fs.existsSync(sessionFilePath)) {
-          const recovered = await runTool(getRuntime(), manager.markRecoveryRequired(snap.id, "Pi session file is missing after restart."))
-          if (recovered) await persistSnapshot(recovered, "recovery-required")
+          const recovered = await runTool(
+            getRuntime(),
+            manager.markRecoveryRequired(
+              snap.id,
+              "Pi session file is missing after restart.",
+            ),
+          );
+          if (recovered) await persistSnapshot(recovered, "recovery-required");
         }
-        continue
+        continue;
       }
-      if (snap.backend === "orca" && snap.meta.nativeWorktreeId && snap.meta.nativeTerminalHandle) {
-        if (snap.errorText === "Run was aborted") continue
+      if (
+        snap.backend === "orca" &&
+        snap.meta.nativeWorktreeId &&
+        snap.meta.nativeTerminalHandle
+      ) {
+        if (snap.errorText === "Run was aborted") continue;
         try {
-          const terminals = await orcaCli.listTerminals(snap.meta.nativeWorktreeId)
-          if (!terminals.some((terminal) => terminal.handle === snap.meta.nativeTerminalHandle)) {
-            const recovered = await runTool(getRuntime(), manager.markRecoveryRequired(snap.id, "Orca terminal is missing or disconnected."))
-            if (recovered) await persistSnapshot(recovered, "recovery-required")
+          const terminals = await orcaCli.listTerminals(
+            snap.meta.nativeWorktreeId,
+          );
+          if (
+            !terminals.some(
+              (terminal) => terminal.handle === snap.meta.nativeTerminalHandle,
+            )
+          ) {
+            const recovered = await runTool(
+              getRuntime(),
+              manager.markRecoveryRequired(
+                snap.id,
+                "Orca terminal is missing or disconnected.",
+              ),
+            );
+            if (recovered)
+              await persistSnapshot(recovered, "recovery-required");
           }
         } catch {
           // A transient Orca CLI failure is not evidence of deletion.
         }
       }
     }
-  }
+  };
 
   const persistApprovals = async () => {
-    await persistence.saveApprovals(approvalGate.list())
-  }
+    await persistence.saveApprovals(approvalGate.list());
+  };
 
-  let jobQueueDispatching = false
+  let jobQueueDispatching = false;
   const dispatchQueuedJobs = async (manager: SubagentManagerShape) => {
-    if (jobQueueDispatching) return
-    jobQueueDispatching = true
+    if (jobQueueDispatching) return;
+    jobQueueDispatching = true;
     try {
-      for (const record of jobQueue.list().filter((item) => item.status === "running")) {
-        const snap = manager.view.get(record.id)
-        if (snap?.status === "done") await jobQueue.mark(record.id, "done")
-        else if (snap?.status === "error") await jobQueue.mark(record.id, "error", snap.errorText)
+      for (const record of jobQueue
+        .list()
+        .filter((item) => item.status === "running")) {
+        const snap = manager.view.get(record.id);
+        if (snap?.status === "done") await jobQueue.mark(record.id, "done");
+        else if (snap?.status === "failed")
+          await jobQueue.mark(record.id, "failed", snap.errorText);
       }
-      for (const blocked of jobQueue.blocked((id) => manager.view.get(id)?.status === "error" || jobQueue.get(id)?.status === "blocked" || jobQueue.get(id)?.status === "error")) {
-        const reason = "A dependency failed; dispatch is blocked."
-        await jobQueue.mark(blocked.id, "blocked", reason)
-        releaseSpawnClaim(blocked.id)
+      for (const blocked of jobQueue.blocked(
+        (id) =>
+          manager.view.get(id)?.status === "failed" ||
+          jobQueue.get(id)?.status === "blocked" ||
+          jobQueue.get(id)?.status === "failed",
+      )) {
+        const reason = "A dependency failed; dispatch is blocked.";
+        await jobQueue.mark(blocked.id, "blocked", reason);
+        releaseSpawnClaim(blocked.id);
         await syncLedgerStatus({
-          id: blocked.id,
+          taskId: blocked.id,
           title: blocked.title,
           mode: blocked.mode,
           status: "blocked",
           message: reason,
           dependsOn: blocked.dependsOn,
           priority: blocked.priority,
-          requiresWorktree: blocked.task.worktree !== undefined || blocked.mode === "build",
-        })
+          requiresWorktree:
+            blocked.task.worktree !== undefined || blocked.mode === "build",
+        });
         await workflowQueue.publish(blocked.id, {
           type: "status",
           status: "blocked",
           generation: workflowQueue.latestGeneration(blocked.id) ?? 1,
           message: reason,
           at: Date.now(),
-        })
+        });
       }
-      for (const queued of jobQueue.ready((id) => manager.view.get(id)?.status === "done" || jobQueue.get(id)?.status === "done")) {
-        await jobQueue.mark(queued.id, "running")
-        let preparedTask: SpawnTask | undefined
+      for (const queued of jobQueue.ready(
+        (id) =>
+          manager.view.get(id)?.status === "done" ||
+          jobQueue.get(id)?.status === "done",
+      )) {
+        await jobQueue.mark(queued.id, "running");
+        let preparedTask: SpawnTask | undefined;
         try {
-          preparedTask = queued.backend === "orca"
-            ? await prepareOrcaTask(queued.task)
-            : queued.task
-          const snap = await runTool(getRuntime(), manager.spawn(queued.backend, preparedTask))
-          await publishWorkflowStatus(snap, "working")
-          await persistSnapshot(snap, "job-dispatched")
+          preparedTask =
+            queued.backend === "orca"
+              ? await prepareOrcaTask(queued.task)
+              : queued.task;
+          const snap = await runTool(
+            getRuntime(),
+            manager.spawn(queued.backend, preparedTask),
+          );
+          await publishWorkflowStatus(snap, "working");
+          await persistSnapshot(snap, "job-dispatched");
         } catch (error) {
           if (preparedTask?.worktree && !manager.view.get(queued.id)) {
             try {
@@ -565,25 +774,34 @@ export default function activate(pi: ExtensionAPI) {
                 queued.backend,
                 preparedTask.worktree,
                 preparedTask.initialTerminal?.worktreeId,
-              )
+              );
             } catch {
               // Preserve the worktree when cleanup cannot be verified.
             }
           }
-          if (error instanceof ConcurrencyLimitError || /concurr|maximum.*running|capacity/i.test(error instanceof Error ? error.message : String(error))) {
+          if (
+            error instanceof ConcurrencyLimitError ||
+            /concurr|maximum.*running|capacity/i.test(
+              error instanceof Error ? error.message : String(error),
+            )
+          ) {
             // Capacity is transient. Leave the job queued so the next
             // settlement/timer dispatch can retry it without losing the job.
-            await jobQueue.mark(queued.id, "queued")
+            await jobQueue.mark(queued.id, "queued");
           } else {
-            await jobQueue.mark(queued.id, "error", error instanceof Error ? error.message : String(error))
-            releaseSpawnClaim(queued.id)
+            await jobQueue.mark(
+              queued.id,
+              "failed",
+              error instanceof Error ? error.message : String(error),
+            );
+            releaseSpawnClaim(queued.id);
           }
         }
       }
     } finally {
-      jobQueueDispatching = false
+      jobQueueDispatching = false;
     }
-  }
+  };
 
   const waitForQueuedJobs = async (
     manager: SubagentManagerShape,
@@ -592,134 +810,175 @@ export default function activate(pi: ExtensionAPI) {
     signal?: AbortSignal,
   ) => {
     while (true) {
-      if (signal?.aborted) throw new Error("Job queue wait aborted. Queued jobs remain durable.")
-      await dispatchQueuedJobs(manager)
+      if (signal?.aborted)
+        throw new Error("Job queue wait aborted. Queued jobs remain durable.");
+      await dispatchQueuedJobs(manager);
       const waiting = ids.filter((id) => {
-        const queued = jobQueue.get(id)
-        return !!queued && (queued.status === "queued" || (queued.status === "running" && !manager.view.get(id)))
-      })
+        const queued = jobQueue.get(id);
+        return (
+          !!queued &&
+          (queued.status === "queued" ||
+            (queued.status === "running" && !manager.view.get(id)))
+        );
+      });
       if (waiting.length > 0) {
-        onUpdate?.(waiting)
+        onUpdate?.(waiting);
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, 250)
+          const timer = setTimeout(resolve, 250);
           const abort = () => {
-            clearTimeout(timer)
-            reject(new Error("Job queue wait aborted. Queued jobs remain durable."))
-          }
-          signal?.addEventListener("abort", abort, { once: true })
-        })
-        continue
+            clearTimeout(timer);
+            reject(
+              new Error("Job queue wait aborted. Queued jobs remain durable."),
+            );
+          };
+          signal?.addEventListener("abort", abort, { once: true });
+        });
+        continue;
       }
-      const managerIds = ids.filter((id) => !!manager.view.get(id))
+      const managerIds = ids.filter((id) => !!manager.view.get(id));
       if (managerIds.length > 0) {
-        await runTool(getRuntime(), manager.waitFor(managerIds, onUpdate), { signal, interruptMessage: "Wait aborted. Jobs keep running." })
+        await runTool(getRuntime(), manager.waitFor(managerIds, onUpdate), {
+          signal,
+          interruptMessage: "Wait aborted. Jobs keep running.",
+        });
       }
-      await dispatchQueuedJobs(manager)
+      await dispatchQueuedJobs(manager);
       const remaining = ids.filter((id) => {
-        const queued = jobQueue.get(id)
-        return queued?.status === "queued" || queued?.status === "running"
-      })
-      if (remaining.length === 0) return
+        const queued = jobQueue.get(id);
+        return queued?.status === "queued" || queued?.status === "running";
+      });
+      if (remaining.length === 0) return;
     }
-  }
+  };
 
-  const getRuntime = () => (runtime ??= createSubagentRuntime())
+  const getRuntime = () => (runtime ??= createSubagentRuntime());
 
   const getManager = () => {
-    managerPromise ??= getRuntime()
-      .runPromise(SubagentManager)
-      .then(async (manager) => {
-        try {
-          approvalGate.restore(await persistence.loadApprovals())
-          await actionQueue.restore()
-          await workflowQueue.restore()
-          await taskLedger.restore()
-          await jobQueue.restore()
-          await leadAgentStore.restore()
-          await leadAgentProposalStore.restore()
-          const jobs = await persistence.load()
-          const events = await persistence.loadEvents()
-          await runTool(getRuntime(), manager.restore(jobs, events))
-          for (const snap of [...manager.view.list()]) {
-            if (snap.backend !== "orca" || !snap.errorText?.includes("restarted")) continue
+    managerPromise ??= (async (): Promise<SubagentManagerShape> => {
+      stateLease = await acquireStateLease(
+        path.join(getAgentDir(), "workspace", "state"),
+      );
+      try {
+        return await getRuntime()
+          .runPromise(SubagentManager)
+          .then(async (manager) => {
             try {
-              await runTool(getRuntime(), manager.reattach(snap.id))
+              approvalGate.restore(await persistence.loadApprovals());
+              await actionQueue.restore();
+              await workflowQueue.restore();
+              await taskLedger.restore();
+              await jobQueue.restore();
+              await leadAgentStore.restore();
+              await leadAgentProposalStore.restore();
+              const jobs = await persistence.load();
+              const events = await persistence.loadEvents();
+              await runTool(getRuntime(), manager.restore(jobs, events));
+              for (const snap of [...manager.view.list()]) {
+                if (
+                  snap.backend !== "orca" ||
+                  !snap.errorText?.includes("restarted")
+                )
+                  continue;
+                try {
+                  await runTool(getRuntime(), manager.reattach(snap.id));
+                } catch (error) {
+                  const reason = `Orca reattach failed: ${error instanceof Error ? error.message : String(error)}`;
+                  const recovered = await runTool(
+                    getRuntime(),
+                    manager.markRecoveryRequired(snap.id, reason),
+                  );
+                  if (recovered)
+                    await persistSnapshot(recovered, "recovery-required");
+                  ui?.notify(
+                    `Orca job ${snap.id} requires recovery: ${reason}`,
+                    "warning",
+                  );
+                }
+              }
+              for (const snap of manager.view.list())
+                await persistSnapshot(snap, "restored");
+              await reconcileDeletedSessions(manager);
+              await subagentMonitor.reconcile(manager.view.list());
+              for (const evidence of await runTool(
+                getRuntime(),
+                manager.probeStatuses(),
+              )) {
+                await subagentMonitor.observeEvidence(evidence);
+              }
+              subagentMonitor.start(
+                () => manager.view.list(),
+                async () => runTool(getRuntime(), manager.probeStatuses()),
+              );
+              await dispatchQueuedJobs(manager);
+              sessionReconcileTimer ??= setInterval(() => {
+                void reconcileDeletedSessions(manager).catch(() => {});
+              }, 5_000);
+              sessionReconcileTimer.unref?.();
             } catch (error) {
-              const reason = `Orca reattach failed: ${error instanceof Error ? error.message : String(error)}`
-              const recovered = await runTool(getRuntime(), manager.markRecoveryRequired(snap.id, reason))
-              if (recovered) await persistSnapshot(recovered, "recovery-required")
-              ui?.notify(`Orca job ${snap.id} requires recovery: ${reason}`, "warning")
+              ui?.notify(
+                `Durable subagent state was not restored; subagent tools are locked: ${String(error)}`,
+                "error",
+              );
+              throw error;
             }
-          }
-          for (const snap of manager.view.list()) await persistSnapshot(snap, "restored")
-          await reconcileDeletedSessions(manager)
-          await subagentMonitor.reconcile(manager.view.list())
-          for (const evidence of await runTool(getRuntime(), manager.probeStatuses())) {
-            await subagentMonitor.observeEvidence(evidence)
-          }
-          subagentMonitor.start(
-            () => manager.view.list(),
-            async () => runTool(getRuntime(), manager.probeStatuses()),
-          )
-          await dispatchQueuedJobs(manager)
-          jobQueueDispatchTimer ??= setInterval(() => {
-            void dispatchQueuedJobs(manager).catch(() => {})
-          }, 500)
-          jobQueueDispatchTimer.unref?.()
-          sessionReconcileTimer ??= setInterval(() => {
-            void reconcileDeletedSessions(manager).catch(() => {})
-          }, 5_000)
-          sessionReconcileTimer.unref?.()
-        } catch (error) {
-          ui?.notify(`Durable subagent state was not restored; subagent tools are locked: ${String(error)}`, "error")
-          throw error
-        }
-        manager.view.setOnSettled(onSettled)
-        unsubStatus?.()
-        unsubStatus = manager.view.subscribe(() => {
-          updateStatus(manager)
-          void subagentMonitor.reconcile(manager.view.list())
-          void dispatchQueuedJobs(manager).catch(() => {})
-        })
-        activeManager = manager
-        await orchestrationCoordinator?.replay()
-        updateStatus(manager)
-        return manager
-      })
-    return managerPromise
-  }
+            manager.view.setOnSettled(onSettled);
+            unsubStatus?.();
+            unsubStatus = manager.view.subscribe(() => {
+              updateStatus(manager);
+              void dispatchQueuedJobs(manager).catch(() => {});
+            });
+            activeManager = manager;
+            await orchestrationCoordinator?.replay();
+            updateStatus(manager);
+            return manager;
+          });
+      } catch (error) {
+        await stateLease?.release().catch(() => {});
+        stateLease = undefined;
+        throw error;
+      }
+    })();
+    return managerPromise;
+  };
 
   const updateStatus = (manager: SubagentManagerShape) => {
-    if (!ui) return
-    const subs = manager.view.list()
+    if (!ui) return;
+    const subs = manager.view.list();
     if (subs.length === 0) {
-      ui.setStatus("subagents", undefined)
-      return
+      ui.setStatus("subagents", undefined);
+      return;
     }
-    const starting = subs.filter((snap) => snap.restarting === true).length
-    const running = subs.filter((snap) => snap.status === "running" && !snap.restarting).length
-    const failed = subs.filter((snap) => snap.status === "error").length
-    const done = subs.length - starting - running - failed
+    const starting = subs.filter(
+      (snap) => snap.restarting === true || isSubagentBooting(snap),
+    ).length;
+    const running = subs.filter(
+      (snap) =>
+        snap.status === "running" &&
+        !snap.restarting &&
+        !isSubagentBooting(snap),
+    ).length;
+    const failed = subs.filter((snap) => snap.status === "failed").length;
+    const done = subs.length - starting - running - failed;
     ui.setStatus(
       "subagents",
       formatActivityStatus(ui.theme, { starting, running, done, failed }),
-    )
-  }
+    );
+  };
 
   const syncLedgerStatus = async (options: {
-    readonly id: string
-    readonly title: string
-    readonly mode: SubagentMode
-    readonly status: WorkflowTaskStatus
-    readonly role?: WorkflowTaskRole
-    readonly message?: string
-    readonly leadAgentId?: string
-    readonly dependsOn?: ReadonlyArray<string>
-    readonly priority?: number
-    readonly requiresWorktree?: boolean
+    readonly taskId: WorkflowTaskId;
+    readonly title: string;
+    readonly mode: SubagentMode;
+    readonly status: WorkflowTaskStatus;
+    readonly role?: WorkflowTaskRole;
+    readonly message?: string;
+    readonly leadAgentId?: LeadAgentId;
+    readonly dependsOn?: ReadonlyArray<WorkflowTaskId>;
+    readonly priority?: number;
+    readonly requiresWorktree?: boolean;
   }) => {
     let task = await taskLedger.ensure({
-      id: options.id,
+      id: options.taskId,
       title: options.title,
       mode: options.mode,
       role: options.role ?? "worker",
@@ -727,60 +986,97 @@ export default function activate(pi: ExtensionAPI) {
       priority: options.priority ?? 0,
       requiresWorktree: options.requiresWorktree ?? options.mode === "build",
       leadAgentId: options.leadAgentId,
-    })
+    });
     if (options.status === "working" && task.status === "queued") {
-      task = await taskLedger.status(task.id, "working")
+      task = await taskLedger.status(task.id, "working");
     } else if (options.status !== "working" && task.status === "queued") {
-      task = await taskLedger.status(task.id, "working")
+      task = await taskLedger.status(task.id, "working");
     }
     if (task.status !== options.status) {
-      const generation = options.status === "working" ? task.generation + 1 : task.generation
-      task = await taskLedger.status(task.id, options.status, options.message, generation)
+      const generation =
+        options.status === "working" ? task.generation + 1 : task.generation;
+      task = await taskLedger.status(
+        task.id,
+        options.status,
+        options.message,
+        generation,
+      );
     }
-    return task
-  }
+    return task;
+  };
 
   const publishWorkflowStatus = async (
     snap: SubagentSnapshot,
     status: WorkflowTaskStatus,
     message?: string,
   ) => {
-    if (snap.origin === "quick-ask") return
+    if (snap.origin === "quick-ask") return;
     const ledgerTask = await syncLedgerStatus({
-      id: snap.id,
+      taskId: snap.id,
       title: snap.title,
       mode: snap.meta.mode ?? "build",
       status,
       message,
       requiresWorktree: !!snap.meta.worktree,
-    })
+    });
     if (ledgerTask.parentTaskId && (status === "done" || status === "failed")) {
-      const parent = taskLedger.get(ledgerTask.parentTaskId)
+      const parent = taskLedger.get(ledgerTask.parentTaskId);
       if (parent && parent.status !== "done" && parent.status !== "failed") {
-        if (parent.status === "queued") await taskLedger.status(parent.id, "working")
-        await taskLedger.status(parent.id, status, message)
+        if (parent.status === "queued")
+          await taskLedger.status(parent.id, "working");
+        await taskLedger.status(parent.id, status, message);
       }
     }
-    const latest = workflowQueue.latestGeneration(snap.id)
-    const current = latest === undefined ? undefined : workflowQueue.status(snap.id, latest)
-    const generation = status === "working"
-      ? (current === "working" ? latest! : (latest ?? 0) + 1)
-      : (latest ?? 1)
+    const latest = workflowQueue.latestGeneration(snap.id);
+    const current =
+      latest === undefined ? undefined : workflowQueue.status(snap.id, latest);
+    const generation =
+      status === "working"
+        ? current === "working"
+          ? latest!
+          : (latest ?? 0) + 1
+        : (latest ?? 1);
     await workflowQueue.publish(snap.id, {
       type: "status",
       status,
       generation,
       at: snap.settledAt ?? Date.now(),
       ...(message === undefined ? {} : { message }),
-    })
-  }
+    });
+  };
 
-  let orchestrationCoordinator: OrchestrationCoordinator | undefined
+  let orchestrationCoordinator: OrchestrationCoordinator | undefined;
+  const resumeTaskAfterDecision = async (
+    taskId: WorkflowTaskId,
+    message: string,
+    at: number,
+  ) => {
+    const task = taskLedger.get(taskId);
+    if (task?.status === "needs-decision") {
+      await taskLedger.status(taskId, "working", message);
+    }
+
+    const generation = workflowQueue.latestGeneration(taskId);
+    if (
+      generation !== undefined &&
+      workflowQueue.status(taskId, generation) === "needs-decision"
+    ) {
+      await workflowQueue.publish(taskId, {
+        type: "status",
+        status: "working",
+        generation,
+        message,
+        at,
+      });
+    }
+  };
+
   const handleLeadAgentEvent = async (event: LeadAgentEvent) => {
-    if (!leadAgentStore.get(event.leadAgentId)) throw new Error(`Unknown Lead Agent: ${event.leadAgentId}`)
+    if (!leadAgentStore.get(event.leadAgentId))
+      throw new Error(`Unknown Lead Agent: ${event.leadAgentId}`);
     if (event.type === "proposal") {
       await syncLedgerStatus({
-        id: event.proposalId,
+        taskId: event.proposalId,
         title: event.title,
         mode: event.mode,
         status: "queued",
@@ -788,7 +1084,7 @@ export default function activate(pi: ExtensionAPI) {
         dependsOn: event.dependsOn,
         priority: event.priority,
         requiresWorktree: event.mode === "build",
-      })
+      });
       if (!leadAgentProposalStore.get(event.proposalId)) {
         await leadAgentProposalStore.create({
           id: event.proposalId,
@@ -798,38 +1094,91 @@ export default function activate(pi: ExtensionAPI) {
           mode: event.mode,
           dependsOn: event.dependsOn,
           priority: event.priority,
-        })
+        });
       }
-      return
+      return;
     }
-    if (event.taskId && (event.type === "worker_done" || event.type === "escalation" || event.type === "ask")) {
-      const status = event.type === "worker_done" ? "done" : "needs-decision"
-      const message = event.type === "worker_done" ? event.summary : event.type === "ask" ? event.question : event.reason
-      await syncLedgerStatus({ id: event.taskId, title: event.taskId, mode: "build", status, message, leadAgentId: event.leadAgentId })
-      let workflowStatus = workflowQueue.latestGeneration(event.taskId) === undefined
-        ? undefined
-        : workflowQueue.status(event.taskId)
+    if (
+      event.taskId &&
+      (event.type === "worker_done" ||
+        event.type === "escalation" ||
+        event.type === "ask")
+    ) {
+      const status = event.type === "worker_done" ? "done" : "needs-decision";
+      const message =
+        event.type === "worker_done"
+          ? event.summary
+          : event.type === "ask"
+            ? event.question
+            : event.reason;
+      if (event.type === "worker_done") {
+        await resumeTaskAfterDecision(
+          event.taskId,
+          "Parent decision received; task resumed.",
+          event.at,
+        );
+      }
+      await syncLedgerStatus({
+        taskId: event.taskId,
+        title: event.taskId,
+        mode: "build",
+        status,
+        message,
+        leadAgentId: event.leadAgentId,
+      });
+      let workflowStatus =
+        workflowQueue.latestGeneration(event.taskId) === undefined
+          ? undefined
+          : workflowQueue.status(event.taskId);
       if (workflowStatus === undefined) {
-        await workflowQueue.publish(event.taskId, { type: "status", status: "queued", generation: 1, at: event.at })
-        await workflowQueue.publish(event.taskId, { type: "status", status: "working", generation: 1, at: event.at })
-        workflowStatus = "working"
+        await workflowQueue.publish(event.taskId, {
+          type: "status",
+          status: "queued",
+          generation: 1,
+          at: event.at,
+        });
+        await workflowQueue.publish(event.taskId, {
+          type: "status",
+          status: "working",
+          generation: 1,
+          at: event.at,
+        });
+        workflowStatus = "working";
       }
       if (workflowStatus !== status) {
-        await workflowQueue.publish(event.taskId, { type: "status", status, generation: workflowQueue.latestGeneration(event.taskId) ?? 1, message, at: event.at })
+        await workflowQueue.publish(event.taskId, {
+          type: "status",
+          status,
+          generation: workflowQueue.latestGeneration(event.taskId) ?? 1,
+          message,
+          at: event.at,
+        });
       }
     }
     if (event.type === "reply") {
-      if (!activeManager) return false
-      const leadAgent = leadAgentStore.get(event.leadAgentId)
+      if (!activeManager) return false;
+      const leadAgent = leadAgentStore.get(event.leadAgentId);
       if (leadAgent) {
-        const current = await runTool(getRuntime(), activeManager.get(leadAgent.jobId))
+        const current = await runTool(
+          getRuntime(),
+          activeManager.get(leadAgent.jobId),
+        );
         if (current?.status === "running") {
-          await runTool(getRuntime(), activeManager.send(leadAgent.jobId, `Reply to ${event.replyTo}: ${event.answer}`))
+          await runTool(
+            getRuntime(),
+            activeManager.send(
+              leadAgent.jobId,
+              `Reply to ${event.replyTo}: ${event.answer}`,
+            ),
+          );
         }
       }
     }
-  }
-  orchestrationCoordinator = new OrchestrationCoordinator(taskLedger, handleLeadAgentEvent)
+  };
+  orchestrationCoordinator = new OrchestrationCoordinator(
+    taskLedger,
+    handleLeadAgentEvent,
+  );
 
   const deliverResult = (snap: SubagentSnapshot) => {
     pi.sendMessage(
@@ -845,24 +1194,92 @@ export default function activate(pi: ExtensionAPI) {
           approvalId: approvalGate.get(`approval:${snap.id}:review`)?.id,
         }),
         display: true,
-        details: { id: snap.id, title: snap.title, status: snap.status },
+        details: {
+          id: snap.id,
+          title: snap.title,
+          status: snap.status,
+          // Keep the normalized report machine-readable for the parent while
+          // the rendered content and raw terminal output remain untrusted data.
+          report: snap.report,
+        },
       },
       // Firstmate-parity delivery: a settled child always reaches the parent as
       // its own turn ("the model is never left blind"). The message stays
       // marked untrusted; disable with SUBAGENT_AUTO_WAKE=0.
-      { deliverAs: "nextTurn", triggerTurn: process.env.SUBAGENT_AUTO_WAKE === "0" ? false : true },
-    )
-  }
+      {
+        deliverAs: "nextTurn",
+        triggerTurn: process.env.SUBAGENT_AUTO_WAKE === "0" ? false : true,
+      },
+    );
+  };
 
   const flushResults = () => {
-    for (const snap of resultDelivery.drain()) deliverResult(snap)
-  }
+    for (const snap of resultDelivery.drain()) deliverResult(snap);
+  };
 
   const subagentUiOptions = () => ({
-    getApprovals: (jobId: string) => approvalGate.list().filter((item) => item.jobId === jobId),
-    getActions: (jobId: string) => actionQueue.list().filter((item) => item.event.jobId === jobId),
-    onDelete: async (jobId: string) => { await deleteSubagentCompletely(await getManager(), jobId) },
-  })
+    getApprovals: (jobId: string) =>
+      approvalGate.list().filter((item) => item.jobId === jobId),
+    getActions: (jobId: string) =>
+      actionQueue.list().filter((item) => item.event.jobId === jobId),
+    onDelete: async (jobId: string) => {
+      await deleteSubagentCompletely(await getManager(), jobId);
+    },
+    onRetry: async (jobId: string) => {
+      const manager = await getManager();
+      await runTool(getRuntime(), manager.retry(jobId));
+      const snap = await runTool(getRuntime(), manager.get(jobId));
+      if (snap) {
+        await publishWorkflowStatus(snap, "working");
+        await persistSnapshot(snap, "dashboard-retry-requested");
+      }
+    },
+    onApprove: async (jobId: string, approvalId: string) => {
+      const manager = await getManager();
+      const request = approvalGate.get(approvalId);
+      if (!request || request.jobId !== jobId || request.status !== "pending") {
+        throw new Error("Approval request is no longer pending.");
+      }
+      if (
+        !ui ||
+        !(await ui.confirm(
+          `Approve ${request.operation}`,
+          `Allow ${request.operation} for build job ${request.jobId}? This may change Git state or external repositories.`,
+        ))
+      )
+        throw new Error("Approval cancelled.");
+      const approved = approvalGate.approve(approvalId);
+      await persistApprovals();
+      if (approved.operation === "delete-worktree") {
+        await deleteSubagentCompletely(manager, approved.jobId);
+      } else {
+        await executeApprovedDelivery(manager, approved);
+      }
+    },
+    onConfirmAction: async (actionId: string) => {
+      await actionQueue.confirm(actionId);
+    },
+    onInspectTerminal: async (snap: SubagentSnapshot) => {
+      if (snap.backend !== "orca") return;
+      const identity = [
+        snap.meta.nativeTerminalHandle
+          ? `terminal=${snap.meta.nativeTerminalHandle}`
+          : undefined,
+        snap.meta.nativeWorktreeId
+          ? `worktree=${snap.meta.nativeWorktreeId}`
+          : undefined,
+        snap.meta.worktree?.path
+          ? `path=${snap.meta.worktree.path}`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      ui?.notify(
+        `Inspect Orca terminal manually: ${identity || "identity unavailable"}`,
+        "info",
+      );
+    },
+  });
 
   const deliverQuickAskResult = (snap: SubagentSnapshot) => {
     pi.appendEntry<QuickAskResultData>("quick-ask-result", {
@@ -873,75 +1290,101 @@ export default function activate(pi: ExtensionAPI) {
       prompt: snap.prompt,
       answer: truncatedOutput(snap),
       sessionFilePath: snap.meta.sessionFilePath,
-    })
+    });
     ui?.notify(
-      snap.status === "error"
+      snap.status === "failed"
         ? `quick ask "${snap.title}" failed — reopen it with /subagents`
         : `quick ask "${snap.title}" answered — reopen it with /subagents`,
-      snap.status === "error" ? "error" : "info",
-    )
-  }
+      snap.status === "failed" ? "error" : "info",
+    );
+  };
 
   const onSettled = (snap: SubagentSnapshot, consumed: boolean) => {
-    releaseSpawnClaim(snap.id)
-    if (deletingJobs.has(snap.id)) return
+    releaseSpawnClaim(snap.id);
+    if (deletingJobs.has(snap.id)) return;
     if (!sessionContext) {
-      pendingSettled.push({ snap: { ...snap, meta: { ...snap.meta } }, consumed })
-      return
+      pendingSettled.push({
+        snap: { ...snap, meta: { ...snap.meta } },
+        consumed,
+      });
+      return;
     }
+    const requiresDecision =
+      snap.report?.outcome === "blocked" ||
+      snap.report?.needsParentDecision === true;
     void publishWorkflowStatus(
       snap,
-      snap.status === "done" ? "done" : "failed",
-      snap.errorText,
+      requiresDecision
+        ? "needs-decision"
+        : snap.status === "done"
+          ? "done"
+          : "failed",
+      snap.errorText ?? snap.report?.error?.message,
     ).catch((error) => {
-      ui?.notify(`Workflow event persistence failed: ${String(error)}`, "warning")
-    })
-    void persistSnapshot(snap, "settled")
-    if (snap.meta.mode === "build" && snap.status === "done" && snap.meta.worktree) {
-      approvalGate.request({ jobId: snap.id, operation: "review", mode: "build" })
+      ui?.notify(
+        `Workflow event persistence failed: ${String(error)}`,
+        "warning",
+      );
+    });
+    void persistSnapshot(snap, "settled");
+    if (
+      snap.meta.mode === "build" &&
+      snap.status === "done" &&
+      snap.report?.outcome === "success" &&
+      snap.meta.worktree
+    ) {
+      approvalGate.request({
+        jobId: snap.id,
+        operation: "review",
+        mode: "build",
+      });
       void persistApprovals().catch((error) => {
-        ui?.notify(`Approval state persistence failed: ${String(error)}`, "warning")
-      })
+        ui?.notify(
+          `Approval state persistence failed: ${String(error)}`,
+          "warning",
+        );
+      });
     }
+    void subagentMonitor.observe(snap).catch(() => {});
     if (snap.origin === "quick-ask") {
-      deliverQuickAskResult({ ...snap, meta: { ...snap.meta } })
-      return
+      deliverQuickAskResult({ ...snap, meta: { ...snap.meta } });
+      return;
     }
     if (consumed) {
-      resultDelivery.consume([snap.id])
-      return
+      resultDelivery.consume([snap.id]);
+      return;
     }
-    resultDelivery.defer({ ...snap, meta: { ...snap.meta } })
-    if (sessionContext?.isIdle()) flushResults()
-  }
+    resultDelivery.defer({ ...snap, meta: { ...snap.meta } });
+    if (sessionContext?.isIdle()) flushResults();
+  };
 
   pi.on("session_start", (_event, ctx) => {
-    sessionContext = ctx
-    if (ctx.hasUI) ui = ctx.ui
-    const pending = pendingSettled.splice(0)
-    for (const item of pending) onSettled(item.snap, item.consumed)
-  })
+    sessionContext = ctx;
+    if (ctx.hasUI) ui = ctx.ui;
+    const pending = pendingSettled.splice(0);
+    for (const item of pending) onSettled(item.snap, item.consumed);
+  });
 
-  pi.on("agent_settled", flushResults)
+  pi.on("agent_settled", flushResults);
 
   pi.on("session_shutdown", async () => {
-    sessionContext = undefined
-    resultDelivery.clear()
-    pendingSettled.length = 0
-    unsubStatus?.()
-    unsubStatus = undefined
-    subagentMonitor.stop()
-    if (jobQueueDispatchTimer) clearInterval(jobQueueDispatchTimer)
-    jobQueueDispatchTimer = undefined
-    if (sessionReconcileTimer) clearInterval(sessionReconcileTimer)
-    sessionReconcileTimer = undefined
-    ui?.setStatus("subagents", undefined)
-    ui = undefined
-    const closing = runtime
-    runtime = undefined
-    managerPromise = undefined
-    await closing?.dispose()
-  })
+    sessionContext = undefined;
+    resultDelivery.clear();
+    pendingSettled.length = 0;
+    unsubStatus?.();
+    unsubStatus = undefined;
+    subagentMonitor.stop();
+    if (sessionReconcileTimer) clearInterval(sessionReconcileTimer);
+    sessionReconcileTimer = undefined;
+    ui?.setStatus("subagents", undefined);
+    ui = undefined;
+    const closing = runtime;
+    runtime = undefined;
+    managerPromise = undefined;
+    await closing?.dispose();
+    await stateLease?.release().catch(() => {});
+    stateLease = undefined;
+  });
 
   // --- Tools ---------------------------------------------------------------
 
@@ -962,11 +1405,13 @@ export default function activate(pi: ExtensionAPI) {
         maxLength: 160,
         description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.name,
       }),
-      proposal_id: Type.Optional(Type.String({
-        minLength: 1,
-        maxLength: 128,
-        description: "Approved Lead Agent child proposal to dispatch.",
-      })),
+      proposal_id: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 128,
+          description: "Approved Lead Agent child proposal to dispatch.",
+        }),
+      ),
       working_dir: Type.Optional(
         Type.String({
           description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.workingDir,
@@ -999,59 +1444,94 @@ export default function activate(pi: ExtensionAPI) {
           description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.timeoutMs,
         }),
       ),
-      depends_on: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128 }), {
-        maxItems: 16,
-        description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.dependsOn,
-      })),
-      priority: Type.Optional(Type.Integer({
-        minimum: -100,
-        maximum: 100,
-        description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.priority,
-      })),
-      branch_type: Type.Optional(StringEnum(CONVENTIONAL_BRANCH_TYPES, {
-        description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.branchType,
-      })),
-      branch_scope: Type.Optional(Type.String({
-        minLength: 1,
-        maxLength: 32,
-        description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.branchScope,
-      })),
+      depends_on: Type.Optional(
+        Type.Array(Type.String({ minLength: 1, maxLength: 128 }), {
+          maxItems: 16,
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.dependsOn,
+        }),
+      ),
+      priority: Type.Optional(
+        Type.Integer({
+          minimum: -100,
+          maximum: 100,
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.priority,
+        }),
+      ),
+      branch_type: Type.Optional(
+        StringEnum(CONVENTIONAL_BRANCH_TYPES, {
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.branchType,
+        }),
+      ),
+      branch_scope: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 32,
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.branchScope,
+        }),
+      ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const manager = await getManager()
-      const proposalId = params.proposal_id as string | undefined
-      const proposal = proposalId === undefined ? undefined : leadAgentProposalStore.get(proposalId)
-      const proposalLeadAgent = proposal === undefined ? undefined : leadAgentStore.get(proposal.leadAgentId)
+      const manager = await getManager();
+      const proposalId = params.proposal_id as string | undefined;
+      const proposal =
+        proposalId === undefined
+          ? undefined
+          : leadAgentProposalStore.get(proposalId);
+      const proposalLeadAgent =
+        proposal === undefined
+          ? undefined
+          : leadAgentStore.get(proposal.leadAgentId);
       if (proposalId !== undefined) {
-        if (!proposal) throw new Error(`Unknown Lead Agent proposal: ${proposalId}`)
-        if (!proposalLeadAgent) throw new Error(`Lead Agent owner is missing for proposal: ${proposalId}`)
-        if (proposal.status !== "approved") throw new Error(`Lead Agent proposal ${proposalId} must be approved before dispatch.`)
+        if (!proposal)
+          throw new Error(`Unknown Lead Agent proposal: ${proposalId}`);
+        if (!proposalLeadAgent)
+          throw new Error(
+            `Lead Agent owner is missing for proposal: ${proposalId}`,
+          );
+        if (proposal.status !== "approved")
+          throw new Error(
+            `Lead Agent proposal ${proposalId} must be approved before dispatch.`,
+          );
       }
-      const mode = proposal?.mode ?? ((params.mode as SubagentMode | undefined) ?? "build")
-      const policy = resolveExecutionPolicy(mode, params.backend as BackendName | undefined)
-      const harness = policy.backend
+      const mode =
+        proposal?.mode ?? (params.mode as SubagentMode | undefined) ?? "build";
+      const policy = resolveExecutionPolicy(
+        mode,
+        params.backend as BackendName | undefined,
+      );
+      const harness = policy.backend;
       const dependsOn = proposal
         ? [...proposal.dependsOn]
-        : [...new Set((params.depends_on as string[] | undefined) ?? [])]
-      const priority = typeof params.priority === "number" ? params.priority : 0
-      const branchType = params.branch_type as ConventionalBranchType | undefined
-      const branchScope = params.branch_scope as string | undefined
+        : [...new Set((params.depends_on as string[] | undefined) ?? [])];
+      const priority =
+        typeof params.priority === "number" ? params.priority : 0;
+      const branchType = params.branch_type as
+        ConventionalBranchType | undefined;
+      const branchScope = params.branch_scope as string | undefined;
 
       const requestedCwd = proposalLeadAgent
         ? path.resolve(proposalLeadAgent.repoRoot ?? proposalLeadAgent.cwd)
-        : path.resolve(ctx.cwd, (params.working_dir as string | undefined) ?? ".")
+        : path.resolve(
+            ctx.cwd,
+            (params.working_dir as string | undefined) ?? ".",
+          );
       const child = resolveTrustedChildCwd({
         parentCwd: ctx.cwd,
         requestedCwd,
         parentTrusted: ctx.isProjectTrusted(),
-      })
-      const title = (proposal?.title ?? (params.name as string)).trim().slice(0, 160) || "subagent"
-      const prompt = proposal?.prompt ?? (params.prompt as string)
-      const needsWorktree = policy.requiresWorktree
-      const jobId = proposal !== undefined || needsWorktree || dependsOn.length > 0 ? createJobId(title) : undefined
+      });
+      const title =
+        (proposal?.title ?? (params.name as string)).trim().slice(0, 160) ||
+        "subagent";
+      const prompt = proposal?.prompt ?? (params.prompt as string);
+      const needsWorktree = policy.requiresWorktree;
+      const jobId =
+        proposal !== undefined || needsWorktree || dependsOn.length > 0
+          ? createJobId(title)
+          : undefined;
       const branchName = jobId
         ? createBranchName(title, { type: branchType, scope: branchScope })
-        : undefined
+        : undefined;
       const spawnFingerprint = jobId
         ? createSpawnFingerprint({
             backend: harness,
@@ -1060,13 +1540,22 @@ export default function activate(pi: ExtensionAPI) {
             prompt,
             ...(proposalId === undefined ? {} : { proposalId }),
           })
-        : undefined
-      const existingClaim = spawnFingerprint === undefined ? undefined : spawnClaims.get(spawnFingerprint)
+        : undefined;
+      const existingClaim =
+        spawnFingerprint === undefined
+          ? undefined
+          : spawnClaims.get(spawnFingerprint);
       if (existingClaim) {
-        const current = manager.view.get(existingClaim.id)
-        const state = current?.status === "running" ? "already running" : "still starting"
+        const current = manager.view.get(existingClaim.id);
+        const state =
+          current?.status === "running" ? "already running" : "still starting";
         return {
-          content: [{ type: "text", text: `Subagent ${existingClaim.id} "${existingClaim.title}" is ${state}; reusing it instead of creating another Orca worktree.` }],
+          content: [
+            {
+              type: "text",
+              text: `Subagent ${existingClaim.id} "${existingClaim.title}" is ${state}; reusing it instead of creating another Orca worktree.`,
+            },
+          ],
           details: {
             id: existingClaim.id,
             title: existingClaim.title,
@@ -1077,7 +1566,7 @@ export default function activate(pi: ExtensionAPI) {
             harness: existingClaim.backend,
             deduplicated: true,
           },
-        }
+        };
       }
       if (spawnFingerprint && jobId) {
         spawnClaims.set(spawnFingerprint, {
@@ -1087,34 +1576,35 @@ export default function activate(pi: ExtensionAPI) {
           mode,
           cwd: child.cwd,
           ...(branchName === undefined ? {} : { branch: branchName }),
-        })
+        });
       }
-      let worktree: PreparedOrcaWorktree["worktree"] | undefined
-      let initialTerminal: SubagentInitialTerminal | undefined
+      let worktree: PreparedOrcaWorktree["worktree"] | undefined;
+      let initialTerminal: SubagentInitialTerminal | undefined;
       try {
         if (jobId && harness === "orca" && dependsOn.length === 0) {
           const prepared = await createOrcaManagedWorktree({
             sourceDir: child.cwd,
             jobId,
             branchName: branchName!,
+            title,
             prompt,
             mode,
-          })
-          worktree = prepared.worktree
-          initialTerminal = prepared.initialTerminal
+          });
+          worktree = prepared.worktree;
+          initialTerminal = prepared.initialTerminal;
         } else if (jobId && policy.requiresWorktree && harness !== "orca") {
           worktree = await createSubagentWorktree({
             sourceDir: child.cwd,
             workspaceRoot: path.join(getAgentDir(), "workspace"),
             jobId,
             branchName,
-          })
+          });
         }
       } catch (error) {
-        if (jobId) releaseSpawnClaim(jobId)
-        throw error
+        if (jobId) releaseSpawnClaim(jobId);
+        throw error;
       }
-      const cwd = worktree?.path ?? child.cwd
+      const cwd = worktree?.path ?? child.cwd;
 
       const task = {
         jobId,
@@ -1137,10 +1627,10 @@ export default function activate(pi: ExtensionAPI) {
           inheritedThinkingLevel: parseThinkingLevel(pi.getThinkingLevel()),
           modelRegistry: ctx.modelRegistry,
         },
-      } as const
+      } as const;
 
       const prepareProposalLedger = async () => {
-        if (!proposal) return
+        if (!proposal) return;
         const parent = await taskLedger.ensure({
           id: proposal.id,
           title: proposal.title,
@@ -1150,22 +1640,26 @@ export default function activate(pi: ExtensionAPI) {
           priority: proposal.priority,
           requiresWorktree: proposal.mode === "build",
           leadAgentId: proposal.leadAgentId,
-        })
-        if (parent.status === "queued") await taskLedger.status(parent.id, "working")
-      }
+        });
+        if (parent.status === "queued")
+          await taskLedger.status(parent.id, "working");
+      };
 
       if (dependsOn.length > 0) {
         try {
-          const queued = await jobQueue.enqueue({
-            id: jobId!,
-            title,
-            backend: harness,
-            mode,
-            dependsOn,
-            priority: proposal?.priority ?? priority,
-            task,
-          }, (id) => !!manager.view.get(id) || !!jobQueue.get(id))
-          await prepareProposalLedger()
+          const queued = await jobQueue.enqueue(
+            {
+              id: jobId!,
+              title,
+              backend: harness,
+              mode,
+              dependsOn,
+              priority: proposal?.priority ?? priority,
+              task,
+            },
+            (id) => !!manager.view.get(id) || !!jobQueue.get(id),
+          );
+          await prepareProposalLedger();
           await taskLedger.ensure({
             id: jobId!,
             title,
@@ -1176,24 +1670,52 @@ export default function activate(pi: ExtensionAPI) {
             requiresWorktree: policy.requiresWorktree,
             leadAgentId: proposal?.leadAgentId,
             parentTaskId: proposal?.id,
-          })
-          await workflowQueue.publish(jobId!, { type: "status", status: "queued", generation: 1, at: Date.now() })
-          if (proposalId) await leadAgentProposalStore.dispatch(proposalId)
+          });
+          await workflowQueue.publish(jobId!, {
+            type: "status",
+            status: "queued",
+            generation: 1,
+            at: Date.now(),
+          });
+          if (proposalId) await leadAgentProposalStore.dispatch(proposalId);
+          await dispatchQueuedJobs(manager);
           return {
-          content: [{ type: "text", text: `Queued job ${queued.id} "${queued.title}" (priority ${queued.priority}); waiting for: ${queued.dependsOn.join(", ")}.` }],
-          details: { id: queued.id, status: queued.status, dependsOn: queued.dependsOn, priority: queued.priority, cwd, branch: worktree?.branch, mode, harness },
-          }
+            content: [
+              {
+                type: "text",
+                text: `Queued job ${queued.id} "${queued.title}" (priority ${queued.priority}); waiting for: ${queued.dependsOn.join(", ")}.`,
+              },
+            ],
+            details: {
+              id: queued.id,
+              status: queued.status,
+              dependsOn: queued.dependsOn,
+              priority: queued.priority,
+              cwd,
+              branch: worktree?.branch,
+              mode,
+              harness,
+            },
+          };
         } catch (error) {
           if (worktree) {
-            try { await cleanupManagedWorktree(harness, worktree, initialTerminal?.worktreeId) } catch { /* preserve a cleanup warning below */ }
+            try {
+              await cleanupManagedWorktree(
+                harness,
+                worktree,
+                initialTerminal?.worktreeId,
+              );
+            } catch {
+              /* preserve a cleanup warning below */
+            }
           }
-          releaseSpawnClaim(jobId!)
-          throw error
+          releaseSpawnClaim(jobId!);
+          throw error;
         }
       }
 
       if (jobId) {
-        await prepareProposalLedger()
+        await prepareProposalLedger();
         await taskLedger.ensure({
           id: jobId,
           title,
@@ -1204,25 +1726,32 @@ export default function activate(pi: ExtensionAPI) {
           requiresWorktree: policy.requiresWorktree,
           leadAgentId: proposal?.leadAgentId,
           parentTaskId: proposal?.id,
-        })
+        });
       }
-      let snap: SubagentSnapshot
+      let snap: SubagentSnapshot;
       try {
-        snap = await runTool(
-        getRuntime(),
-        manager.spawn(harness, task),
-        { signal, interruptMessage: "Subagent spawn aborted." },
-        )
+        snap = await runTool(getRuntime(), manager.spawn(harness, task), {
+          signal,
+          interruptMessage: "Subagent spawn aborted.",
+        });
       } catch (error) {
         if (worktree && !manager.view.get(jobId!)) {
-          try { await cleanupManagedWorktree(harness, worktree, initialTerminal?.worktreeId) } catch { /* never force-delete output */ }
+          try {
+            await cleanupManagedWorktree(
+              harness,
+              worktree,
+              initialTerminal?.worktreeId,
+            );
+          } catch {
+            /* never force-delete output */
+          }
         }
-        releaseSpawnClaim(jobId!)
-        throw error
+        releaseSpawnClaim(jobId!);
+        throw error;
       }
-      await publishWorkflowStatus(snap, "working")
-      await persistSnapshot(snap, "spawned")
-      if (proposalId) await leadAgentProposalStore.dispatch(proposalId)
+      await publishWorkflowStatus(snap, "working");
+      await persistSnapshot(snap, "spawned");
+      if (proposalId) await leadAgentProposalStore.dispatch(proposalId);
 
       return {
         content: [
@@ -1249,76 +1778,128 @@ export default function activate(pi: ExtensionAPI) {
           harness,
           model: snap.meta.modelLabel,
         },
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_lead_create",
     label: "Create Lead Agent",
     description: SUBAGENT_LEAD_AGENT_CREATE_TOOL_DESCRIPTION,
     parameters: Type.Object({
-      lead_agent_id: Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.leadAgentId }),
-      name: Type.String({ minLength: 1, maxLength: 160, description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.name }),
-      prompt: Type.String({ minLength: 1, maxLength: 32_000, description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.prompt }),
-      charter: Type.Optional(Type.String({ maxLength: 32_000, description: "Persistent Lead Agent domain charter." })),
-      scope: Type.Optional(Type.String({ maxLength: 4_096, description: "Lead Agent routing scope." })),
-      mode: Type.Optional(StringEnum(SUBAGENT_MODES, { description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.mode })),
-      backend: Type.Optional(StringEnum(BACKEND_NAMES, { description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.backend })),
-      working_dir: Type.Optional(Type.String({ description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.workingDir })),
-      branch_type: Type.Optional(StringEnum(CONVENTIONAL_BRANCH_TYPES, {
-        description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.branchType,
-      })),
-      branch_scope: Type.Optional(Type.String({
+      lead_agent_id: Type.String({
         minLength: 1,
-        maxLength: 32,
-        description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.branchScope,
-      })),
+        maxLength: 128,
+        description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.leadAgentId,
+      }),
+      name: Type.String({
+        minLength: 1,
+        maxLength: 160,
+        description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.name,
+      }),
+      prompt: Type.String({
+        minLength: 1,
+        maxLength: 32_000,
+        description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.prompt,
+      }),
+      charter: Type.Optional(
+        Type.String({
+          maxLength: 32_000,
+          description: "Persistent Lead Agent domain charter.",
+        }),
+      ),
+      scope: Type.Optional(
+        Type.String({
+          maxLength: 4_096,
+          description: "Lead Agent routing scope.",
+        }),
+      ),
+      mode: Type.Optional(
+        StringEnum(SUBAGENT_MODES, {
+          description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.mode,
+        }),
+      ),
+      backend: Type.Optional(
+        StringEnum(BACKEND_NAMES, {
+          description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.backend,
+        }),
+      ),
+      working_dir: Type.Optional(
+        Type.String({
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.workingDir,
+        }),
+      ),
+      branch_type: Type.Optional(
+        StringEnum(CONVENTIONAL_BRANCH_TYPES, {
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.branchType,
+        }),
+      ),
+      branch_scope: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 32,
+          description: SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS.branchScope,
+        }),
+      ),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const manager = await getManager()
-      const leadAgentId = (params.lead_agent_id as string).trim()
-      const title = (params.name as string).trim().slice(0, 160)
-      const mode = (params.mode as SubagentMode | undefined) ?? "build"
-      const policy = resolveExecutionPolicy(mode, params.backend as BackendName | undefined)
-      const harness = policy.backend
+      const manager = await getManager();
+      const leadAgentId = (params.lead_agent_id as string).trim();
+      const title = (params.name as string).trim().slice(0, 160);
+      const mode = (params.mode as SubagentMode | undefined) ?? "build";
+      const policy = resolveExecutionPolicy(
+        mode,
+        params.backend as BackendName | undefined,
+      );
+      const harness = policy.backend;
       const leadAgentPrompt = [
         `You are the persistent Lead Agent ${leadAgentId}.`,
         "Use subagent_lead_event for structured proposals, completion reports, escalations, questions, and replies. Child proposals require parent approval before dispatch.",
         params.charter ? `Charter: ${params.charter as string}` : undefined,
         params.scope ? `Scope: ${params.scope as string}` : undefined,
         `Initial briefing: ${params.prompt as string}`,
-      ].filter(Boolean).join("\n\n")
-      if (leadAgentStore.get(leadAgentId)) throw new Error(`Lead Agent already exists: ${leadAgentId}`)
-      const requestedCwd = path.resolve(ctx.cwd, (params.working_dir as string | undefined) ?? ".")
-      const child = resolveTrustedChildCwd({ parentCwd: ctx.cwd, requestedCwd, parentTrusted: ctx.isProjectTrusted() })
-      const jobId = createJobId(`${leadAgentId}-${title}`)
-      const needsWorktree = policy.requiresWorktree
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      if (leadAgentStore.get(leadAgentId))
+        throw new Error(`Lead Agent already exists: ${leadAgentId}`);
+      const requestedCwd = path.resolve(
+        ctx.cwd,
+        (params.working_dir as string | undefined) ?? ".",
+      );
+      const child = resolveTrustedChildCwd({
+        parentCwd: ctx.cwd,
+        requestedCwd,
+        parentTrusted: ctx.isProjectTrusted(),
+      });
+      const jobId = createLeadJobId(title);
+      const needsWorktree = policy.requiresWorktree;
       const branchName = needsWorktree
         ? createBranchName(title, {
             type: params.branch_type as ConventionalBranchType | undefined,
             scope: params.branch_scope as string | undefined,
           })
-        : undefined
-      let worktree: PreparedOrcaWorktree["worktree"] | undefined
-      let initialTerminal: SubagentInitialTerminal | undefined
+        : undefined;
+      let worktree: PreparedOrcaWorktree["worktree"] | undefined;
+      let initialTerminal: SubagentInitialTerminal | undefined;
       if (harness === "orca") {
         const prepared = await createOrcaManagedWorktree({
           sourceDir: child.cwd,
           jobId,
           branchName: branchName!,
+          title,
           prompt: leadAgentPrompt,
           mode,
-        })
-        worktree = prepared.worktree
-        initialTerminal = prepared.initialTerminal
+        });
+        worktree = prepared.worktree;
+        initialTerminal = prepared.initialTerminal;
       } else if (needsWorktree) {
         worktree = await createSubagentWorktree({
           sourceDir: child.cwd,
           workspaceRoot: path.join(getAgentDir(), "workspace"),
           jobId,
           branchName,
-        })
+        });
       }
       const task = {
         jobId,
@@ -1332,19 +1913,32 @@ export default function activate(pi: ExtensionAPI) {
         parent: {
           parentCwd: ctx.cwd,
           projectTrusted: child.projectTrusted,
-          inheritedModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+          inheritedModel: ctx.model
+            ? { provider: ctx.model.provider, id: ctx.model.id }
+            : undefined,
           inheritedThinkingLevel: parseThinkingLevel(pi.getThinkingLevel()),
           modelRegistry: ctx.modelRegistry,
         },
-      } as const
-      let snap: SubagentSnapshot
+      } as const;
+      let snap: SubagentSnapshot;
       try {
-        snap = await runTool(getRuntime(), manager.spawn(harness, task), { signal, interruptMessage: "Lead Agent creation aborted." })
+        snap = await runTool(getRuntime(), manager.spawn(harness, task), {
+          signal,
+          interruptMessage: "Lead Agent creation aborted.",
+        });
       } catch (error) {
         if (worktree && !manager.view.get(jobId)) {
-          try { await cleanupManagedWorktree(harness, worktree, initialTerminal?.worktreeId) } catch { /* preserve recoverable output */ }
+          try {
+            await cleanupManagedWorktree(
+              harness,
+              worktree,
+              initialTerminal?.worktreeId,
+            );
+          } catch {
+            /* preserve recoverable output */
+          }
         }
-        throw error
+        throw error;
       }
       try {
         await leadAgentStore.create({
@@ -1360,80 +1954,130 @@ export default function activate(pi: ExtensionAPI) {
           branch: worktree?.branch,
           repoRoot: worktree?.repoRoot,
           sessionFilePath: snap.meta.sessionFilePath,
-        })
+        });
       } catch (error) {
         try {
-          if (snap.status === "running") await runTool(getRuntime(), manager.cancel([snap.id]))
-          await runTool(getRuntime(), manager.closeSession(snap.id))
+          if (snap.status === "running")
+            await runTool(getRuntime(), manager.cancel([snap.id]));
+          await runTool(getRuntime(), manager.closeSession(snap.id));
         } catch {
           // Preserve the original registry error; the session remains recoverable.
         }
         try {
-          await cleanupManagedWorktree(harness, worktree, initialTerminal?.worktreeId)
+          await cleanupManagedWorktree(
+            harness,
+            worktree,
+            initialTerminal?.worktreeId,
+          );
         } catch {
           // Preserve the worktree when safe cleanup cannot be verified.
         }
-        throw error
+        throw error;
       }
       await syncLedgerStatus({
-        id: snap.id,
+        taskId: snap.id,
         title,
         mode,
         role: "subagent-lead",
         status: "working",
         leadAgentId,
         requiresWorktree: !!worktree,
-      })
-      await publishWorkflowStatus(snap, "working")
-      await persistSnapshot(snap, "lead-agent-created")
+      });
+      await publishWorkflowStatus(snap, "working");
+      await persistSnapshot(snap, "lead-agent-created");
       return {
-        content: [{ type: "text", text: `Created Lead Agent ${leadAgentId} using job ${snap.id}. Use subagent_lead_send for follow-ups.` }],
-        details: { leadAgentId, jobId: snap.id, mode, backend: harness, worktree: worktree?.path },
-      }
+        content: [
+          {
+            type: "text",
+            text: `Created Lead Agent ${leadAgentId} using job ${snap.id}. Use subagent_lead_send for follow-ups.`,
+          },
+        ],
+        details: {
+          leadAgentId,
+          jobId: snap.id,
+          mode,
+          backend: harness,
+          worktree: worktree?.path,
+        },
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_lead_send",
     label: "Send Lead Agent",
     description: SUBAGENT_LEAD_AGENT_SEND_TOOL_DESCRIPTION,
     parameters: Type.Object({
-      lead_agent_id: Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.leadAgentId }),
-      prompt: Type.String({ minLength: 1, maxLength: 32_000, description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.prompt }),
+      lead_agent_id: Type.String({
+        minLength: 1,
+        maxLength: 128,
+        description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.leadAgentId,
+      }),
+      prompt: Type.String({
+        minLength: 1,
+        maxLength: 32_000,
+        description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.prompt,
+      }),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const manager = await getManager()
-      const leadAgentId = params.lead_agent_id as string
-      const leadAgent = leadAgentStore.get(leadAgentId)
-      if (!leadAgent) throw new Error(`Unknown Lead Agent: ${leadAgentId}`)
-      const current = await runTool(getRuntime(), manager.get(leadAgent.jobId))
-      if (current && current.status !== "error") {
+      const manager = await getManager();
+      const leadAgentId = params.lead_agent_id as string;
+      const leadAgent = leadAgentStore.get(leadAgentId);
+      if (!leadAgent) throw new Error(`Unknown Lead Agent: ${leadAgentId}`);
+      const current = await runTool(getRuntime(), manager.get(leadAgent.jobId));
+      if (current && current.status !== "failed") {
         try {
-          await runTool(getRuntime(), manager.send(leadAgent.jobId, params.prompt as string), { signal, interruptMessage: "Lead Agent follow-up aborted." })
-          await leadAgentStore.update(leadAgentId, { lastSummary: params.prompt as string })
-          return { content: [{ type: "text", text: `Follow-up sent to Lead Agent ${leadAgentId} (job ${leadAgent.jobId}).` }], details: { leadAgentId, jobId: leadAgent.jobId } }
+          await runTool(
+            getRuntime(),
+            manager.send(leadAgent.jobId, params.prompt as string),
+            { signal, interruptMessage: "Lead Agent follow-up aborted." },
+          );
+          await leadAgentStore.update(leadAgentId, {
+            lastSummary: params.prompt as string,
+          });
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Follow-up sent to Lead Agent ${leadAgentId} (job ${leadAgent.jobId}).`,
+              },
+            ],
+            details: { leadAgentId, jobId: leadAgent.jobId },
+          };
         } catch {
           // A restored or pruned session may no longer be sendable. Reopen below.
         }
       }
-      const newJobId = createJobId(`${leadAgentId}-follow-up`)
-      const trustedPath = leadAgent.repoRoot ?? leadAgent.cwd
+      const newJobId = createLeadJobId(leadAgent.title, "follow-up");
+      const trustedPath = leadAgent.repoRoot ?? leadAgent.cwd;
       const trusted = resolveTrustedChildCwd({
         parentCwd: ctx.cwd,
         requestedCwd: trustedPath,
         parentTrusted: ctx.isProjectTrusted(),
-      })
-      const workspaceRoot = path.resolve(getAgentDir(), "workspace")
-      const worktree = leadAgent.worktreePath && leadAgent.branch && leadAgent.repoRoot
-        ? (() => {
-            const candidate = path.resolve(leadAgent.worktreePath)
-            const relative = path.relative(workspaceRoot, candidate)
-            if (relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) {
-              throw new Error("Lead Agent worktree is outside the trusted agent workspace.")
-            }
-            return { jobId: newJobId, path: candidate, branch: leadAgent.branch, repoRoot: leadAgent.repoRoot }
-          })()
-        : undefined
+      });
+      const workspaceRoot = path.resolve(getAgentDir(), "workspace");
+      const worktree =
+        leadAgent.worktreePath && leadAgent.branch && leadAgent.repoRoot
+          ? (() => {
+              const candidate = path.resolve(leadAgent.worktreePath);
+              const relative = path.relative(workspaceRoot, candidate);
+              if (
+                relative.startsWith(`..${path.sep}`) ||
+                relative === ".." ||
+                path.isAbsolute(relative)
+              ) {
+                throw new Error(
+                  "Lead Agent worktree is outside the trusted agent workspace.",
+                );
+              }
+              return {
+                jobId: newJobId,
+                path: candidate,
+                branch: leadAgent.branch,
+                repoRoot: leadAgent.repoRoot,
+              };
+            })()
+          : undefined;
       const task = {
         jobId: newJobId,
         prompt: [
@@ -1442,7 +2086,9 @@ export default function activate(pi: ExtensionAPI) {
           leadAgent.scope ? `Scope: ${leadAgent.scope}` : undefined,
           `Previous summary: ${leadAgent.lastSummary ?? "none"}.`,
           `Follow-up: ${params.prompt as string}`,
-        ].filter(Boolean).join("\n\n"),
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         title: leadAgent.title,
         cwd: leadAgent.cwd,
         worktree,
@@ -1451,75 +2097,198 @@ export default function activate(pi: ExtensionAPI) {
         parent: {
           parentCwd: ctx.cwd,
           projectTrusted: trusted.projectTrusted,
-          inheritedModel: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+          inheritedModel: ctx.model
+            ? { provider: ctx.model.provider, id: ctx.model.id }
+            : undefined,
           inheritedThinkingLevel: parseThinkingLevel(pi.getThinkingLevel()),
           modelRegistry: ctx.modelRegistry,
         },
-      } as const
-      const reopened = await runTool(getRuntime(), manager.spawn(leadAgent.backend, task), { signal, interruptMessage: "Lead Agent reopen aborted." })
+      } as const;
+      const reopened = await runTool(
+        getRuntime(),
+        manager.spawn(leadAgent.backend, task),
+        { signal, interruptMessage: "Lead Agent reopen aborted." },
+      );
       await syncLedgerStatus({
-        id: reopened.id,
+        taskId: reopened.id,
         title: leadAgent.title,
         mode: leadAgent.mode,
         role: "subagent-lead",
         status: "working",
         leadAgentId,
         requiresWorktree: !!worktree,
-      })
+      });
       await leadAgentStore.update(leadAgentId, {
         jobId: reopened.id,
         lastSummary: params.prompt as string,
-        sessionFilePath: reopened.meta.sessionFilePath ?? leadAgent.sessionFilePath,
-      })
-      await publishWorkflowStatus(reopened, "working")
-      await persistSnapshot(reopened, "lead-agent-reopened")
-      return { content: [{ type: "text", text: `Lead Agent ${leadAgentId} reopened as job ${reopened.id}.` }], details: { leadAgentId, jobId: reopened.id, reopened: true } }
+        sessionFilePath:
+          reopened.meta.sessionFilePath ?? leadAgent.sessionFilePath,
+      });
+      await publishWorkflowStatus(reopened, "working");
+      await persistSnapshot(reopened, "lead-agent-reopened");
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Lead Agent ${leadAgentId} reopened as job ${reopened.id}.`,
+          },
+        ],
+        details: { leadAgentId, jobId: reopened.id, reopened: true },
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_lead_stop",
     label: "Stop Lead Agent",
     description: SUBAGENT_LEAD_AGENT_STOP_TOOL_DESCRIPTION,
     parameters: Type.Object({
-      lead_agent_id: Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.leadAgentId }),
+      lead_agent_id: Type.String({
+        minLength: 1,
+        maxLength: 128,
+        description: SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS.leadAgentId,
+      }),
     }),
     async execute(_toolCallId, params, signal) {
-      const manager = await getManager()
-      const leadAgent = leadAgentStore.get(params.lead_agent_id as string)
-      if (!leadAgent) throw new Error(`Unknown Lead Agent: ${params.lead_agent_id}`)
-      const current = await runTool(getRuntime(), manager.get(leadAgent.jobId))
-      if (current?.status === "running") await runTool(getRuntime(), manager.cancel([leadAgent.jobId]), { signal, interruptMessage: "Lead Agent stop aborted." })
-      await leadAgentStore.remove(leadAgent.leadAgentId)
-      return { content: [{ type: "text", text: `Stopped Lead Agent ${leadAgent.leadAgentId}; its worktree was preserved.` }], details: { leadAgentId: leadAgent.leadAgentId, jobId: leadAgent.jobId } }
+      const manager = await getManager();
+      const leadAgent = leadAgentStore.get(params.lead_agent_id as string);
+      if (!leadAgent)
+        throw new Error(`Unknown Lead Agent: ${params.lead_agent_id}`);
+      const current = await runTool(getRuntime(), manager.get(leadAgent.jobId));
+      if (current?.status === "running")
+        await runTool(getRuntime(), manager.cancel([leadAgent.jobId]), {
+          signal,
+          interruptMessage: "Lead Agent stop aborted.",
+        });
+      await leadAgentStore.remove(leadAgent.leadAgentId);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Stopped Lead Agent ${leadAgent.leadAgentId}; its worktree was preserved.`,
+          },
+        ],
+        details: { leadAgentId: leadAgent.leadAgentId, jobId: leadAgent.jobId },
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_lead_event",
     label: "Emit Lead Agent Event",
     description: SUBAGENT_LEAD_AGENT_EVENT_TOOL_DESCRIPTION,
     parameters: Type.Object({
-      event_id: Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.eventId }),
-      type: StringEnum(LEAD_AGENT_EVENT_TYPES, { description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.type }),
-      actor_id: Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.actorId }),
-      lead_agent_id: Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.leadAgentId }),
-      task_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.taskId })),
-      correlation_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.correlationId })),
-      proposal_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.proposalId })),
-      title: Type.Optional(Type.String({ minLength: 1, maxLength: 160, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.title })),
-      prompt: Type.Optional(Type.String({ minLength: 1, maxLength: 32_000, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.prompt })),
-      mode: Type.Optional(StringEnum(SUBAGENT_MODES, { description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.mode })),
-      depends_on: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 16, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.dependsOn })),
-      priority: Type.Optional(Type.Integer({ minimum: -100, maximum: 100, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.priority })),
-      summary: Type.Optional(Type.String({ maxLength: 4_096, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.summary })),
-      reason: Type.Optional(Type.String({ maxLength: 4_096, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.reason })),
-      question: Type.Optional(Type.String({ maxLength: 4_096, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.question })),
-      answer: Type.Optional(Type.String({ maxLength: 4_096, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.answer })),
-      reply_to: Type.Optional(Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.replyTo })),
+      event_id: Type.String({
+        minLength: 1,
+        maxLength: 128,
+        description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.eventId,
+      }),
+      type: StringEnum(LEAD_AGENT_EVENT_TYPES, {
+        description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.type,
+      }),
+      actor_id: Type.String({
+        minLength: 1,
+        maxLength: 128,
+        description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.actorId,
+      }),
+      lead_agent_id: Type.String({
+        minLength: 1,
+        maxLength: 128,
+        description:
+          SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.leadAgentId,
+      }),
+      task_id: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 128,
+          description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.taskId,
+        }),
+      ),
+      correlation_id: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 128,
+          description:
+            SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.correlationId,
+        }),
+      ),
+      proposal_id: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 128,
+          description:
+            SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.proposalId,
+        }),
+      ),
+      title: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 160,
+          description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.title,
+        }),
+      ),
+      prompt: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 32_000,
+          description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.prompt,
+        }),
+      ),
+      mode: Type.Optional(
+        StringEnum(SUBAGENT_MODES, {
+          description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.mode,
+        }),
+      ),
+      depends_on: Type.Optional(
+        Type.Array(Type.String({ minLength: 1, maxLength: 128 }), {
+          maxItems: 16,
+          description:
+            SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.dependsOn,
+        }),
+      ),
+      priority: Type.Optional(
+        Type.Integer({
+          minimum: -100,
+          maximum: 100,
+          description:
+            SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.priority,
+        }),
+      ),
+      summary: Type.Optional(
+        Type.String({
+          maxLength: 4_096,
+          description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.summary,
+        }),
+      ),
+      reason: Type.Optional(
+        Type.String({
+          maxLength: 4_096,
+          description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.reason,
+        }),
+      ),
+      question: Type.Optional(
+        Type.String({
+          maxLength: 4_096,
+          description:
+            SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.question,
+        }),
+      ),
+      answer: Type.Optional(
+        Type.String({
+          maxLength: 4_096,
+          description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.answer,
+        }),
+      ),
+      reply_to: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 128,
+          description: SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS.replyTo,
+        }),
+      ),
     }),
     async execute(_toolCallId, params) {
-      await getManager()
+      await getManager();
       const event = parseLeadAgentEvent({
         eventId: params.event_id,
         type: params.type,
@@ -1539,30 +2308,40 @@ export default function activate(pi: ExtensionAPI) {
         answer: params.answer,
         replyTo: params.reply_to,
         at: Date.now(),
-      })
-      const result = await orchestrationCoordinator!.emit(event)
+      });
+      const result = await orchestrationCoordinator!.emit(event);
       return {
-        content: [{ type: "text", text: `${event.type} event ${event.eventId} ${result.duplicate ? "was already recorded" : "was recorded"}.` }],
+        content: [
+          {
+            type: "text",
+            text: `${event.type} event ${event.eventId} ${result.duplicate ? "was already recorded" : "was recorded"}.`,
+          },
+        ],
         details: event,
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_lead_propose",
     label: "Propose Lead Agent Child",
-    description: "Record a child task proposed for a Lead Agent. Dispatch requires explicit parent approval.",
+    description:
+      "Record a child task proposed for a Lead Agent. Dispatch requires explicit parent approval.",
     parameters: Type.Object({
       lead_agent_id: Type.String({ minLength: 1, maxLength: 128 }),
       proposal_id: Type.String({ minLength: 1, maxLength: 128 }),
       name: Type.String({ minLength: 1, maxLength: 160 }),
       prompt: Type.String({ minLength: 1, maxLength: 32_000 }),
       mode: Type.Optional(StringEnum(SUBAGENT_MODES)),
-      depends_on: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { maxItems: 16 })),
+      depends_on: Type.Optional(
+        Type.Array(Type.String({ minLength: 1, maxLength: 128 }), {
+          maxItems: 16,
+        }),
+      ),
       priority: Type.Optional(Type.Integer({ minimum: -100, maximum: 100 })),
     }),
     async execute(_toolCallId, params) {
-      await getManager()
+      await getManager();
       const event = parseLeadAgentEvent({
         eventId: `proposal-${params.proposal_id as string}`,
         type: "proposal",
@@ -1575,30 +2354,46 @@ export default function activate(pi: ExtensionAPI) {
         dependsOn: params.depends_on ?? [],
         priority: params.priority ?? 0,
         at: Date.now(),
-      })
-      await orchestrationCoordinator!.emit(event)
-      if (event.type !== "proposal") throw new Error("Lead Agent proposal event was malformed.")
-      const proposal = leadAgentProposalStore.get(event.proposalId)
+      });
+      await orchestrationCoordinator!.emit(event);
+      if (event.type !== "proposal")
+        throw new Error("Lead Agent proposal event was malformed.");
+      const proposal = leadAgentProposalStore.get(event.proposalId);
       return {
-        content: [{ type: "text", text: `Lead Agent child proposal ${event.proposalId} recorded and awaits parent approval.` }],
+        content: [
+          {
+            type: "text",
+            text: `Lead Agent child proposal ${event.proposalId} recorded and awaits parent approval.`,
+          },
+        ],
         details: proposal ?? event,
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_lead_approve",
     label: "Approve Lead Agent Child",
-    description: "Approve a Lead Agent child proposal. The approved proposal must be passed to subagent_spawn with proposal_id.",
-    parameters: Type.Object({ proposal_id: Type.String({ minLength: 1, maxLength: 128 }) }),
+    description:
+      "Approve a Lead Agent child proposal. The approved proposal must be passed to subagent_spawn with proposal_id.",
+    parameters: Type.Object({
+      proposal_id: Type.String({ minLength: 1, maxLength: 128 }),
+    }),
     async execute(_toolCallId, params) {
-      const proposal = await leadAgentProposalStore.approve(params.proposal_id as string)
+      const proposal = await leadAgentProposalStore.approve(
+        params.proposal_id as string,
+      );
       return {
-        content: [{ type: "text", text: `Lead Agent proposal ${proposal.id} approved. Dispatch it with subagent_spawn using proposal_id=${proposal.id}.` }],
+        content: [
+          {
+            type: "text",
+            text: `Lead Agent proposal ${proposal.id} approved. Dispatch it with subagent_spawn using proposal_id=${proposal.id}.`,
+          },
+        ],
         details: proposal,
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_lead_reject",
@@ -1609,13 +2404,21 @@ export default function activate(pi: ExtensionAPI) {
       reason: Type.String({ minLength: 1, maxLength: 4_096 }),
     }),
     async execute(_toolCallId, params) {
-      const proposal = await leadAgentProposalStore.reject(params.proposal_id as string, params.reason as string)
+      const proposal = await leadAgentProposalStore.reject(
+        params.proposal_id as string,
+        params.reason as string,
+      );
       return {
-        content: [{ type: "text", text: `Lead Agent proposal ${proposal.id} rejected.` }],
+        content: [
+          {
+            type: "text",
+            text: `Lead Agent proposal ${proposal.id} rejected.`,
+          },
+        ],
         details: proposal,
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_retry",
@@ -1634,25 +2437,91 @@ export default function activate(pi: ExtensionAPI) {
         }),
       ),
     }),
-    async execute(_toolCallId, params, signal) {
-      const manager = await getManager()
-      const id = params.id as string
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const manager = await getManager();
+      const id = params.id as string;
+      const queued = jobQueue.get(id);
+      if (queued?.status === "blocked") {
+        const prompt =
+          typeof params.prompt === "string" && params.prompt.trim().length > 0
+            ? params.prompt
+            : queued.task.prompt;
+        if (prompt.trim().length === 0) {
+          throw new Error(
+            `Blocked job ${id} has no persisted briefing; provide a complete prompt to re-enqueue it.`,
+          );
+        }
+        const requestedCwd = path.resolve(ctx.cwd, queued.task.cwd || ".");
+        const child = resolveTrustedChildCwd({
+          parentCwd: ctx.cwd,
+          requestedCwd,
+          parentTrusted: ctx.isProjectTrusted(),
+        });
+        const task: SpawnTask = {
+          ...queued.task,
+          jobId: id,
+          prompt,
+          cwd: child.cwd,
+          parent: {
+            ...queued.task.parent,
+            parentCwd: ctx.cwd,
+            projectTrusted: child.projectTrusted,
+            modelRegistry: ctx.modelRegistry,
+            ...(ctx.model
+              ? {
+                  inheritedModel: {
+                    provider: ctx.model.provider,
+                    id: ctx.model.id,
+                  },
+                }
+              : {}),
+            inheritedThinkingLevel: parseThinkingLevel(pi.getThinkingLevel()),
+          },
+        };
+        const requeued = await jobQueue.requeue(id, task);
+        await dispatchQueuedJobs(manager);
+        const snap = await runTool(getRuntime(), manager.get(id));
+        if (snap) {
+          await publishWorkflowStatus(snap, "working");
+          await persistSnapshot(snap, "re-enqueued");
+        }
+        return {
+          content: [
+            { type: "text", text: `Re-enqueued blocked subagent job ${id}.` },
+          ],
+          details: {
+            id,
+            status: snap?.status ?? requeued.status,
+            restartCount: snap?.metrics.restartCount ?? 0,
+          },
+        };
+      }
       await runTool(
         getRuntime(),
         manager.retry(id, params.prompt as string | undefined),
-        { signal, interruptMessage: "Retry aborted; the preserved subagent worktree remains available." },
-      )
-      const snap = await runTool(getRuntime(), manager.get(id))
+        {
+          signal,
+          interruptMessage:
+            "Retry aborted; the preserved subagent worktree remains available.",
+        },
+      );
+      const snap = await runTool(getRuntime(), manager.get(id));
       if (snap) {
-        await publishWorkflowStatus(snap, "working")
-        await persistSnapshot(snap, "retry-requested")
+        await publishWorkflowStatus(snap, "working");
+        await persistSnapshot(snap, "retry-requested");
       }
       return {
-        content: [{ type: "text", text: `Retry requested for subagent ${id}.` }],
-        details: { id, status: snap?.status, restartCount: snap?.metrics.restartCount },
-      }
+        content: [
+          { type: "text", text: `Retry requested for subagent ${id}.` },
+        ],
+        details: {
+          id,
+          status: snap?.status,
+          restartCount: snap?.metrics.restartCount,
+        },
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_action_list",
@@ -1660,15 +2529,19 @@ export default function activate(pi: ExtensionAPI) {
     description: SUBAGENT_ACTION_LIST_TOOL_DESCRIPTION,
     parameters: Type.Object({}),
     async execute() {
-      const actions = actionQueue.list()
-      const text = actions.length === 0
-        ? "No action items."
-        : actions.map((action) =>
-            `${action.status}: ${action.event.actionId} [${action.event.type}] job=${action.event.jobId} — ${action.event.message}`,
-          ).join("\\n")
-      return { content: [{ type: "text", text }], details: { actions } }
+      const actions = actionQueue.list();
+      const text =
+        actions.length === 0
+          ? "No action items."
+          : actions
+              .map(
+                (action) =>
+                  `${action.status}: ${action.event.actionId} [${action.event.type}] job=${action.event.jobId} — ${action.event.message}`,
+              )
+              .join("\\n");
+      return { content: [{ type: "text", text }], details: { actions } };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_action_confirm",
@@ -1682,13 +2555,18 @@ export default function activate(pi: ExtensionAPI) {
       }),
     }),
     async execute(_toolCallId, params) {
-      const confirmed = await actionQueue.confirm(params.id as string)
+      const confirmed = await actionQueue.confirm(params.id as string);
       return {
-        content: [{ type: "text", text: `Action confirmed: ${confirmed.event.actionId}.` }],
+        content: [
+          {
+            type: "text",
+            text: `Action confirmed: ${confirmed.event.actionId}.`,
+          },
+        ],
         details: confirmed,
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_deliver",
@@ -1700,62 +2578,95 @@ export default function activate(pi: ExtensionAPI) {
         maxLength: 128,
         description: SUBAGENT_DELIVER_PARAMETER_DESCRIPTIONS.id,
       }),
-      operation: StringEnum(["review", "commit", "merge", "push", "pr"] as const, {
-        description: SUBAGENT_DELIVER_PARAMETER_DESCRIPTIONS.operation,
-      }),
+      operation: StringEnum(
+        ["review", "commit", "merge", "push", "pr"] as const,
+        {
+          description: SUBAGENT_DELIVER_PARAMETER_DESCRIPTIONS.operation,
+        },
+      ),
     }),
     async execute(_toolCallId, params) {
-      const manager = await getManager()
-      const jobId = params.id as string
-      const operation = params.operation as "review" | "commit" | "merge" | "push" | "pr"
-      const snap = await runTool(getRuntime(), manager.get(jobId))
-      if (!snap) throw new Error(`Unknown subagent id: ${jobId}`)
-      if (snap.status === "running") throw new Error("Cannot deliver a running subagent.")
+      const manager = await getManager();
+      const jobId = params.id as string;
+      const operation = params.operation as
+        "review" | "commit" | "merge" | "push" | "pr";
+      const snap = await runTool(getRuntime(), manager.get(jobId));
+      if (!snap) throw new Error(`Unknown subagent id: ${jobId}`);
+      if (snap.status === "running")
+        throw new Error("Cannot deliver a running subagent.");
       if (snap.meta.mode !== "build" || !snap.meta.worktree) {
-        throw new Error("Only settled build subagents with a worktree can be delivered.")
+        throw new Error(
+          "Only settled build subagents with a worktree can be delivered.",
+        );
       }
-      const missingPrerequisites = approvalGate.missingPrerequisites(jobId, operation)
+      const missingPrerequisites = approvalGate.missingPrerequisites(
+        jobId,
+        operation,
+      );
       if (missingPrerequisites.length > 0) {
-        throw new Error(`Delivery ${operation} requires consumed approval(s): ${missingPrerequisites.join(", ")}.`)
+        throw new Error(
+          `Delivery ${operation} requires consumed approval(s): ${missingPrerequisites.join(", ")}.`,
+        );
       }
-      const request = approvalGate.get(`approval:${jobId}:${operation}`)
-        ?? approvalGate.request({ jobId, operation, mode: "build" })
-      await persistApprovals()
+      const request =
+        approvalGate.get(`approval:${jobId}:${operation}`) ??
+        approvalGate.request({ jobId, operation, mode: "build" });
+      await persistApprovals();
       if (request.status === "approved") {
-        const delivery = await executeApprovedDelivery(manager, request)
+        const delivery = await executeApprovedDelivery(manager, request);
         return {
-          content: [{ type: "text", text: `Delivery complete: ${delivery.detail}.` }],
+          content: [
+            { type: "text", text: `Delivery complete: ${delivery.detail}.` },
+          ],
           details: { request: delivery.consumed, detail: delivery.detail },
-        }
+        };
       }
       return {
-        content: [{
-          type: "text",
-          text: `Approval required before ${operation}: ${request.id} (${request.status}).`,
-        }],
+        content: [
+          {
+            type: "text",
+            text: `Approval required before ${operation}: ${request.id} (${request.status}).`,
+          },
+        ],
         details: { request, detail: "" },
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_delete",
     label: "Delete Subagent Thread",
     description: SUBAGENT_DELETE_TOOL_DESCRIPTION,
     parameters: Type.Object({
-      id: Type.String({ minLength: 1, maxLength: 128, description: SUBAGENT_DELETE_PARAMETER_DESCRIPTIONS.id }),
+      id: Type.String({
+        minLength: 1,
+        maxLength: 128,
+        description: SUBAGENT_DELETE_PARAMETER_DESCRIPTIONS.id,
+      }),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const manager = await getManager()
-      const id = params.id as string
-      const snap = await runTool(getRuntime(), manager.get(id))
-      if (!snap) throw new Error(`Unknown subagent id: ${id}`)
-      const confirmed = await confirmSubagentDeletion(ctx, snap)
-      if (!confirmed) return { content: [{ type: "text", text: `Deletion cancelled for ${id}.` }], details: { id, deleted: false } }
-      await deleteSubagentCompletely(manager, id)
-      return { content: [{ type: "text", text: `Deleted subagent Thread ${id}, session history, and managed worktree.` }], details: { id, deleted: true } }
+      const manager = await getManager();
+      const id = params.id as string;
+      const snap = await runTool(getRuntime(), manager.get(id));
+      if (!snap) throw new Error(`Unknown subagent id: ${id}`);
+      const confirmed = await confirmSubagentDeletion(ctx, snap);
+      if (!confirmed)
+        return {
+          content: [{ type: "text", text: `Deletion cancelled for ${id}.` }],
+          details: { id, deleted: false },
+        };
+      await deleteSubagentCompletely(manager, id);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Deleted subagent Thread ${id}, session history, and managed worktree.`,
+          },
+        ],
+        details: { id, deleted: true },
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_retire",
@@ -1769,26 +2680,34 @@ export default function activate(pi: ExtensionAPI) {
       }),
     }),
     async execute(_toolCallId, params) {
-      const manager = await getManager()
-      const jobId = params.id as string
-      const snap = await runTool(getRuntime(), manager.get(jobId))
-      if (!snap) throw new Error(`Unknown subagent id: ${jobId}`)
-      if (snap.status === "running") throw new Error("Cannot retire a running subagent.")
+      const manager = await getManager();
+      const jobId = params.id as string;
+      const snap = await runTool(getRuntime(), manager.get(jobId));
+      if (!snap) throw new Error(`Unknown subagent id: ${jobId}`);
+      if (snap.status === "running")
+        throw new Error("Cannot retire a running subagent.");
       if (snap.meta.mode !== "build" || !snap.meta.worktree) {
-        throw new Error("Only settled build worktrees can be retired.")
+        throw new Error("Only settled build worktrees can be retired.");
       }
-      const request = approvalGate.get(`approval:${jobId}:delete-worktree`)
-        ?? approvalGate.request({ jobId, operation: "delete-worktree", mode: "build" })
-      await persistApprovals()
+      const request =
+        approvalGate.get(`approval:${jobId}:delete-worktree`) ??
+        approvalGate.request({
+          jobId,
+          operation: "delete-worktree",
+          mode: "build",
+        });
+      await persistApprovals();
       return {
-        content: [{
-          type: "text",
-          text: `Full subagent deletion approval ${request.status}: ${request.id}.`,
-        }],
+        content: [
+          {
+            type: "text",
+            text: `Full subagent deletion approval ${request.status}: ${request.id}.`,
+          },
+        ],
         details: request,
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_approve",
@@ -1811,76 +2730,108 @@ export default function activate(pi: ExtensionAPI) {
       ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const manager = await getManager()
-      const id = params.id as string
-      const request = approvalGate.get(id)
-      if (!request) throw new Error(`Unknown approval request: ${id}`)
-      const decision = params.decision as "approve" | "reject"
+      const manager = await getManager();
+      const id = params.id as string;
+      const request = approvalGate.get(id);
+      if (!request) throw new Error(`Unknown approval request: ${id}`);
+      const decision = params.decision as "approve" | "reject";
       if (decision === "approve") {
         const confirmed = await ctx.ui.confirm(
           `Approve ${request.operation}`,
           `Allow ${request.operation} for build job ${request.jobId}? This may change Git state or external repositories.`,
-        )
+        );
         if (!confirmed) {
           return {
-            content: [{ type: "text", text: `Human confirmation declined: ${request.id}.` }],
+            content: [
+              {
+                type: "text",
+                text: `Human confirmation declined: ${request.id}.`,
+              },
+            ],
             details: request,
-          }
+          };
         }
       }
-      let result = decision === "approve"
-        ? approvalGate.approve(id)
-        : approvalGate.reject(id, (params.reason as string | undefined) ?? "")
-      await persistApprovals()
+      let result =
+        decision === "approve"
+          ? approvalGate.approve(id)
+          : approvalGate.reject(
+              id,
+              (params.reason as string | undefined) ?? "",
+            );
+      await persistApprovals();
       if (
-        result.status === "approved"
-        && result.operation !== "delete-worktree"
+        result.status === "approved" &&
+        result.operation !== "delete-worktree"
       ) {
-        const delivery = await executeApprovedDelivery(manager, result)
-        result = delivery.consumed
+        const delivery = await executeApprovedDelivery(manager, result);
+        result = delivery.consumed;
       }
-      if (result.status === "approved" && result.operation === "delete-worktree") {
+      if (
+        result.status === "approved" &&
+        result.operation === "delete-worktree"
+      ) {
         // Worktree deletion is a destructive alias for full Thread deletion.
         // Keep one cascade path so the dashboard and approval flow cannot
         // leave different orphaned records behind.
-        await deleteSubagentCompletely(manager, result.jobId)
-        result = { ...result, status: "consumed" }
+        await deleteSubagentCompletely(manager, result.jobId);
+        result = { ...result, status: "consumed" };
       }
       return {
-        content: [{
-          type: "text",
-          text: `Approval ${result.status}: ${result.id} (${result.operation}, job ${result.jobId}).`,
-        }],
+        content: [
+          {
+            type: "text",
+            text: `Approval ${result.status}: ${result.id} (${result.operation}, job ${result.jobId}).`,
+          },
+        ],
         details: result,
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_wake_list",
     label: "List Subagent Wakes",
-    description: "List durable actionable workflow wakes that have not been acknowledged.",
+    description:
+      "List durable actionable workflow wakes that have not been acknowledged.",
     parameters: Type.Object({}),
     async execute() {
-      const wakes = workflowQueue.pending()
-      const text = wakes.length === 0
-        ? "No pending workflow wakes."
-        : wakes.map((wake) => `${wake.id} [${wake.status}] job=${wake.taskId}${wake.message ? ` — ${wake.message}` : ""}`).join("\n")
-      return { content: [{ type: "text", text }], details: { wakes } }
+      const wakes = workflowQueue.pending();
+      const text =
+        wakes.length === 0
+          ? "No pending workflow wakes."
+          : wakes
+              .map(
+                (wake) =>
+                  `${wake.id} [${wake.status}] job=${wake.taskId}${wake.message ? ` — ${wake.message}` : ""}`,
+              )
+              .join("\n");
+      return { content: [{ type: "text", text }], details: { wakes } };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_wake_ack",
     label: "Acknowledge Subagent Wake",
-    description: "Acknowledge one durable workflow wake after its result or decision has been handled.",
-    parameters: Type.Object({ id: Type.String({ minLength: 1, maxLength: 128 }) }),
+    description:
+      "Acknowledge one durable workflow wake after its result or decision has been handled.",
+    parameters: Type.Object({
+      id: Type.String({ minLength: 1, maxLength: 128 }),
+    }),
     async execute(_toolCallId, params) {
-      const acknowledged = await workflowQueue.acknowledge(params.id as string)
-      if (!acknowledged) throw new Error(`Unknown or already acknowledged workflow wake: ${params.id}`)
-      return { content: [{ type: "text", text: `Workflow wake acknowledged: ${params.id}.` }], details: { id: params.id, acknowledged: true } }
+      const acknowledged = await workflowQueue.acknowledge(params.id as string);
+      if (!acknowledged)
+        throw new Error(
+          `Unknown or already acknowledged workflow wake: ${params.id}`,
+        );
+      return {
+        content: [
+          { type: "text", text: `Workflow wake acknowledged: ${params.id}.` },
+        ],
+        details: { id: params.id, acknowledged: true },
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_wait",
@@ -1893,85 +2844,96 @@ export default function activate(pi: ExtensionAPI) {
       }),
     }),
     async execute(_toolCallId, params, signal, onUpdate) {
-      const manager = await getManager()
-      const ids = [...new Set(params.ids)]
-      if (ids.length === 0) throw new Error("Provide at least one subagent id.")
+      const manager = await getManager();
+      const ids = [...new Set(params.ids)];
+      if (ids.length === 0)
+        throw new Error("Provide at least one subagent id.");
       const known = manager.view
         .list()
         .filter(isModelVisible)
-        .map((snap) => snap.id)
+        .map((snap) => snap.id);
       const unknown = ids.filter((id) => {
-        const snap = manager.view.get(id)
-        return (!snap && !jobQueue.get(id)) || (!!snap && !isModelVisible(snap))
-      })
+        const snap = manager.view.get(id);
+        return (
+          (!snap && !jobQueue.get(id)) || (!!snap && !isModelVisible(snap))
+        );
+      });
       if (unknown.length > 0) {
         throw new Error(
           `Unknown subagent id(s): ${unknown.join(", ")}. Known: ${known.join(", ") || "none"}.`,
-        )
+        );
       }
 
-      await waitForQueuedJobs(manager, ids, (pending) => {
-        onUpdate?.({
-          content: [
-            { type: "text", text: `Waiting for ${pending.join(", ")}...` },
-          ],
-          details: { pending },
-        })
-      }, signal)
+      await waitForQueuedJobs(
+        manager,
+        ids,
+        (pending) => {
+          onUpdate?.({
+            content: [
+              { type: "text", text: `Waiting for ${pending.join(", ")}...` },
+            ],
+            details: { pending },
+          });
+        },
+        signal,
+      );
 
-      resultDelivery.consume(ids)
+      resultDelivery.consume(ids);
 
-      const sections: string[] = []
-      let remainingBytes = WAIT_OUTPUT_MAX_BYTES
+      const sections: string[] = [];
+      let remainingBytes = WAIT_OUTPUT_MAX_BYTES;
       for (const id of ids) {
-        const snap = manager.view.get(id)
+        const snap = manager.view.get(id);
         if (!snap) {
-          const queued = jobQueue.get(id)
-          sections.push(`## ${id}\n\nJob ${queued?.status ?? "not tracked"}${queued?.errorText ? `: ${queued.errorText}` : ""}`)
-          continue
+          const queued = jobQueue.get(id);
+          sections.push(
+            `## ${id}\n\nJob ${queued?.status ?? "not tracked"}${queued?.errorText ? `: ${queued.errorText}` : ""}`,
+          );
+          continue;
         }
-        const verb = snap.status === "error" ? "failed" : "finished"
-        let section = `## ${snap.id} "${snap.title}" ${verb}`
-        const approval = approvalGate.get(`approval:${snap.id}:commit`)
-        if (approval) section += `\nApproval: ${approval.id} (${approval.status})`
-        if (snap.errorText) section += `\nError: ${snap.errorText}`
-        if (snap.report) section += `\n${formatSubagentReport(snap.report)}`
-        const headerBytes = Buffer.byteLength(section, "utf8") + 2
+        const verb = snap.status === "failed" ? "failed" : "finished";
+        let section = `## ${snap.id} "${snap.title}" ${verb}`;
+        const approval = approvalGate.get(`approval:${snap.id}:commit`);
+        if (approval)
+          section += `\nApproval: ${approval.id} (${approval.status})`;
+        if (snap.errorText) section += `\nError: ${snap.errorText}`;
+        if (snap.report) section += `\n${formatSubagentReport(snap.report)}`;
+        const headerBytes = Buffer.byteLength(section, "utf8") + 2;
         const outputBudget = Math.max(
           512,
           Math.min(WAIT_PER_AGENT_MAX_BYTES, remainingBytes - headerBytes),
-        )
-        section += `\n\n${truncatedOutput(snap, outputBudget)}`
-        const sectionBytes = Buffer.byteLength(section, "utf8")
+        );
+        section += `\n\n${truncatedOutput(snap, outputBudget)}`;
+        const sectionBytes = Buffer.byteLength(section, "utf8");
         if (sectionBytes > remainingBytes) {
           sections.push(
             `## ${snap.id} "${snap.title}"\n\n[omitted: total wait output limit reached]`,
-          )
-          break
+          );
+          break;
         }
-        sections.push(section)
-        remainingBytes -= sectionBytes
+        sections.push(section);
+        remainingBytes -= sectionBytes;
       }
 
-      const combined = sections.join("\n\n---\n\n")
+      const combined = sections.join("\n\n---\n\n");
       const bounded = truncateHead(combined, {
         maxBytes: WAIT_OUTPUT_MAX_BYTES - 128,
         maxLines: DEFAULT_MAX_LINES,
-      })
+      });
       const text = bounded.truncated
         ? `${bounded.content}\n\n[wait output truncated at the total output limit]`
-        : bounded.content
+        : bounded.content;
       return {
         content: [{ type: "text", text }],
         details: {
           results: ids.map((id) => {
-            const snap = manager.view.get(id)
-            return { id, title: snap?.title, status: snap?.status }
+            const snap = manager.view.get(id);
+            return { id, title: snap?.title, status: snap?.status };
           }),
         },
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_cancel",
@@ -1983,34 +2945,35 @@ export default function activate(pi: ExtensionAPI) {
       }),
     }),
     async execute(_toolCallId, params, signal) {
-      const manager = await getManager()
-      const ids = [...new Set(params.ids)]
-      if (ids.length === 0) throw new Error("Provide at least one subagent id.")
+      const manager = await getManager();
+      const ids = [...new Set(params.ids)];
+      if (ids.length === 0)
+        throw new Error("Provide at least one subagent id.");
 
       const known = manager.view
         .list()
         .filter(isModelVisible)
-        .map((snap) => snap.id)
+        .map((snap) => snap.id);
       const unknown = ids.filter((id) => {
-        const snap = manager.view.get(id)
-        return !snap || !isModelVisible(snap)
-      })
+        const snap = manager.view.get(id);
+        return !snap || !isModelVisible(snap);
+      });
       if (unknown.length > 0) {
         throw new Error(
           `Unknown subagent id(s): ${unknown.join(", ")}. Known: ${known.join(", ") || "none"}.`,
-        )
+        );
       }
 
       const report = await runTool(getRuntime(), manager.cancel(ids), {
         signal,
         interruptMessage: "Subagent cancellation aborted.",
-      })
+      });
 
       const lines = report.map((entry) =>
         entry.cancelled
           ? `Cancelled ${entry.id} "${entry.title}".`
           : `${entry.id} "${entry.title}" was already ${entry.status}.`,
-      )
+      );
 
       return {
         content: [{ type: "text", text: lines.join("\n") }],
@@ -2021,9 +2984,9 @@ export default function activate(pi: ExtensionAPI) {
             status: entry.status,
           })),
         },
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_check",
@@ -2035,42 +2998,42 @@ export default function activate(pi: ExtensionAPI) {
       }),
     }),
     async execute(_toolCallId, params) {
-      const manager = await getManager()
-      const snap = manager.view.get(params.id)
+      const manager = await getManager();
+      const snap = manager.view.get(params.id);
       if (!snap || !isModelVisible(snap)) {
         const known = manager.view
           .list()
           .filter(isModelVisible)
-          .map((s) => s.id)
+          .map((s) => s.id);
         throw new Error(
           `Unknown subagent id "${params.id}". Known: ${known.join(", ") || "none"}.`,
-        )
+        );
       }
 
-      let text = `${describeSubagent(snap)}\nTurns: ${snap.turns}`
+      let text = `${describeSubagent(snap)}\nTurns: ${snap.turns}`;
       if (snap.backend === "orca" && snap.meta.nativeWorktreeId) {
-        text += `\nOrca worktree: ${snap.meta.nativeWorktreeId}`
+        text += `\nOrca worktree: ${snap.meta.nativeWorktreeId}`;
       }
       if (snap.backend === "orca" && snap.meta.nativePaneKey) {
-        text += `\nOrca pane: ${snap.meta.nativePaneKey}`
+        text += `\nOrca pane: ${snap.meta.nativePaneKey}`;
       }
-      if (snap.errorText) text += `\nError: ${snap.errorText}`
+      if (snap.errorText) text += `\nError: ${snap.errorText}`;
 
-      const output = latestText(snap)
+      const output = latestText(snap);
       if (output) {
-        const preview = truncateHead(output, { maxBytes: 2048, maxLines: 20 })
-        text += `\n\nLatest output:\n${preview.content}`
-        if (preview.truncated) text += "\n[...]"
+        const preview = truncateHead(output, { maxBytes: 2048, maxLines: 20 });
+        text += `\n\nLatest output:\n${preview.content}`;
+        if (preview.truncated) text += "\n[...]";
       } else if (snap.status === "running") {
-        text += "\n\n(no text output yet)"
+        text += "\n\n(no text output yet)";
       }
 
       return {
         content: [{ type: "text", text }],
         details: { id: snap.id, status: snap.status, turns: snap.turns },
-      }
+      };
     },
-  })
+  });
 
   pi.registerTool({
     name: "subagent_list",
@@ -2078,16 +3041,24 @@ export default function activate(pi: ExtensionAPI) {
     description: SUBAGENT_LIST_TOOL_DESCRIPTION,
     parameters: Type.Object({}),
     async execute() {
-      const manager = await getManager()
-      const subs = manager.view.list().filter(isModelVisible)
-      const queued = jobQueue.list().filter((job) => job.status === "queued" || job.status === "blocked")
-      const leadAgents = leadAgentStore.list()
+      const manager = await getManager();
+      const subs = manager.view.list().filter(isModelVisible);
+      const queued = jobQueue
+        .list()
+        .filter((job) => job.status === "queued" || job.status === "blocked");
+      const leadAgents = leadAgentStore.list();
       const lines = [
         ...subs.map((snap) => describeSubagent(snap)),
-        ...queued.map((job) => `${job.id} [${job.status}] "${job.title}" (priority ${job.priority}, depends on ${job.dependsOn.join(", ") || "none"})`),
-        ...leadAgents.map((leadAgent) => `lead-agent/${leadAgent.leadAgentId} [persistent] "${leadAgent.title}" (job ${leadAgent.jobId})`),
-      ]
-      const text = lines.length === 0 ? "No subagents." : lines.join("\n")
+        ...queued.map(
+          (job) =>
+            `${job.id} [${job.status}] "${job.title}" (priority ${job.priority}, depends on ${job.dependsOn.join(", ") || "none"})`,
+        ),
+        ...leadAgents.map(
+          (leadAgent) =>
+            `lead-agent/${leadAgent.leadAgentId} [persistent] "${leadAgent.title}" (job ${leadAgent.jobId})`,
+        ),
+      ];
+      const text = lines.length === 0 ? "No subagents." : lines.join("\n");
       return {
         content: [{ type: "text", text }],
         details: {
@@ -2096,12 +3067,14 @@ export default function activate(pi: ExtensionAPI) {
             title: snap.title,
             harness: snap.backend,
             status: snap.status,
-            ...(snap.backend !== "orca" ? {} : {
-              terminalHandle: snap.meta.nativeTerminalHandle,
-              worktreeId: snap.meta.nativeWorktreeId,
-              tabId: snap.meta.nativeTabId,
-              paneKey: snap.meta.nativePaneKey,
-            }),
+            ...(snap.backend !== "orca"
+              ? {}
+              : {
+                  terminalHandle: snap.meta.nativeTerminalHandle,
+                  worktreeId: snap.meta.nativeWorktreeId,
+                  tabId: snap.meta.nativeTabId,
+                  paneKey: snap.meta.nativePaneKey,
+                }),
           })),
           queued: queued.map((job) => ({
             id: job.id,
@@ -2119,9 +3092,9 @@ export default function activate(pi: ExtensionAPI) {
             mode: leadAgent.mode,
           })),
         },
-      }
+      };
     },
-  })
+  });
 
   // --- Renderers -----------------------------------------------------------
 
@@ -2129,110 +3102,112 @@ export default function activate(pi: ExtensionAPI) {
     "subagent-result",
     (message, { expanded }, theme) => {
       const details = (message.details ?? {}) as {
-        id?: string
-        title?: string
-        status?: string
-      }
-      const failed = details.status === "error"
-      const icon = failed ? theme.fg("error", "x") : theme.fg("success", "■")
+        id?: string;
+        title?: string;
+        status?: string;
+      };
+      const failed = details.status === "failed";
+      const icon = failed ? theme.fg("error", "x") : theme.fg("success", "■");
       const header =
         `${icon} ` +
         theme.fg("accent", theme.bold(`subagent ${details.id ?? "?"}`)) +
         theme.fg(
           "muted",
           ` · ${details.title ?? ""} · ${failed ? "failed" : "finished"}`,
-        )
+        );
 
       const content =
-        typeof message.content === "string" ? message.content : ""
-      const body = content.split("\n").slice(1).join("\n").trim()
+        typeof message.content === "string" ? message.content : "";
+      const body = content.split("\n").slice(1).join("\n").trim();
 
       if (expanded) {
-        const md = new Markdown(`${body}`, 0, 0, getMarkdownTheme())
-        const container = new Text(header, 0, 0)
+        const md = new Markdown(`${body}`, 0, 0, getMarkdownTheme());
+        const container = new Text(header, 0, 0);
         return {
           render: (width: number) => [
             ...container.render(width),
             ...md.render(width),
           ],
           invalidate: () => {
-            container.invalidate()
-            md.invalidate()
+            container.invalidate();
+            md.invalidate();
           },
-        }
+        };
       }
 
-      const previewLines = body.split("\n").slice(0, 8)
-      let text = header
-      for (const line of previewLines) text += `\n${theme.fg("toolOutput", line)}`
+      const previewLines = body.split("\n").slice(0, 8);
+      let text = header;
+      for (const line of previewLines)
+        text += `\n${theme.fg("toolOutput", line)}`;
       if (body.split("\n").length > 8)
-        text += `\n${theme.fg("dim", "... (ctrl+o to expand)")}`
-      return new Text(text, 0, 0)
+        text += `\n${theme.fg("dim", "... (ctrl+o to expand)")}`;
+      return new Text(text, 0, 0);
     },
-  )
+  );
 
   pi.registerEntryRenderer<QuickAskResultData>(
     "quick-ask-result",
     (entry, { expanded }, theme) => {
-      const data = entry.data
-      const failed = data?.status === "error"
-      const icon = failed ? theme.fg("error", "x") : theme.fg("success", "■")
+      const data = entry.data;
+      const failed = data?.status === "failed";
+      const icon = failed ? theme.fg("error", "x") : theme.fg("success", "■");
       const header =
         `${icon} ` +
         theme.fg("accent", theme.bold(`quick ask · ${data?.title ?? "?"}`)) +
         theme.fg(
           "muted",
           ` · ${failed ? "failed" : "answered"} · ${data?.id ?? "?"}`,
-        )
+        );
       const body = [
         data?.errorText ? `Error: ${data.errorText}` : "",
         data?.answer ?? "(no answer)",
       ]
         .filter(Boolean)
-        .join("\n\n")
+        .join("\n\n");
 
       if (expanded) {
-        const md = new Markdown(body, 0, 0, getMarkdownTheme())
-        const container = new Text(header, 0, 0)
+        const md = new Markdown(body, 0, 0, getMarkdownTheme());
+        const container = new Text(header, 0, 0);
         return {
           render: (width: number) => [
             ...container.render(width),
             ...md.render(width),
           ],
           invalidate: () => {
-            container.invalidate()
-            md.invalidate()
+            container.invalidate();
+            md.invalidate();
           },
-        }
+        };
       }
 
-      const lines = body.split("\n")
-      let text = header
+      const lines = body.split("\n");
+      let text = header;
       for (const line of lines.slice(0, 8))
-        text += `\n${theme.fg("toolOutput", line)}`
+        text += `\n${theme.fg("toolOutput", line)}`;
       if (lines.length > 8)
-        text += `\n${theme.fg("dim", "... (ctrl+o to expand)")}`
-      return new Text(text, 0, 0)
+        text += `\n${theme.fg("dim", "... (ctrl+o to expand)")}`;
+      return new Text(text, 0, 0);
     },
-  )
+  );
 
   // --- Commands ------------------------------------------------------------
 
   const runQuickAsk = async (rawArgs: string, ctx: ExtensionCommandContext) => {
     if (ctx.mode !== "tui") {
-      if (ctx.hasUI) ctx.ui.notify("quick ask is only available in the TUI", "error")
-      return
+      if (ctx.hasUI)
+        ctx.ui.notify("quick ask is only available in the TUI", "error");
+      return;
     }
 
-    let prompt = rawArgs.trim()
+    let prompt = rawArgs.trim();
     if (!prompt) {
-      const input = await ctx.ui.input("quick ask", "Ask a one-off question…")
-      prompt = input?.trim() ?? ""
-      if (!prompt) return
+      const input = await ctx.ui.input("quick ask", "Ask a one-off question…");
+      prompt = input?.trim() ?? "";
+      if (!prompt) return;
     }
 
-    const manager = await getManager()
-    let snap: SubagentSnapshot
+    const manager = await getManager();
+    let snap: SubagentSnapshot;
     try {
       snap = await runTool(
         getRuntime(),
@@ -2252,26 +3227,27 @@ export default function activate(pi: ExtensionAPI) {
             modelRegistry: ctx.modelRegistry,
           },
         }),
-      )
+      );
+      await persistSnapshot(snap, "quick-ask-spawned");
     } catch (error) {
       ctx.ui.notify(
         error instanceof Error ? error.message : String(error),
         "error",
-      )
-      return
+      );
+      return;
     }
 
     await openSubagentTakeover(ctx, manager.view, snap.id, {
       badge: "quick ask",
       ...subagentUiOptions(),
-    })
-  }
+    });
+  };
 
   pi.registerCommand("quick-ask", {
     description:
       "Ask a one-off side question while the main agent keeps working",
     handler: runQuickAsk,
-  })
+  });
 
   pi.registerCommand("subagents", {
     description: "List, inspect, and take over subagents",
@@ -2281,18 +3257,18 @@ export default function activate(pi: ExtensionAPI) {
           ctx.ui.notify(
             "Subagent takeover is only available in the TUI",
             "error",
-          )
-        return
+          );
+        return;
       }
-      const manager = await getManager()
+      const manager = await getManager();
       if (manager.view.size() === 0) {
         ctx.ui.notify(
           "No subagents yet. The agent spawns them with subagent_spawn.",
           "info",
-        )
-        return
+        );
+        return;
       }
-      await openSubagentPicker(ctx, manager.view, subagentUiOptions())
+      await openSubagentPicker(ctx, manager.view, subagentUiOptions());
     },
-  })
+  });
 }
