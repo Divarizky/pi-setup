@@ -22,6 +22,7 @@ export type LeadAgentProposalId = string;
 
 export const SUBAGENT_MODES = ["scout", "build"] as const;
 export type SubagentMode = (typeof SUBAGENT_MODES)[number];
+export type SubagentRole = "worker" | "lead";
 
 export const REASONING_EFFORTS = [
   "off",
@@ -59,6 +60,8 @@ export interface SpawnTask {
   /** Developer-facing conventional branch name; distinct from the durable job id. */
   readonly branchName?: string;
   readonly origin?: SubagentOrigin;
+  /** Controls which orchestration tools a child session may receive. */
+  readonly role?: SubagentRole;
   readonly prompt: string;
   readonly title: string;
   readonly cwd: string;
@@ -76,6 +79,7 @@ export interface SpawnTask {
 
 export interface SubagentMeta {
   readonly backend: BackendName;
+  readonly role?: SubagentRole;
   readonly worktree?: SubagentWorktree;
   readonly mode?: SubagentMode;
   readonly modelLabel?: string;

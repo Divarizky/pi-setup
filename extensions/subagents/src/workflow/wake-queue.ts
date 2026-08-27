@@ -8,6 +8,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import type { WorkflowTaskId } from "../domain.ts";
+import { withDurableWrite } from "../durable-write.ts";
 import {
   validateWorkflowTransition,
   type WorkflowEvent,
@@ -337,15 +338,24 @@ export class WorkflowEventQueue {
     const remaining = this.eventRecords.filter(
       (record) => record.taskId !== taskId,
     );
-    if (remaining.length === this.eventRecords.length) return;
+    const hadEvent = remaining.length !== this.eventRecords.length;
     this.eventRecords.splice(0, this.eventRecords.length, ...remaining);
+    let removedStatus = false;
     for (const key of [...this.currentStatuses.keys()]) {
-      if (key.startsWith(`${taskId}:`)) this.currentStatuses.delete(key);
+      if (key.startsWith(`${taskId}:`)) {
+        this.currentStatuses.delete(key);
+        removedStatus = true;
+      }
     }
-    this.latestGenerations.delete(taskId);
+    const removedLatest = this.latestGenerations.delete(taskId);
+    let removedWake = false;
     for (const [id, wake] of this.wakesById) {
-      if (wake.taskId === taskId) this.wakesById.delete(id);
+      if (wake.taskId === taskId) {
+        this.wakesById.delete(id);
+        removedWake = true;
+      }
     }
+    if (!hadEvent && !removedStatus && !removedLatest && !removedWake) return;
     await this.enqueueWrite(async () => {
       await this.rewriteEvents();
       await this.writeWakes();
@@ -421,7 +431,10 @@ export class WorkflowEventQueue {
   }
 
   private enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.writeChain.then(operation, operation);
+    const result = this.writeChain.then(
+      () => withDurableWrite(operation),
+      () => withDurableWrite(operation),
+    );
     this.writeChain = result.then(
       () => undefined,
       () => undefined,

@@ -18,6 +18,18 @@ export interface StateLease {
   release(): Promise<void>;
 }
 
+/** Dispose a runtime while guaranteeing that its state lease is released. */
+export async function disposeWithStateLease(
+  dispose: (() => Promise<void>) | undefined,
+  lease: StateLease | undefined,
+): Promise<void> {
+  try {
+    await dispose?.();
+  } finally {
+    await lease?.release().catch(() => {});
+  }
+}
+
 interface LockRecord {
   readonly pid: number;
   readonly token: string;

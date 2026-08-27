@@ -1,11 +1,13 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type {
-  BackendName,
-  LeadAgentId,
-  SubagentJobId,
-  SubagentMode,
+import {
+  BACKEND_NAMES,
+  type BackendName,
+  type LeadAgentId,
+  type SubagentJobId,
+  type SubagentMode,
 } from "./domain.ts";
+import { withDurableWrite } from "./durable-write.ts";
 
 const VERSION = 1;
 const MAX_TEXT = 32_000;
@@ -64,6 +66,7 @@ function parseRecord(value: unknown): LeadAgentRecord {
     typeof item.title !== "string" ||
     typeof item.cwd !== "string" ||
     typeof item.backend !== "string" ||
+    !BACKEND_NAMES.includes(item.backend as BackendName) ||
     (item.mode !== "scout" && item.mode !== "build") ||
     typeof item.createdAt !== "number" ||
     typeof item.updatedAt !== "number"
@@ -270,7 +273,10 @@ export class LeadAgentStore {
       );
       await rename(temporary, this.filePath);
     };
-    const result = this.writeChain.then(operation, operation);
+    const result = this.writeChain.then(
+      () => withDurableWrite(operation),
+      () => withDurableWrite(operation),
+    );
     this.writeChain = result.then(
       () => undefined,
       () => undefined,

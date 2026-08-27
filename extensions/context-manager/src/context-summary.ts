@@ -53,7 +53,11 @@ export function summarizeOutput(text: string, previewSize = 3): OutputSummary {
   };
 }
 
-export function formatSummary(summary: OutputSummary, source: string): string {
+export function formatSummary(
+  summary: OutputSummary,
+  source: string,
+  retrievalInstruction?: string,
+): string {
   const lines = [
     `[context-manager] Output ${source} diringkas secara lokal`,
     `Ukuran asli: ${summary.totalLines} baris, ${summary.totalChars.toLocaleString("id-ID")} karakter.`,
@@ -80,7 +84,8 @@ export function formatSummary(summary: OutputSummary, source: string): string {
     );
   }
   lines.push(
-    "Gunakan ctx_inspect dengan path dan query untuk mengambil snippet yang relevan; untuk command, jalankan ulang dengan filter yang lebih sempit.",
+    retrievalInstruction ??
+      "Gunakan ctx_inspect dengan path dan query untuk mengambil snippet yang relevan; untuk command, jalankan ulang dengan filter yang lebih sempit.",
   );
   return lines.join("\n");
 }

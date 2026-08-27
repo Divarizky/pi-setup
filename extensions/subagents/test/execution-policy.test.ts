@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveExecutionPolicy } from "../src/execution-policy.ts";
+import { excludedToolsForMode } from "../src/backends/pi.ts";
+
+test("child tool policy isolates Lead Agent tools by role", () => {
+  const workerTools = excludedToolsForMode("build", "worker");
+  const leadTools = excludedToolsForMode("build", "lead");
+  assert.ok(workerTools.includes("subagent_lead_event"));
+  assert.ok(workerTools.includes("subagent_lead_propose"));
+  assert.ok(leadTools.includes("subagent_lead_approve"));
+  assert.ok(!leadTools.includes("subagent_lead_event"));
+  assert.ok(!leadTools.includes("subagent_lead_propose"));
+});
 
 test("scout defaults to a Pi read-only session without a worktree", () => {
   assert.deepEqual(resolveExecutionPolicy("scout"), {

@@ -24,6 +24,7 @@ import { Effect, Queue, Stream } from "effect";
 import type { SubagentBackend, SubagentSession } from "../backend.ts";
 import type {
   SubagentMode,
+  SubagentRole,
   SpawnTask,
   SubagentEvent,
   SubagentMeta,
@@ -52,6 +53,10 @@ const CHILD_EXCLUDED_TOOL_NAMES = [
   "subagent_lead_create",
   "subagent_lead_send",
   "subagent_lead_stop",
+  "subagent_lead_event",
+  "subagent_lead_propose",
+  "subagent_lead_approve",
+  "subagent_lead_reject",
   "workflow",
   "ask_user",
   "bg_start",
@@ -63,10 +68,25 @@ const CHILD_EXCLUDED_TOOL_NAMES = [
 
 const SCOUT_EXCLUDED_TOOL_NAMES = ["bash", "edit", "write"] as const;
 
-export function excludedToolsForMode(mode: SubagentMode) {
+const LEAD_AGENT_CHILD_TOOLS = [
+  "subagent_lead_event",
+  "subagent_lead_propose",
+] as const;
+
+export function excludedToolsForMode(
+  mode: SubagentMode,
+  role: SubagentRole = "worker",
+) {
+  const excluded = new Set<string>([
+    ...CHILD_EXCLUDED_TOOL_NAMES,
+    ...LEAD_AGENT_CHILD_TOOLS,
+  ]);
+  if (role === "lead") {
+    for (const tool of LEAD_AGENT_CHILD_TOOLS) excluded.delete(tool);
+  }
   return mode === "scout"
-    ? [...CHILD_EXCLUDED_TOOL_NAMES, ...SCOUT_EXCLUDED_TOOL_NAMES]
-    : [...CHILD_EXCLUDED_TOOL_NAMES];
+    ? [...excluded, ...SCOUT_EXCLUDED_TOOL_NAMES]
+    : [...excluded];
 }
 
 function boundedError(error: unknown) {
@@ -328,7 +348,7 @@ const makePiSession = (
           modelRuntime,
           model: childModel,
           thinkingLevel,
-          excludeTools: excludedToolsForMode(task.mode ?? "build"),
+          excludeTools: excludedToolsForMode(task.mode ?? "build", task.role),
         });
         // Child sessions intentionally do not bind project extensions. This
         // prevents untrusted project code from adding tools or event handlers

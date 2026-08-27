@@ -4,7 +4,7 @@
   "type": "module",
   "main": "index.ts",
   "scripts": {
-    "test": "node --test test/state-lock.test.ts test/action-queue.test.ts test/subagent-monitor.test.ts test/execution-policy.test.ts test/workflow-state.test.ts test/wake-queue.test.ts test/orchestration.test.ts test/task-ledger.test.ts test/lead-agent-proposal.test.ts test/spawn-claims.test.ts test/orca-backend.test.ts test/orca-cli.test.ts test/composer.test.ts test/lead-agent.test.ts test/approval.test.ts test/delivery.test.ts test/job-queue.test.ts test/persistence.test.ts test/recovery.test.ts test/manager.test.ts test/result-delivery.test.ts test/report.test.ts test/takeover.test.ts test/ui.test.ts test/worktree.test.ts",
+    "test": "node --test test/state-lock.test.ts test/action-queue.test.ts test/durable-write.test.ts test/detached-worktrees.test.ts test/provisioning.test.ts test/subagent-monitor.test.ts test/execution-policy.test.ts test/workflow-state.test.ts test/wake-queue.test.ts test/lead-agent-inbox.test.ts test/orchestration.test.ts test/task-ledger.test.ts test/lead-agent-proposal.test.ts test/spawn-claims.test.ts test/orca-backend.test.ts test/orca-cli.test.ts test/composer.test.ts test/lead-agent.test.ts test/approval.test.ts test/delivery.test.ts test/job-queue.test.ts test/persistence.test.ts test/recovery.test.ts test/manager.test.ts test/result-delivery.test.ts test/report.test.ts test/takeover.test.ts test/ui.test.ts test/worktree.test.ts",
     "test:live": "node --test test/pi.test.ts",
     "typecheck": "tsc --noEmit"
   },

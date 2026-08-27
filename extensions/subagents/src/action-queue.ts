@@ -8,6 +8,7 @@ import {
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { SubagentJobId } from "./domain.ts";
+import { withDurableWrite } from "./durable-write.ts";
 
 const MAX_TEXT = 2_000;
 
@@ -241,7 +242,10 @@ export class ActionQueue {
   }
 
   private enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.writeChain.then(operation, operation);
+    const result = this.writeChain.then(
+      () => withDurableWrite(operation),
+      () => withDurableWrite(operation),
+    );
     this.writeChain = result.then(
       () => undefined,
       () => undefined,

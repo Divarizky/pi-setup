@@ -10,8 +10,10 @@ import {
   type SpawnTask,
   type SubagentInitialTerminal,
   type SubagentMode,
+  type SubagentRole,
 } from "./domain.ts";
 import type { SubagentWorktree } from "./worktree.ts";
+import { withDurableWrite } from "./durable-write.ts";
 
 export type JobStatus = "queued" | "running" | "done" | "failed" | "blocked";
 
@@ -110,6 +112,13 @@ function restoredTask(
   ) {
     throw new JobQueueError(`Malformed task reasoning effort for job: ${id}`);
   }
+  if (
+    item.role !== undefined &&
+    item.role !== "worker" &&
+    item.role !== "lead"
+  ) {
+    throw new JobQueueError(`Malformed task role for job: ${id}`);
+  }
   const parent = item.parent;
   if (
     !parent ||
@@ -125,6 +134,9 @@ function restoredTask(
       : {}),
     ...(typeof item.origin === "string"
       ? { origin: item.origin as SpawnTask["origin"] }
+      : {}),
+    ...(typeof item.role === "string"
+      ? { role: item.role as SubagentRole }
       : {}),
     prompt: bounded(item.prompt, 32_000),
     title: bounded(item.title, 160),
@@ -433,7 +445,10 @@ export class JobQueue {
       );
       await rename(temporary, this.filePath);
     };
-    const result = this.writeChain.then(operation, operation);
+    const result = this.writeChain.then(
+      () => withDurableWrite(operation),
+      () => withDurableWrite(operation),
+    );
     this.writeChain = result.then(
       () => undefined,
       () => undefined,

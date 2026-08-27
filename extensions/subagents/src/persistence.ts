@@ -17,9 +17,11 @@ import {
   type SubagentMode,
   type SubagentOrigin,
   type SubagentReport,
+  type SubagentRole,
   type SubagentStatus,
 } from "./domain.ts";
 import { parseStructuredReport } from "./report.ts";
+import { withDurableWrite } from "./durable-write.ts";
 
 const VERSION = 1;
 const MAX_ERROR_BYTES = 4096;
@@ -29,6 +31,7 @@ export interface PersistedJob {
   readonly jobId: SubagentJobId;
   readonly origin?: SubagentOrigin;
   readonly backend?: BackendName;
+  readonly role?: SubagentRole;
   readonly sessionFilePath?: string;
   readonly nativeSessionId?: string;
   readonly nativeTerminalHandle?: string;
@@ -95,6 +98,13 @@ function parseJob(value: unknown): PersistedJob {
     throw new PersistenceError("Malformed persisted job origin.");
   }
   if (
+    value.role !== undefined &&
+    value.role !== "worker" &&
+    value.role !== "lead"
+  ) {
+    throw new PersistenceError("Malformed persisted job role.");
+  }
+  if (
     typeof value.createdAt !== "number" ||
     !Number.isFinite(value.createdAt)
   ) {
@@ -109,6 +119,7 @@ function parseJob(value: unknown): PersistedJob {
   const jobId = value.jobId as string;
   const origin = value.origin as SubagentOrigin | undefined;
   const backend = value.backend as BackendName | undefined;
+  const role = value.role as SubagentRole | undefined;
   const sessionFilePath =
     typeof value.sessionFilePath === "string"
       ? value.sessionFilePath.slice(0, 4_096)
@@ -168,6 +179,7 @@ function parseJob(value: unknown): PersistedJob {
     jobId,
     ...(origin === undefined ? {} : { origin }),
     ...(backend === undefined ? {} : { backend }),
+    ...(role === undefined ? {} : { role }),
     ...(sessionFilePath === undefined ? {} : { sessionFilePath }),
     ...(nativeSessionId === undefined ? {} : { nativeSessionId }),
     ...(nativeTerminalHandle === undefined ? {} : { nativeTerminalHandle }),
@@ -442,7 +454,10 @@ export class JobPersistence {
   }
 
   private enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.writeChain.then(operation, operation);
+    const result = this.writeChain.then(
+      () => withDurableWrite(operation),
+      () => withDurableWrite(operation),
+    );
     this.writeChain = result.then(
       () => undefined,
       () => undefined,

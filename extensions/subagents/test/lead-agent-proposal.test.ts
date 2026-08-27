@@ -35,6 +35,40 @@ test("Lead Agent child proposals survive restart and require an explicit decisio
   }
 });
 
+test("Lead Agent cleanup removes undispatched proposals but preserves dispatched children", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "lead-agent-proposals-"));
+  try {
+    const store = new LeadAgentProposalStore(root);
+    const pending = await store.create({
+      id: "proposal-cleanup-pending",
+      leadAgentId: "lead-docs",
+      title: "Pending child",
+      prompt: "Inspect the docs.",
+      mode: "scout",
+      dependsOn: [],
+      priority: 0,
+    });
+    const dispatched = await store.create({
+      id: "proposal-cleanup-dispatched",
+      leadAgentId: "lead-docs",
+      title: "Dispatched child",
+      prompt: "Inspect the API.",
+      mode: "scout",
+      dependsOn: [],
+      priority: 0,
+    });
+    await store.approve(dispatched.id);
+    await store.dispatch(dispatched.id);
+    assert.deepEqual(await store.removeUndispatchedByLeadAgentId("lead-docs"), [
+      pending.id,
+    ]);
+    assert.equal(store.get(pending.id), undefined);
+    assert.equal(store.get(dispatched.id)?.status, "dispatched");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Lead Agent proposal rejection is final and records a reason", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "lead-agent-proposals-"));
   try {

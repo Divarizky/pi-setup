@@ -1,6 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { LeadAgentId, WorkflowTaskId } from "../domain.ts";
+import {
+  SUBAGENT_MODES,
+  type LeadAgentId,
+  type WorkflowTaskId,
+} from "../domain.ts";
 import {
   applyWorkflowEvent,
   createWorkflowTask,
@@ -8,8 +12,10 @@ import {
   type WorkflowTask,
   type WorkflowTaskInput,
   type WorkflowTaskStatus,
+  WORKFLOW_STATUSES,
 } from "./state.ts";
 import { parseLeadAgentEvent, type LeadAgentEvent } from "./orchestration.ts";
+import { withDurableWrite } from "../durable-write.ts";
 
 export interface LedgerTaskInput extends WorkflowTaskInput {
   readonly leadAgentId?: LeadAgentId;
@@ -58,6 +64,20 @@ function parseTask(value: unknown): LedgerTask {
   }
   if (!value.dependsOn.every((item) => typeof item === "string"))
     throw new Error("Malformed task ledger dependencies.");
+  if (!SUBAGENT_MODES.includes(value.mode as (typeof SUBAGENT_MODES)[number]))
+    throw new Error("Malformed task ledger mode.");
+  if (
+    !WORKFLOW_STATUSES.includes(
+      value.status as (typeof WORKFLOW_STATUSES)[number],
+    )
+  )
+    throw new Error("Malformed task ledger status.");
+  if (
+    !Number.isFinite(value.priority) ||
+    !Number.isFinite(value.createdAt) ||
+    !Number.isFinite(value.updatedAt)
+  )
+    throw new Error("Malformed task ledger numeric fields.");
   if (!Number.isSafeInteger(value.generation) || value.generation < 1)
     throw new Error("Malformed task ledger generation.");
   const role = value.role === "crew-lead" ? "subagent-lead" : value.role;
@@ -316,7 +336,10 @@ export class TaskLedger {
       await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, "utf8");
       await rename(temporary, this.filePath);
     };
-    const result = this.writeChain.then(operation, operation);
+    const result = this.writeChain.then(
+      () => withDurableWrite(operation),
+      () => withDurableWrite(operation),
+    );
     this.writeChain = result.then(
       () => undefined,
       () => undefined,

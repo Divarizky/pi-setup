@@ -441,6 +441,7 @@ const makeManager = Effect.gen(function* () {
           ].slice(-MAX_EVENT_LOG_ITEMS),
           meta: {
             backend: job.backend ?? "pi",
+            role: job.role ?? "worker",
             mode: job.mode,
             worktree,
             ...(job.sessionFilePath === undefined
@@ -897,6 +898,7 @@ const makeManager = Effect.gen(function* () {
 
         const meta = {
           ...(yield* session.meta),
+          role: task.role ?? "worker",
           worktree: task.worktree,
           mode: task.mode ?? "build",
         };
@@ -1214,6 +1216,7 @@ const makeManager = Effect.gen(function* () {
         cwd: restored.cwd,
         worktree: restored.meta.worktree,
         mode: restored.meta.mode ?? "build",
+        role: restored.meta.role ?? "worker",
         parent: { parentCwd: restored.cwd, projectTrusted: true },
       };
       const session = yield* Scope.provide(

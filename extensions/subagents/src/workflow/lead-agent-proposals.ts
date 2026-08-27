@@ -6,6 +6,7 @@ import type {
   SubagentMode,
   WorkflowTaskId,
 } from "../domain.ts";
+import { withDurableWrite } from "../durable-write.ts";
 
 const VERSION = 1;
 const MAX_TEXT = 32_000;
@@ -276,6 +277,23 @@ export class LeadAgentProposalStore {
     return next;
   }
 
+  /** Remove proposals that were never dispatched by a deleted Lead Agent. */
+  async removeUndispatchedByLeadAgentId(
+    leadAgentId: LeadAgentId,
+  ): Promise<ReadonlyArray<LeadAgentProposalId>> {
+    const removed = [...this.proposals.values()]
+      .filter(
+        (proposal) =>
+          proposal.leadAgentId === leadAgentId &&
+          (proposal.status === "proposed" || proposal.status === "approved"),
+      )
+      .map((proposal) => proposal.id);
+    if (removed.length === 0) return removed;
+    for (const proposalId of removed) this.proposals.delete(proposalId);
+    await this.save();
+    return removed;
+  }
+
   private require(id: string) {
     const proposal = this.proposals.get(id);
     if (!proposal)
@@ -294,7 +312,10 @@ export class LeadAgentProposalStore {
       );
       await rename(temporary, this.filePath);
     };
-    const result = this.writeChain.then(operation, operation);
+    const result = this.writeChain.then(
+      () => withDurableWrite(operation),
+      () => withDurableWrite(operation),
+    );
     this.writeChain = result.then(
       () => undefined,
       () => undefined,

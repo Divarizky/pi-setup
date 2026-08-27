@@ -37,6 +37,7 @@ import {
   pushWorktree,
 } from "./src/delivery.ts";
 import { JobPersistence } from "./src/persistence.ts";
+import { ProvisioningStore } from "./src/provisioning.ts";
 import { JobQueue } from "./src/job-queue.ts";
 import { LeadAgentStore } from "./src/lead-agent.ts";
 import { WorkflowEventQueue } from "./src/workflow/wake-queue.ts";
@@ -48,6 +49,8 @@ import {
   type LeadAgentEvent,
 } from "./src/workflow/orchestration.ts";
 import { TaskLedger } from "./src/workflow/task-ledger.ts";
+import { LeadAgentInbox } from "./src/workflow/lead-agent-inbox.ts";
+import { DetachedWorktreeStore } from "./src/detached-worktrees.ts";
 import type {
   WorkflowTaskRole,
   WorkflowTaskStatus,
@@ -134,7 +137,11 @@ import {
   type ConventionalBranchType,
 } from "./src/worktree.ts";
 import { OrcaCli, samePath } from "./src/transports/orca-cli.ts";
-import { acquireStateLease, type StateLease } from "./src/state-lock.ts";
+import {
+  acquireStateLease,
+  disposeWithStateLease,
+  type StateLease,
+} from "./src/state-lock.ts";
 import {
   confirmSubagentDeletion,
   openSubagentPicker,
@@ -273,11 +280,20 @@ export default function activate(pi: ExtensionAPI) {
   const persistence = new JobPersistence(
     path.join(getAgentDir(), "workspace", "state"),
   );
+  const provisioning = new ProvisioningStore(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
   const jobQueue = new JobQueue(path.join(getAgentDir(), "workspace", "state"));
   const leadAgentStore = new LeadAgentStore(
     path.join(getAgentDir(), "workspace", "state"),
   );
   const leadAgentProposalStore = new LeadAgentProposalStore(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
+  const leadAgentInbox = new LeadAgentInbox(
+    path.join(getAgentDir(), "workspace", "state"),
+  );
+  const detachedWorktrees = new DetachedWorktreeStore(
     path.join(getAgentDir(), "workspace", "state"),
   );
   let sessionReconcileTimer: ReturnType<typeof setInterval> | undefined;
@@ -389,13 +405,14 @@ export default function activate(pi: ExtensionAPI) {
     snap: SubagentSnapshot,
     event: string,
     clearWorktree = false,
-  ) => {
-    if (deletingJobs.has(snap.id)) return;
+  ): Promise<boolean> => {
+    if (deletingJobs.has(snap.id)) return false;
     try {
       await persistence.upsert({
         jobId: snap.id,
         origin: snap.origin,
         backend: snap.backend,
+        role: snap.meta.role,
         ...(snap.meta.sessionFilePath === undefined
           ? {}
           : { sessionFilePath: snap.meta.sessionFilePath }),
@@ -431,11 +448,13 @@ export default function activate(pi: ExtensionAPI) {
         finalText: snap.finalText,
       });
       await persistence.appendEvent({ at: Date.now(), jobId: snap.id, event });
+      return true;
     } catch (error) {
       ui?.notify(
         `Subagent state persistence failed: ${String(error)}`,
         "warning",
       );
+      return false;
     }
   };
 
@@ -516,6 +535,137 @@ export default function activate(pi: ExtensionAPI) {
       await fs.promises.unlink(target);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  };
+
+  /**
+   * Remove a settled job's dashboard/session metadata after its Pi session file
+   * was deleted externally. Build worktrees are deliberately preserved for
+   * review, delivery, or later retirement.
+   */
+  const cleanDeleteSubagentMetadata = async (
+    manager: SubagentManagerShape,
+    id: string,
+  ) => {
+    if (deletingJobs.has(id)) return false;
+    deletingJobs.add(id);
+    try {
+      const snap = await runTool(getRuntime(), manager.get(id));
+      const durable = (await persistence.load()).find(
+        (job) => job.jobId === id,
+      );
+      const queued = jobQueue.get(id);
+      const leadAgents = leadAgentStore
+        .list()
+        .filter((item) => item.jobId === id);
+      if (!snap && !durable && !queued && leadAgents.length === 0) return false;
+      if (snap?.status === "running" || snap?.restarting) return false;
+
+      const detachedWorktree =
+        snap?.meta.worktree ??
+        queued?.task.worktree ??
+        (durable?.worktreePath && durable.branch && durable.repoRoot
+          ? {
+              jobId: id,
+              path: durable.worktreePath,
+              branch: durable.branch,
+              repoRoot: durable.repoRoot,
+            }
+          : leadAgents.find(
+                (item) => item.worktreePath && item.branch && item.repoRoot,
+              )
+            ? (() => {
+                const leadAgent = leadAgents.find(
+                  (item) => item.worktreePath && item.branch && item.repoRoot,
+                )!;
+                return {
+                  jobId: id,
+                  path: leadAgent.worktreePath!,
+                  branch: leadAgent.branch!,
+                  repoRoot: leadAgent.repoRoot!,
+                };
+              })()
+            : undefined);
+      const detachedBackend =
+        snap?.meta.backend ??
+        durable?.backend ??
+        queued?.backend ??
+        leadAgents[0]?.backend;
+      const detachedMode =
+        snap?.meta.mode ?? durable?.mode ?? queued?.mode ?? leadAgents[0]?.mode;
+      if (detachedWorktree && detachedMode === "build" && detachedBackend) {
+        await detachedWorktrees.add({
+          jobId: id,
+          title:
+            snap?.title ??
+            durable?.title ??
+            queued?.title ??
+            leadAgents[0]?.title ??
+            id,
+          backend: detachedBackend,
+          path: detachedWorktree.path,
+          branch: detachedWorktree.branch,
+          repoRoot: detachedWorktree.repoRoot,
+          ...((snap?.meta.nativeWorktreeId ??
+          durable?.nativeWorktreeId ??
+          queued?.task.initialTerminal?.worktreeId)
+            ? {
+                nativeWorktreeId:
+                  snap?.meta.nativeWorktreeId ??
+                  durable?.nativeWorktreeId ??
+                  queued?.task.initialTerminal?.worktreeId,
+              }
+            : {}),
+          ...(leadAgents[0] ? { leadAgentId: leadAgents[0].leadAgentId } : {}),
+          detachedAt: Date.now(),
+        });
+      }
+
+      await subagentMonitor.forgetJob(id);
+      resultDelivery.consume([id]);
+      for (let index = pendingSettled.length - 1; index >= 0; index--) {
+        if (pendingSettled[index]?.snap.id === id)
+          pendingSettled.splice(index, 1);
+      }
+      const sessionFiles = new Set<string>([
+        ...(snap?.meta.sessionFilePath ? [snap.meta.sessionFilePath] : []),
+        ...(durable?.sessionFilePath ? [durable.sessionFilePath] : []),
+        ...(queued?.task.sessionFilePath ? [queued.task.sessionFilePath] : []),
+        ...leadAgents.flatMap((item) =>
+          item.sessionFilePath ? [item.sessionFilePath] : [],
+        ),
+      ]);
+      for (const sessionFile of sessionFiles)
+        await deletePiSessionFile(sessionFile);
+      await fs.promises.rm(
+        path.join(getAgentDir(), "workspace", "state", "orca-inbox", id),
+        { recursive: true, force: true },
+      );
+      await runTool(getRuntime(), manager.forget(id));
+
+      await provisioning.remove(id);
+      const proposalIds = new Set<string>();
+      for (const leadAgent of leadAgents) {
+        for (const proposalId of await leadAgentProposalStore.removeUndispatchedByLeadAgentId(
+          leadAgent.leadAgentId,
+        )) {
+          proposalIds.add(proposalId);
+        }
+      }
+      await leadAgentStore.removeByJobId(id);
+      approvalGate.forgetJob(id);
+      await persistApprovals();
+      await jobQueue.remove(id);
+      await workflowQueue.removeTask(id);
+      await taskLedger.remove(id);
+      for (const proposalId of proposalIds) {
+        await workflowQueue.removeTask(proposalId);
+        await taskLedger.remove(proposalId);
+      }
+      await persistence.deleteJob(id);
+      return true;
+    } finally {
+      deletingJobs.delete(id);
     }
   };
 
@@ -636,6 +786,8 @@ export default function activate(pi: ExtensionAPI) {
         path.join(getAgentDir(), "workspace", "state", "orca-inbox", id),
         { recursive: true, force: true },
       );
+      await provisioning.remove(id);
+      await detachedWorktrees.remove(id);
       await runTool(getRuntime(), manager.forget(id));
       await leadAgentStore.removeByJobId(id);
       approvalGate.forgetJob(id);
@@ -652,15 +804,22 @@ export default function activate(pi: ExtensionAPI) {
 
   const reconcileDeletedSessions = async (manager: SubagentManagerShape) => {
     for (const snap of manager.view.list()) {
-      if (snap.status !== "running" && !snap.restarting) continue;
       if (snap.backend === "pi") {
-        // A live in-process session is authoritative even before its JSONL
-        // transcript reaches disk. Only a restored snapshot with no live
-        // session may use missing-file evidence for recovery.
+        const sessionFilePath = snap.meta.sessionFilePath;
+        const sessionMissing =
+          sessionFilePath !== undefined && !fs.existsSync(sessionFilePath);
+        if (sessionMissing && snap.status !== "running" && !snap.restarting) {
+          // A user deleting a settled Pi session is an explicit clean-delete
+          // signal. Close any still-live child session, remove dashboard and
+          // workflow metadata, and preserve build worktrees.
+          await cleanDeleteSubagentMetadata(manager, snap.id);
+          continue;
+        }
+        // A live in-process session is authoritative while it is running;
+        // missing files during that window can be a write/rename race.
         if (await runTool(getRuntime(), manager.hasLiveSession(snap.id)))
           continue;
-        const sessionFilePath = snap.meta.sessionFilePath;
-        if (sessionFilePath && !fs.existsSync(sessionFilePath)) {
+        if (sessionMissing) {
           const recovered = await runTool(
             getRuntime(),
             manager.markRecoveryRequired(
@@ -672,6 +831,7 @@ export default function activate(pi: ExtensionAPI) {
         }
         continue;
       }
+      if (snap.status !== "running" && !snap.restarting) continue;
       if (
         snap.backend === "orca" &&
         snap.meta.nativeWorktreeId &&
@@ -704,8 +864,72 @@ export default function activate(pi: ExtensionAPI) {
     }
   };
 
+  const reconcileProvisioning = async (manager: SubagentManagerShape) => {
+    const knownJobIds = new Set([
+      ...manager.view.list().map((snap) => snap.id),
+      ...jobQueue.list().map((job) => job.id),
+      ...leadAgentStore.list().map((lead) => lead.jobId),
+      ...(await persistence.load()).map((job) => job.jobId),
+    ]);
+    for (const record of provisioning.list()) {
+      if (knownJobIds.has(record.jobId)) {
+        await provisioning.remove(record.jobId);
+      } else {
+        ui?.notify(
+          `Unfinished subagent provisioning found for ${record.jobId}; worktree was preserved for manual recovery.`,
+          "warning",
+        );
+      }
+    }
+  };
+
   const persistApprovals = async () => {
     await persistence.saveApprovals(approvalGate.list());
+  };
+
+  const findCallingSubagent = async (ctx: ExtensionContext) => {
+    const sessionFile = ctx.sessionManager.getSessionFile();
+    if (!sessionFile) return undefined;
+    const normalize = (value: string) => {
+      const resolved = path.resolve(value);
+      return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+    };
+    const normalizedSessionFile = normalize(sessionFile);
+    return (await persistence.load()).find(
+      (job) =>
+        job.sessionFilePath !== undefined &&
+        normalize(job.sessionFilePath) === normalizedSessionFile,
+    );
+  };
+
+  const assertLeadAgentToolRole = async (
+    ctx: ExtensionContext,
+    leadAgentId: string,
+  ) => {
+    const caller = await findCallingSubagent(ctx);
+    if (!caller) return;
+    if (caller.role !== "lead")
+      throw new Error(
+        "Only a Lead Agent or the parent session may use Lead Agent orchestration tools.",
+      );
+    const callerLeadStore = new LeadAgentStore(
+      path.join(getAgentDir(), "workspace", "state"),
+    );
+    await callerLeadStore.restore();
+    const leadAgent = callerLeadStore.get(leadAgentId);
+    if (!leadAgent || leadAgent.jobId !== caller.jobId) {
+      throw new Error(
+        `Lead Agent session is not authorized for ${leadAgentId}.`,
+      );
+    }
+  };
+
+  const assertParentToolRole = async (ctx: ExtensionContext) => {
+    const caller = await findCallingSubagent(ctx);
+    if (caller)
+      throw new Error(
+        "Only the parent session may approve or reject Lead Agent proposals.",
+      );
   };
 
   let jobQueueDispatching = false;
@@ -756,17 +980,36 @@ export default function activate(pi: ExtensionAPI) {
       )) {
         await jobQueue.mark(queued.id, "running");
         let preparedTask: SpawnTask | undefined;
+        const provisioningRequired =
+          queued.backend === "orca" && queued.mode === "build";
         try {
+          if (provisioningRequired) {
+            await provisioning.begin({
+              jobId: queued.id,
+              backend: queued.backend,
+              mode: queued.mode,
+              title: queued.title,
+              sourceCwd: queued.task.cwd,
+              branchName: queued.task.branchName,
+            });
+          }
           preparedTask =
             queued.backend === "orca"
               ? await prepareOrcaTask(queued.task)
               : queued.task;
+          if (provisioningRequired && preparedTask.worktree) {
+            await provisioning.update(queued.id, {
+              worktree: preparedTask.worktree,
+              nativeWorktreeId: preparedTask.initialTerminal?.worktreeId,
+            });
+          }
           const snap = await runTool(
             getRuntime(),
             manager.spawn(queued.backend, preparedTask),
           );
           await publishWorkflowStatus(snap, "working");
-          await persistSnapshot(snap, "job-dispatched");
+          const persisted = await persistSnapshot(snap, "job-dispatched");
+          if (persisted) await provisioning.remove(queued.id);
         } catch (error) {
           if (preparedTask?.worktree && !manager.view.get(queued.id)) {
             try {
@@ -775,9 +1018,12 @@ export default function activate(pi: ExtensionAPI) {
                 preparedTask.worktree,
                 preparedTask.initialTerminal?.worktreeId,
               );
+              if (provisioningRequired) await provisioning.remove(queued.id);
             } catch {
-              // Preserve the worktree when cleanup cannot be verified.
+              // Preserve the worktree and provisioning intent when cleanup cannot be verified.
             }
+          } else if (provisioningRequired) {
+            await provisioning.remove(queued.id).catch(() => {});
           }
           if (
             error instanceof ConcurrencyLimitError ||
@@ -864,6 +1110,8 @@ export default function activate(pi: ExtensionAPI) {
           .then(async (manager) => {
             try {
               approvalGate.restore(await persistence.loadApprovals());
+              await provisioning.restore();
+              await detachedWorktrees.restore();
               await actionQueue.restore();
               await workflowQueue.restore();
               await taskLedger.restore();
@@ -873,6 +1121,7 @@ export default function activate(pi: ExtensionAPI) {
               const jobs = await persistence.load();
               const events = await persistence.loadEvents();
               await runTool(getRuntime(), manager.restore(jobs, events));
+              await reconcileProvisioning(manager);
               for (const snap of [...manager.view.list()]) {
                 if (
                   snap.backend !== "orca" ||
@@ -899,6 +1148,9 @@ export default function activate(pi: ExtensionAPI) {
                 await persistSnapshot(snap, "restored");
               await reconcileDeletedSessions(manager);
               await subagentMonitor.reconcile(manager.view.list());
+              await leadAgentInbox.drain(async (event) => {
+                await orchestrationCoordinator!.emit(event);
+              });
               for (const evidence of await runTool(
                 getRuntime(),
                 manager.probeStatuses(),
@@ -911,7 +1163,12 @@ export default function activate(pi: ExtensionAPI) {
               );
               await dispatchQueuedJobs(manager);
               sessionReconcileTimer ??= setInterval(() => {
-                void reconcileDeletedSessions(manager).catch(() => {});
+                void (async () => {
+                  await leadAgentInbox.drain(async (event) => {
+                    await orchestrationCoordinator!.emit(event);
+                  });
+                  await reconcileDeletedSessions(manager);
+                })().catch(() => {});
               }, 5_000);
               sessionReconcileTimer.unref?.();
             } catch (error) {
@@ -1379,11 +1636,13 @@ export default function activate(pi: ExtensionAPI) {
     ui?.setStatus("subagents", undefined);
     ui = undefined;
     const closing = runtime;
+    const lease = stateLease;
     runtime = undefined;
     managerPromise = undefined;
-    await closing?.dispose();
-    await stateLease?.release().catch(() => {});
     stateLease = undefined;
+    await disposeWithStateLease(async () => {
+      await closing?.dispose();
+    }, lease);
   });
 
   // --- Tools ---------------------------------------------------------------
@@ -1580,7 +1839,21 @@ export default function activate(pi: ExtensionAPI) {
       }
       let worktree: PreparedOrcaWorktree["worktree"] | undefined;
       let initialTerminal: SubagentInitialTerminal | undefined;
+      const provisioningRequired =
+        jobId !== undefined &&
+        policy.requiresWorktree &&
+        dependsOn.length === 0;
       try {
+        if (provisioningRequired) {
+          await provisioning.begin({
+            jobId: jobId!,
+            backend: harness,
+            mode,
+            title,
+            sourceCwd: child.cwd,
+            branchName,
+          });
+        }
         if (jobId && harness === "orca" && dependsOn.length === 0) {
           const prepared = await createOrcaManagedWorktree({
             sourceDir: child.cwd,
@@ -1600,7 +1873,27 @@ export default function activate(pi: ExtensionAPI) {
             branchName,
           });
         }
+        if (provisioningRequired && worktree) {
+          await provisioning.update(jobId!, {
+            worktree,
+            nativeWorktreeId: initialTerminal?.worktreeId,
+          });
+        }
       } catch (error) {
+        if (worktree) {
+          try {
+            await cleanupManagedWorktree(
+              harness,
+              worktree,
+              initialTerminal?.worktreeId,
+            );
+            if (jobId) await provisioning.remove(jobId);
+          } catch {
+            // Keep the provisioning intent for recovery when cleanup is unverified.
+          }
+        } else if (jobId && provisioningRequired) {
+          await provisioning.remove(jobId).catch(() => {});
+        }
         if (jobId) releaseSpawnClaim(jobId);
         throw error;
       }
@@ -1615,6 +1908,7 @@ export default function activate(pi: ExtensionAPI) {
         worktree,
         initialTerminal,
         mode,
+        role: "worker",
         model: params.model as string | undefined,
         reasoningEffort: params.reasoning_effort as ReasoningEffort | undefined,
         timeoutMs: params.timeout_ms as number | undefined,
@@ -1742,15 +2036,20 @@ export default function activate(pi: ExtensionAPI) {
               worktree,
               initialTerminal?.worktreeId,
             );
+            if (jobId) await provisioning.remove(jobId);
           } catch {
             /* never force-delete output */
           }
+        } else if (jobId && provisioningRequired) {
+          await provisioning.remove(jobId).catch(() => {});
         }
         releaseSpawnClaim(jobId!);
         throw error;
       }
       await publishWorkflowStatus(snap, "working");
-      await persistSnapshot(snap, "spawned");
+      const persisted = await persistSnapshot(snap, "spawned");
+      if (persisted && jobId && provisioningRequired)
+        await provisioning.remove(jobId);
       if (proposalId) await leadAgentProposalStore.dispatch(proposalId);
 
       return {
@@ -1882,24 +2181,59 @@ export default function activate(pi: ExtensionAPI) {
         : undefined;
       let worktree: PreparedOrcaWorktree["worktree"] | undefined;
       let initialTerminal: SubagentInitialTerminal | undefined;
-      if (harness === "orca") {
-        const prepared = await createOrcaManagedWorktree({
-          sourceDir: child.cwd,
+      const provisioningRequired = needsWorktree;
+      if (provisioningRequired) {
+        await provisioning.begin({
           jobId,
-          branchName: branchName!,
-          title,
-          prompt: leadAgentPrompt,
+          backend: harness,
           mode,
-        });
-        worktree = prepared.worktree;
-        initialTerminal = prepared.initialTerminal;
-      } else if (needsWorktree) {
-        worktree = await createSubagentWorktree({
-          sourceDir: child.cwd,
-          workspaceRoot: path.join(getAgentDir(), "workspace"),
-          jobId,
+          title,
+          sourceCwd: child.cwd,
           branchName,
         });
+      }
+      try {
+        if (harness === "orca") {
+          const prepared = await createOrcaManagedWorktree({
+            sourceDir: child.cwd,
+            jobId,
+            branchName: branchName!,
+            title,
+            prompt: leadAgentPrompt,
+            mode,
+          });
+          worktree = prepared.worktree;
+          initialTerminal = prepared.initialTerminal;
+        } else if (needsWorktree) {
+          worktree = await createSubagentWorktree({
+            sourceDir: child.cwd,
+            workspaceRoot: path.join(getAgentDir(), "workspace"),
+            jobId,
+            branchName,
+          });
+        }
+        if (provisioningRequired && worktree) {
+          await provisioning.update(jobId, {
+            worktree,
+            nativeWorktreeId: initialTerminal?.worktreeId,
+          });
+        }
+      } catch (error) {
+        if (worktree) {
+          try {
+            await cleanupManagedWorktree(
+              harness,
+              worktree,
+              initialTerminal?.worktreeId,
+            );
+            await provisioning.remove(jobId);
+          } catch {
+            // Keep the provisioning intent when cleanup is unverified.
+          }
+        } else if (provisioningRequired) {
+          await provisioning.remove(jobId).catch(() => {});
+        }
+        throw error;
       }
       const task = {
         jobId,
@@ -1910,6 +2244,7 @@ export default function activate(pi: ExtensionAPI) {
         worktree,
         initialTerminal,
         mode,
+        role: "lead",
         parent: {
           parentCwd: ctx.cwd,
           projectTrusted: child.projectTrusted,
@@ -1934,9 +2269,12 @@ export default function activate(pi: ExtensionAPI) {
               worktree,
               initialTerminal?.worktreeId,
             );
+            if (provisioningRequired) await provisioning.remove(jobId);
           } catch {
             /* preserve recoverable output */
           }
+        } else if (provisioningRequired) {
+          await provisioning.remove(jobId).catch(() => {});
         }
         throw error;
       }
@@ -1969,8 +2307,9 @@ export default function activate(pi: ExtensionAPI) {
             worktree,
             initialTerminal?.worktreeId,
           );
+          if (provisioningRequired) await provisioning.remove(jobId);
         } catch {
-          // Preserve the worktree when safe cleanup cannot be verified.
+          // Preserve the worktree and provisioning intent when safe cleanup cannot be verified.
         }
         throw error;
       }
@@ -1984,7 +2323,8 @@ export default function activate(pi: ExtensionAPI) {
         requiresWorktree: !!worktree,
       });
       await publishWorkflowStatus(snap, "working");
-      await persistSnapshot(snap, "lead-agent-created");
+      const persisted = await persistSnapshot(snap, "lead-agent-created");
+      if (persisted && provisioningRequired) await provisioning.remove(jobId);
       return {
         content: [
           {
@@ -2093,6 +2433,7 @@ export default function activate(pi: ExtensionAPI) {
         cwd: leadAgent.cwd,
         worktree,
         mode: leadAgent.mode,
+        role: "lead",
         sessionFilePath: leadAgent.sessionFilePath,
         parent: {
           parentCwd: ctx.cwd,
@@ -2287,8 +2628,8 @@ export default function activate(pi: ExtensionAPI) {
         }),
       ),
     }),
-    async execute(_toolCallId, params) {
-      await getManager();
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      await assertLeadAgentToolRole(ctx, params.lead_agent_id as string);
       const event = parseLeadAgentEvent({
         eventId: params.event_id,
         type: params.type,
@@ -2309,6 +2650,20 @@ export default function activate(pi: ExtensionAPI) {
         replyTo: params.reply_to,
         at: Date.now(),
       });
+      const caller = await findCallingSubagent(ctx);
+      if (caller) {
+        await leadAgentInbox.enqueue(event);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${event.type} event ${event.eventId} was queued for the parent runtime.`,
+            },
+          ],
+          details: event,
+        };
+      }
+      await getManager();
       const result = await orchestrationCoordinator!.emit(event);
       return {
         content: [
@@ -2340,8 +2695,8 @@ export default function activate(pi: ExtensionAPI) {
       ),
       priority: Type.Optional(Type.Integer({ minimum: -100, maximum: 100 })),
     }),
-    async execute(_toolCallId, params) {
-      await getManager();
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      await assertLeadAgentToolRole(ctx, params.lead_agent_id as string);
       const event = parseLeadAgentEvent({
         eventId: `proposal-${params.proposal_id as string}`,
         type: "proposal",
@@ -2355,9 +2710,23 @@ export default function activate(pi: ExtensionAPI) {
         priority: params.priority ?? 0,
         at: Date.now(),
       });
-      await orchestrationCoordinator!.emit(event);
       if (event.type !== "proposal")
         throw new Error("Lead Agent proposal event was malformed.");
+      const caller = await findCallingSubagent(ctx);
+      if (caller) {
+        await leadAgentInbox.enqueue(event);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Lead Agent child proposal ${event.proposalId} was queued for the parent runtime.`,
+            },
+          ],
+          details: event,
+        };
+      }
+      await getManager();
+      await orchestrationCoordinator!.emit(event);
       const proposal = leadAgentProposalStore.get(event.proposalId);
       return {
         content: [
@@ -2379,7 +2748,8 @@ export default function activate(pi: ExtensionAPI) {
     parameters: Type.Object({
       proposal_id: Type.String({ minLength: 1, maxLength: 128 }),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      await assertParentToolRole(ctx);
       const proposal = await leadAgentProposalStore.approve(
         params.proposal_id as string,
       );
@@ -2403,7 +2773,8 @@ export default function activate(pi: ExtensionAPI) {
       proposal_id: Type.String({ minLength: 1, maxLength: 128 }),
       reason: Type.String({ minLength: 1, maxLength: 4_096 }),
     }),
-    async execute(_toolCallId, params) {
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      await assertParentToolRole(ctx);
       const proposal = await leadAgentProposalStore.reject(
         params.proposal_id as string,
         params.reason as string,
@@ -3096,6 +3467,31 @@ export default function activate(pi: ExtensionAPI) {
     },
   });
 
+  pi.registerTool({
+    name: "subagent_detached_worktrees",
+    label: "List Detached Worktrees",
+    description:
+      "List build worktrees preserved after external Pi session deletion.",
+    parameters: Type.Object({}),
+    async execute() {
+      await getManager();
+      const worktrees = detachedWorktrees.list();
+      const text =
+        worktrees.length === 0
+          ? "No detached worktrees."
+          : worktrees
+              .map(
+                (item) =>
+                  `${item.jobId} "${item.title}" (${item.backend})\n  path=${item.path}\n  branch=${item.branch}\n  repo=${item.repoRoot}${item.nativeWorktreeId ? `\n  Orca worktree=${item.nativeWorktreeId}` : ""}`,
+              )
+              .join("\n");
+      return {
+        content: [{ type: "text", text }],
+        details: { worktrees },
+      };
+    },
+  });
+
   // --- Renderers -----------------------------------------------------------
 
   pi.registerMessageRenderer(
@@ -3213,6 +3609,7 @@ export default function activate(pi: ExtensionAPI) {
         getRuntime(),
         manager.spawn("pi", {
           origin: "quick-ask",
+          role: "worker",
           prompt,
           title: deriveQuickAskTitle(prompt),
           mode: "scout",

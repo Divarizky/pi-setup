@@ -31,6 +31,8 @@ src/
   approval.ts             # durable delivery approval state machine
   delivery.ts             # verified Git delivery operations
   persistence.ts          # restart-safe job and event persistence
+  provisioning.ts         # durable pre-worktree provisioning intents
+  detached-worktrees.ts   # preserved build worktrees after session cleanup
   report.ts               # structured subagent report parsing
   security.ts             # bounded and sanitized external text
   spawn-claims.ts         # duplicate spawn claim registry
@@ -105,14 +107,14 @@ Scout runs only on the `pi` backend. Build runs only on the `orca` backend, wher
 
 `subagent_deliver` first requires a parent-approved review operation that validates the diff, then supports approved commit, merge, push, and GitHub PR operations. Merge/push require consumed commit approval, and PR requires consumed commit plus push approvals. Failures leave the approval available for a retry. Retirement is the approval-gated full-delete alias and force-deletes the managed worktree, branch, session, and durable metadata.
 
-Lead Agents are persistent subagents with durable charter/scope metadata. They use a stable name and Pi session identity; child proposals are persisted and require parent approval before `subagent_spawn` dispatch. Follow-ups reuse the live session when available and reopen the preserved worktree after restart. `subagent_lead_event` provides structured `proposal`, `worker_done`, `escalation`, `ask`, and `reply` events; the Coordinator deduplicates and replays them from the canonical task ledger.
+Lead Agents are persistent subagents with durable charter/scope metadata. They use a stable name and Pi session identity; child proposals are persisted and require parent approval before `subagent_spawn` dispatch. Follow-ups reuse the live session when available and reopen the preserved worktree after restart. Deleting a settled Lead Pi session removes its registry and undispatched proposals while dispatched children remain. `subagent_lead_event` provides structured `proposal`, `worker_done`, `escalation`, `ask`, and `reply` events; the Coordinator deduplicates and replays them from the canonical task ledger.
 
 The zero-token Subagent Monitor classifies CLI-derived terminal evidence as `busy`, `idle`, `unknown`, or `dead`, rejects stale, future, and conflicting evidence, and emits explicit identity-mismatch actions before writing records to the durable `action queue`. An `action receipt` changes the item to `action confirmed`; confirmation is separate from delivery approval. `OrcaCli` supports Orca's documented agent-first launch (`worktree create --agent pi --prompt`) and typed `worktree rm` plus `terminal list/read/send/wait/stop` through `execFile` (never a shell). `OrcaTerminalAdapter` permits terminal control only for a terminal explicitly attached to a job. A connected terminal is still `unknown` until terminal status verifies its lifecycle state; a missing, orphaned, or disconnected terminal is `dead`.
 
 ## Commands
 
 - `/subagents` — Thread dashboard + takeover (the command name is intentionally retained)
-  - Deleting a Thread from the dashboard deletes its session history, durable records, branch, and managed worktree after confirmation; terminal/session loss instead remains recoverable.
+  - Deleting a Thread from the dashboard deletes its session history, durable records, branch, and managed worktree after confirmation; deleting a settled Pi session externally clean-deletes dashboard/history metadata while preserving build worktrees in a detached-worktree registry (inspect with `subagent_detached_worktrees`). Manual Orca worktree removal remains a recoverable external deletion and does not cascade into descendants automatically.
   - Dashboard defaults to active and needs-attention Threads, shows project/worktree context, and uses a list-left/detail-right layout.
   - `h` toggles settled history (successes and failures), `r` retries a failed/recovery-required Thread or re-enqueues a blocked durable job, `a` approves the selected delivery/delete action after confirmation, `c` confirms a monitor action, `i` shows Orca terminal identity, `d` opens an in-place confirmation overlay and permanently deletes the selected Thread, and `x` aborts a running session.
   - `↑/↓` selects a Thread; confirm opens takeover. Takeover sends follow-ups and the configured PageUp/PageDown bindings scroll transcript pages.
