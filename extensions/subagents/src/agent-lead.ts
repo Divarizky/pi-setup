@@ -21,6 +21,8 @@ export interface LeadAgentRecord {
   readonly charter?: string;
   readonly scope?: string;
   readonly cwd: string;
+  /** Durable full home for this Agent Lead, including explicit project clones. */
+  readonly homePath?: string;
   readonly worktreePath?: string;
   readonly branch?: string;
   readonly repoRoot?: string;
@@ -85,6 +87,9 @@ function parseRecord(value: unknown): LeadAgentRecord {
       ? { scope: sanitizeSummary(item.scope) }
       : {}),
     cwd: bounded(item.cwd, 4_096),
+    ...(typeof item.homePath === "string"
+      ? { homePath: bounded(item.homePath, 4_096) }
+      : {}),
     ...(typeof item.worktreePath === "string"
       ? { worktreePath: bounded(item.worktreePath, 4_096) }
       : {}),

@@ -32,6 +32,10 @@ import type {
 } from "../domain.ts";
 import { SendError, SpawnError } from "../domain.ts";
 import { buildSubagentExecutionPrompt } from "../prompt.ts";
+import {
+  runWithCallerIdentity,
+  runWithParentStateRoot,
+} from "../parent-state.ts";
 
 const CHILD_SHUTDOWN_TIMEOUT_MS = 5_000;
 const MAX_QUEUED_PROMPTS = 16;
@@ -44,15 +48,21 @@ const CHILD_EXCLUDED_TOOL_NAMES = [
   "subagent_cancel",
   "subagent_check",
   "subagent_list",
+  "subagent_detached_worktrees",
   "subagent_approve",
+  "subagent_deliver",
   "subagent_action_list",
   "subagent_action_confirm",
+  "subagent_wake_list",
+  "subagent_wake_ack",
   "subagent_retry",
   "subagent_retire",
   "subagent_delete",
   "subagent_lead_create",
+  "subagent_lead_doctor",
   "subagent_lead_send",
   "subagent_lead_stop",
+  "subagent_lead_retire",
   "subagent_lead_event",
   "subagent_lead_propose",
   "subagent_lead_approve",
@@ -72,6 +82,19 @@ const LEAD_AGENT_CHILD_TOOLS = [
   "subagent_lead_event",
   "subagent_lead_propose",
 ] as const;
+const LEAD_COORDINATOR_TOOLS = [
+  "subagent_spawn",
+  "subagent_wait",
+  "subagent_cancel",
+  "subagent_check",
+  "subagent_list",
+  "subagent_lead_doctor",
+  "subagent_retry",
+  "subagent_action_list",
+  "subagent_action_confirm",
+  "subagent_wake_list",
+  "subagent_wake_ack",
+] as const;
 
 export function excludedToolsForMode(
   mode: SubagentMode,
@@ -82,9 +105,10 @@ export function excludedToolsForMode(
     ...LEAD_AGENT_CHILD_TOOLS,
   ]);
   if (role === "lead") {
-    for (const tool of LEAD_AGENT_CHILD_TOOLS) excluded.delete(tool);
+    for (const tool of [...LEAD_AGENT_CHILD_TOOLS, ...LEAD_COORDINATOR_TOOLS])
+      excluded.delete(tool);
   }
-  return mode === "scout"
+  return mode === "scout" && role !== "lead"
     ? [...excluded, ...SCOUT_EXCLUDED_TOOL_NAMES]
     : [...excluded];
 }
@@ -338,18 +362,51 @@ const makePiSession = (
           registry,
           model,
         );
-        const { session } = await createAgentSession({
-          cwd: task.cwd,
-          sessionManager: task.sessionFilePath
-            ? SessionManager.open(task.sessionFilePath, undefined, task.cwd)
-            : SessionManager.create(task.cwd),
-          settingsManager,
-          resourceLoader: loader,
-          modelRuntime,
-          model: childModel,
-          thinkingLevel,
-          excludeTools: excludedToolsForMode(task.mode ?? "build", task.role),
-        });
+        const createSession = () =>
+          runWithCallerIdentity(
+            {
+              jobId: task.jobId!,
+              role: task.role ?? "worker",
+              ...(task.leadAgentId === undefined
+                ? {}
+                : { leadAgentId: task.leadAgentId }),
+              ...(task.parent.parentStateRoot === undefined
+                ? {}
+                : { parentStateRoot: task.parent.parentStateRoot }),
+              ...(task.parent.coordinatorStateRoot === undefined
+                ? {}
+                : { coordinatorStateRoot: task.parent.coordinatorStateRoot }),
+              cwd: task.cwd,
+              title: task.title,
+              mode: task.mode ?? "build",
+            },
+            () =>
+              createAgentSession({
+                cwd: task.cwd,
+                sessionManager: task.sessionFilePath
+                  ? SessionManager.open(
+                      task.sessionFilePath,
+                      undefined,
+                      task.cwd,
+                    )
+                  : SessionManager.create(task.cwd, task.sessionDir),
+                settingsManager,
+                resourceLoader: loader,
+                modelRuntime,
+                model: childModel,
+                thinkingLevel,
+                excludeTools: excludedToolsForMode(
+                  task.mode ?? "build",
+                  task.role,
+                ),
+              }),
+          );
+        const { session } = task.parent.parentStateRoot
+          ? await runWithParentStateRoot(
+              task.parent.parentStateRoot,
+              createSession,
+            )
+          : await createSession();
         // Child sessions intentionally do not bind project extensions. This
         // prevents untrusted project code from adding tools or event handlers
         // to a headless subagent.
@@ -569,6 +626,7 @@ const makePiSession = (
     startRun(
       buildSubagentExecutionPrompt({
         mode: task.mode ?? "build",
+        role: task.role,
         title: task.title,
         prompt: task.prompt,
       }),

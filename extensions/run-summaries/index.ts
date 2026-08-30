@@ -92,26 +92,26 @@ export default function (pi: ExtensionAPI) {
     const run = runBoundary.settle();
     if (!run || ctx.mode !== "tui" || !sessionActive) return;
 
-    const entries = getRunEntries(
-      ctx.sessionManager.getBranch(),
-      run.baselineLeafId,
-    );
+    const branch = ctx.sessionManager.getBranch();
+    const entries = getRunEntries(branch, run.baselineLeafId);
     if (entries.length === 0) return;
+
+    // Capture the target leaf ID and session ID at the time the run settled.
+    const targetLeafId = ctx.sessionManager.getLeafId();
+    const targetSessionId = ctx.sessionManager.getSessionId();
 
     // Entry IDs are stable for a run and distinguish consecutive runs even
     // when they share the same baseline leaf.
     const runKey = entries.map((entry) => entry.id).join(",");
-    const branchAlreadyHasRecap = ctx.sessionManager
-      .getBranch()
-      .some(
-        (entry) =>
-          entry.type === "custom" &&
-          entry.customType === RECAP_ENTRY_TYPE &&
-          typeof entry.data === "object" &&
-          entry.data !== null &&
-          "runKey" in entry.data &&
-          entry.data.runKey === runKey,
-      );
+    const branchAlreadyHasRecap = branch.some(
+      (entry) =>
+        entry.type === "custom" &&
+        entry.customType === RECAP_ENTRY_TYPE &&
+        typeof entry.data === "object" &&
+        entry.data !== null &&
+        "runKey" in entry.data &&
+        entry.data.runKey === runKey,
+    );
     if (branchAlreadyHasRecap || scheduledRunKeys.has(runKey)) return;
     scheduledRunKeys.add(runKey);
 
@@ -119,7 +119,10 @@ export default function (pi: ExtensionAPI) {
     const generation = sessionGeneration;
     statusContext = ctx;
     summaryQueue.enqueue(async () => {
-      if (!sessionActive || generation !== sessionGeneration) return;
+      if (!sessionActive || generation !== sessionGeneration) {
+        scheduledRunKeys.delete(runKey);
+        return;
+      }
       const controller = new AbortController();
       const task = (async () => {
         let recap: RecapEntryData;
@@ -136,8 +139,10 @@ export default function (pi: ExtensionAPI) {
             controller.signal.aborted ||
             !sessionActive ||
             generation !== sessionGeneration
-          )
+          ) {
+            scheduledRunKeys.delete(runKey);
             return;
+          }
 
           const currentModel = ctx.model;
           if (
@@ -190,24 +195,41 @@ export default function (pi: ExtensionAPI) {
           !sessionActive ||
           generation !== sessionGeneration ||
           controller.signal.aborted
-        )
+        ) {
+          scheduledRunKeys.delete(runKey);
           return;
+        }
+
+        // Safety check: Ensure the agent is idle and session/leaf hasn't shifted
+        // to a different turn or branch before appending.
+        if (
+          !ctx.isIdle() ||
+          ctx.sessionManager.getSessionId() !== targetSessionId ||
+          ctx.sessionManager.getLeafId() !== targetLeafId
+        ) {
+          scheduledRunKeys.delete(runKey);
+          return;
+        }
 
         // Re-check immediately before append. This closes the race where two
         // extension instances summarize the same run concurrently.
-        const recapAlreadyAppended = ctx.sessionManager
-          .getBranch()
-          .some(
-            (entry) =>
-              entry.type === "custom" &&
-              entry.customType === RECAP_ENTRY_TYPE &&
-              typeof entry.data === "object" &&
-              entry.data !== null &&
-              "runKey" in entry.data &&
-              entry.data.runKey === runKey,
-          );
+        const currentBranch = ctx.sessionManager.getBranch();
+        const recapAlreadyAppended = currentBranch.some(
+          (entry) =>
+            entry.type === "custom" &&
+            entry.customType === RECAP_ENTRY_TYPE &&
+            typeof entry.data === "object" &&
+            entry.data !== null &&
+            "runKey" in entry.data &&
+            entry.data.runKey === runKey,
+        );
         if (recapAlreadyAppended) return;
-        pi.appendEntry(RECAP_ENTRY_TYPE, { ...recap, runKey });
+
+        try {
+          pi.appendEntry(RECAP_ENTRY_TYPE, { ...recap, runKey });
+        } catch {
+          scheduledRunKeys.delete(runKey);
+        }
       })();
 
       activeSummaries.set(controller, task);

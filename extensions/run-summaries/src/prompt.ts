@@ -4,6 +4,7 @@ Return exactly one JSON object with this shape:
 {"recap":"...","next":"..."}
 
 Rules:
+- Write the recap and next step entirely in Bahasa Indonesia. Preserve code identifiers, file paths, commands, model names, and technical proper nouns as needed.
 - recap: concisely cover everything actually performed in this run: investigation, tool work, files changed, validation, outcomes, failures, and important caveats. Prefer up to three compact Markdown bullets.
 - next: one concise, actionable next step. If nothing remains, say that no further action is required.
 - Base the answer only on the supplied current-run transcript.

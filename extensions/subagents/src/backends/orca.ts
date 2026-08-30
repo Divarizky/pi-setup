@@ -351,7 +351,9 @@ const makeOrcaSession = (
         emitQueued();
         try {
           // Best-effort doorbell only; the payload itself is never typed while busy.
-          await pushTurnInput(DOORBELL_TEXT);
+          // The doorbell is a fixed, non-user payload; it is safe to use the
+          // legacy boot plane while the TUI readiness gate is still warming up.
+          await pushTurnInput(DOORBELL_TEXT, true);
         } catch {
           // The durable message survives even when the wake line cannot be typed.
         }
@@ -529,12 +531,18 @@ const makeOrcaSession = (
     };
 
     /** Literal typing with a composer gate once the agent TUI is proven alive. */
-    const pushTurnInput = async (text: string): Promise<void> => {
-      if (!adapter.supportsLiteralTyping || !hasSeenOutput) {
-        // ponytail: boot-window sends stay ungated until Orca exposes a
-        // process-ready signal; the composer gate activates after first output.
+    const pushTurnInput = async (
+      text: string,
+      allowBootWindow = false,
+    ): Promise<void> => {
+      if (!adapter.supportsLiteralTyping || allowBootWindow) {
         await adapter.send(task.jobId!, text);
         return;
+      }
+      if (!hasSeenOutput) {
+        throw new Error(
+          "Orca process readiness is unverified; refusing to send follow-up input to a possibly raw shell.",
+        );
       }
       const result = await typeAndSubmit(
         {
@@ -595,7 +603,7 @@ const makeOrcaSession = (
       try {
         await ensureTerminal();
         if (turn !== generation || state.closed) return;
-        if (!initialPromptPending) await pushTurnInput(text);
+        if (!initialPromptPending) await pushTurnInput(text, generation === 1);
         initialPromptPending = false;
         // ponytail: startup gate is time-boxed, not event-driven — swap for an Orca
         // process-started signal when the CLI exposes one.
@@ -608,6 +616,7 @@ const makeOrcaSession = (
           if (turn !== generation || state.closed) return;
           ready = hasMeaningfulOutput(output, [text]);
         }
+        if (ready) hasSeenOutput = true;
         if (!ready) {
           emit({
             _tag: "RunSettled",

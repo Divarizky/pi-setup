@@ -32,6 +32,7 @@ export type LeadAgentEvent =
       readonly title: string;
       readonly prompt: string;
       readonly mode: SubagentMode;
+      readonly workingDir?: string;
       readonly dependsOn: ReadonlyArray<string>;
       readonly priority: number;
     })
@@ -115,6 +116,11 @@ export function parseLeadAgentEvent(value: unknown): LeadAgentEvent {
         title: text(record.title, "proposal title", 160),
         prompt: text(record.prompt, "proposal prompt"),
         mode,
+        ...(record.workingDir === undefined
+          ? {}
+          : {
+              workingDir: text(record.workingDir, "working directory", 4_096),
+            }),
         dependsOn: [...new Set(record.dependsOn)],
         priority:
           typeof record.priority === "number" &&

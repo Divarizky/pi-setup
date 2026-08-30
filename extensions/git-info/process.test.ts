@@ -9,10 +9,7 @@ test.after(async () => {
   await runtime.dispose();
 });
 
-// Windows can spend over one second starting a child process when the host is busy.
-// Keep the explicit timeout test below short, but give normal command assertions
-// enough startup budget to remain deterministic across platforms.
-const runNode = (source: string, timeout = 5_000) =>
+const runNode = (source: string, timeout = 1_000) =>
   runtime.runPromise(
     runCommand(
       process.execPath,

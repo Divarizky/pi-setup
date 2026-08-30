@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { LeadAgentStore } from "../src/lead-agent.ts";
+import { LeadAgentStore } from "../src/agent-lead.ts";
 
 test("Lead Agent registry survives restart and updates its current job", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "pi-lead-agent-"));

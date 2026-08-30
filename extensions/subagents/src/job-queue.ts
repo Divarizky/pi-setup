@@ -63,6 +63,9 @@ function serializeTask(task: SpawnTask): StoredTask {
       ...(parent.inheritedThinkingLevel === undefined
         ? {}
         : { inheritedThinkingLevel: parent.inheritedThinkingLevel }),
+      ...(parent.parentStateRoot === undefined
+        ? {}
+        : { parentStateRoot: bounded(parent.parentStateRoot) }),
     },
   };
 }
@@ -138,6 +141,9 @@ function restoredTask(
     ...(typeof item.role === "string"
       ? { role: item.role as SubagentRole }
       : {}),
+    ...(typeof item.leadAgentId === "string"
+      ? { leadAgentId: bounded(item.leadAgentId, 128) }
+      : {}),
     prompt: bounded(item.prompt, 32_000),
     title: bounded(item.title, 160),
     cwd: bounded(item.cwd),
@@ -160,6 +166,9 @@ function restoredTask(
     ...(typeof item.sessionFilePath === "string"
       ? { sessionFilePath: bounded(item.sessionFilePath) }
       : {}),
+    ...(typeof item.sessionDir === "string"
+      ? { sessionDir: bounded(item.sessionDir) }
+      : {}),
     parent: {
       parentCwd: bounded(parent.parentCwd),
       projectTrusted: parent.projectTrusted,
@@ -176,6 +185,9 @@ function restoredTask(
       ...(parent.inheritedThinkingLevel === undefined
         ? {}
         : { inheritedThinkingLevel: parent.inheritedThinkingLevel }),
+      ...(typeof parent.parentStateRoot === "string"
+        ? { parentStateRoot: bounded(parent.parentStateRoot) }
+        : {}),
     },
   };
 }

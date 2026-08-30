@@ -33,6 +33,7 @@ export interface UsageLimit {
 
 export interface ProviderUsage {
   readonly provider: ProviderId;
+  readonly label?: string;
   readonly source?: string;
   readonly status: UsageStatus;
   readonly today: ProviderPeriodUsage;

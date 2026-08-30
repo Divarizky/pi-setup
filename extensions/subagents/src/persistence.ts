@@ -32,6 +32,7 @@ export interface PersistedJob {
   readonly origin?: SubagentOrigin;
   readonly backend?: BackendName;
   readonly role?: SubagentRole;
+  readonly leadAgentId?: string;
   readonly sessionFilePath?: string;
   readonly nativeSessionId?: string;
   readonly nativeTerminalHandle?: string;
@@ -39,10 +40,12 @@ export interface PersistedJob {
   readonly nativeTabId?: string;
   readonly nativePaneKey?: string;
   readonly nativeLaunchToken?: string;
+  readonly parentStateRoot?: string;
   readonly title: string;
   readonly mode: SubagentMode;
   readonly cwd: string;
   readonly status: SubagentStatus;
+  readonly queued?: boolean;
   readonly createdAt: number;
   readonly settledAt?: number;
   readonly worktreePath?: string;
@@ -120,6 +123,10 @@ function parseJob(value: unknown): PersistedJob {
   const origin = value.origin as SubagentOrigin | undefined;
   const backend = value.backend as BackendName | undefined;
   const role = value.role as SubagentRole | undefined;
+  const leadAgentId =
+    typeof value.leadAgentId === "string"
+      ? value.leadAgentId.slice(0, 128)
+      : undefined;
   const sessionFilePath =
     typeof value.sessionFilePath === "string"
       ? value.sessionFilePath.slice(0, 4_096)
@@ -148,6 +155,10 @@ function parseJob(value: unknown): PersistedJob {
     typeof value.nativeLaunchToken === "string"
       ? value.nativeLaunchToken.slice(0, 512)
       : undefined;
+  const parentStateRoot =
+    typeof value.parentStateRoot === "string"
+      ? value.parentStateRoot.slice(0, 4_096)
+      : undefined;
   const title = value.title as string;
   const cwd = value.cwd as string;
   const settledAt =
@@ -157,6 +168,7 @@ function parseJob(value: unknown): PersistedJob {
   const branch = typeof value.branch === "string" ? value.branch : undefined;
   const repoRoot =
     typeof value.repoRoot === "string" ? value.repoRoot : undefined;
+  const queued = value.queued === undefined ? undefined : value.queued === true;
   const errorText =
     typeof value.errorText === "string"
       ? value.errorText.slice(0, MAX_ERROR_BYTES)
@@ -180,6 +192,7 @@ function parseJob(value: unknown): PersistedJob {
     ...(origin === undefined ? {} : { origin }),
     ...(backend === undefined ? {} : { backend }),
     ...(role === undefined ? {} : { role }),
+    ...(leadAgentId === undefined ? {} : { leadAgentId }),
     ...(sessionFilePath === undefined ? {} : { sessionFilePath }),
     ...(nativeSessionId === undefined ? {} : { nativeSessionId }),
     ...(nativeTerminalHandle === undefined ? {} : { nativeTerminalHandle }),
@@ -187,10 +200,12 @@ function parseJob(value: unknown): PersistedJob {
     ...(nativeTabId === undefined ? {} : { nativeTabId }),
     ...(nativePaneKey === undefined ? {} : { nativePaneKey }),
     ...(nativeLaunchToken === undefined ? {} : { nativeLaunchToken }),
+    ...(parentStateRoot === undefined ? {} : { parentStateRoot }),
     title,
     mode: value.mode,
     cwd,
     status: value.status === "error" ? "failed" : value.status,
+    ...(queued === undefined ? {} : { queued }),
     createdAt: value.createdAt,
     ...(settledAt === undefined ? {} : { settledAt }),
     ...(worktreePath === undefined ? {} : { worktreePath }),
@@ -266,6 +281,7 @@ export class JobPersistence {
           "push",
           "pr",
           "delete-worktree",
+          "retire-lead",
         ].includes(value.operation as string)
       ) {
         throw new PersistenceError("Malformed persisted approval operation.");
@@ -356,6 +372,15 @@ export class JobPersistence {
         "Durable job state has an unsupported schema.",
       );
     }
+    if (parsed.deleted !== undefined) {
+      if (
+        !Array.isArray(parsed.deleted) ||
+        !parsed.deleted.every((id) => typeof id === "string" && id.length > 0)
+      ) {
+        throw new PersistenceError("Durable deleted-job state is malformed.");
+      }
+      for (const id of parsed.deleted) this.deletedJobs.add(id);
+    }
     return parsed.jobs.map(parseJob);
   }
 
@@ -364,6 +389,7 @@ export class JobPersistence {
     return this.enqueueWrite(async () => {
       if (this.deletedJobs.has(job.jobId)) return;
       const jobs = [...(await this.load())];
+      if (this.deletedJobs.has(job.jobId)) return;
       const index = jobs.findIndex((item) => item.jobId === job.jobId);
       if (index === -1) jobs.push(job);
       else jobs[index] = job;
@@ -447,7 +473,7 @@ export class JobPersistence {
     const temporaryPath = `${this.statePath}.tmp-${process.pid}-${randomUUID()}`;
     await writeFile(
       temporaryPath,
-      `${JSON.stringify({ version: VERSION, jobs }, null, 2)}\n`,
+      `${JSON.stringify({ version: VERSION, jobs, deleted: [...this.deletedJobs] }, null, 2)}\n`,
       "utf8",
     );
     await rename(temporaryPath, this.statePath);

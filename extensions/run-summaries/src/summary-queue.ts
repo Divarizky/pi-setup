@@ -1,5 +1,6 @@
 export interface SummaryQueueOptions {
   readonly concurrency: number;
+  readonly maxPending?: number;
   readonly onChange?: () => void;
 }
 
@@ -7,6 +8,7 @@ export class SummaryQueue {
   private readonly pending: Array<() => Promise<void>> = [];
   private readonly active = new Set<Promise<void>>();
   private readonly concurrency: number;
+  private readonly maxPending: number;
   private readonly onChange?: () => void;
   private closed = false;
 
@@ -15,6 +17,7 @@ export class SummaryQueue {
       throw new RangeError("Summary queue concurrency must be at least 1.");
     }
     this.concurrency = options.concurrency;
+    this.maxPending = options.maxPending ?? 10;
     this.onChange = options.onChange;
   }
 
@@ -28,6 +31,9 @@ export class SummaryQueue {
 
   enqueue(task: () => Promise<void>) {
     if (this.closed) return false;
+    if (this.pending.length >= this.maxPending) {
+      this.pending.shift(); // Drop oldest pending item if queue overflows
+    }
     this.pending.push(task);
     this.pump();
     return true;

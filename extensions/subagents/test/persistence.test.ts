@@ -165,6 +165,36 @@ test("deleted jobs cannot be recreated by late persistence callbacks", async () 
   }
 });
 
+test("deleted jobs stay deleted across new persistence instances", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "pi-job-state-delete-persisted-"),
+  );
+  try {
+    const first = new JobPersistence(root);
+    await first.upsert({
+      jobId: "job-1",
+      title: "first",
+      mode: "build",
+      cwd: "/a",
+      status: "done",
+      createdAt: 1,
+    });
+    await first.deleteJob("job-1");
+    const second = new JobPersistence(root);
+    await second.upsert({
+      jobId: "job-1",
+      title: "late",
+      mode: "build",
+      cwd: "/a",
+      status: "done",
+      createdAt: 2,
+    });
+    assert.deepEqual(await second.load(), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("approval state survives a new store instance", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "pi-approval-state-"));
   try {

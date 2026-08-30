@@ -16,21 +16,22 @@ import { OrcaCli } from "./transports/orca-cli.ts";
 import type { BackendName } from "./domain.ts";
 import { SubagentManagerLive } from "./manager.ts";
 
-const BackendRegistryLive = Layer.sync(BackendRegistry, () => {
-  const orcaBackend = makeOrcaBackend(new OrcaCli(), {
-    // Durable steering inboxes survive restarts under the agent workspace.
-    inboxRoot: path.join(getAgentDir(), "workspace", "state", "orca-inbox"),
+export function createSubagentRuntime(stateRoot?: string) {
+  const backendRegistry = Layer.sync(BackendRegistry, () => {
+    const orcaBackend = makeOrcaBackend(new OrcaCli(), {
+      inboxRoot: path.join(
+        stateRoot ?? path.join(getAgentDir(), "workspace", "state"),
+        "orca-inbox",
+      ),
+    });
+    const backends: SubagentBackend[] = [piBackend, orcaBackend];
+    return new Map<BackendName, SubagentBackend>(
+      backends.map((backend) => [backend.name, backend]),
+    );
   });
-  const backends: SubagentBackend[] = [piBackend, orcaBackend];
-  return new Map<BackendName, SubagentBackend>(
-    backends.map((backend) => [backend.name, backend]),
+  return ManagedRuntime.make(
+    SubagentManagerLive.pipe(Layer.provide(backendRegistry)),
   );
-});
-
-const AppLayer = SubagentManagerLive.pipe(Layer.provide(BackendRegistryLive));
-
-export function createSubagentRuntime() {
-  return ManagedRuntime.make(AppLayer);
 }
 
 export type SubagentRuntime = ReturnType<typeof createSubagentRuntime>;

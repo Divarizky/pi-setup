@@ -21,6 +21,7 @@ export interface LeadAgentProposal {
   readonly title: string;
   readonly prompt: string;
   readonly mode: SubagentMode;
+  readonly workingDir?: string;
   readonly dependsOn: ReadonlyArray<WorkflowTaskId>;
   readonly priority: number;
   readonly status: LeadAgentProposalStatus;
@@ -35,6 +36,7 @@ export interface LeadAgentProposalInput {
   readonly title: string;
   readonly prompt: string;
   readonly mode: SubagentMode;
+  readonly workingDir?: string;
   readonly dependsOn: ReadonlyArray<WorkflowTaskId>;
   readonly priority: number;
 }
@@ -90,6 +92,9 @@ function parseProposal(value: unknown): LeadAgentProposal {
     title: sanitize(item.title).slice(0, 160),
     prompt: sanitize(item.prompt),
     mode: item.mode,
+    ...(typeof item.workingDir === "string"
+      ? { workingDir: sanitize(item.workingDir).slice(0, 4_096) }
+      : {}),
     dependsOn: [...new Set(item.dependsOn)],
     priority: Number.isFinite(item.priority) ? Math.trunc(item.priority) : 0,
     status: item.status as LeadAgentProposalStatus,
@@ -210,6 +215,9 @@ export class LeadAgentProposalStore {
       title: sanitize(input.title).slice(0, 160),
       prompt: sanitize(input.prompt),
       mode: input.mode,
+      ...(input.workingDir === undefined
+        ? {}
+        : { workingDir: sanitize(input.workingDir).slice(0, 4_096) }),
       dependsOn: [...new Set(input.dependsOn)],
       priority: Number.isFinite(input.priority)
         ? Math.trunc(input.priority)

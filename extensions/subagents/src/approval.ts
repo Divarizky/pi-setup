@@ -9,6 +9,7 @@ export const APPROVAL_OPERATIONS = [
   "push",
   "pr",
   "delete-worktree",
+  "retire-lead",
 ] as const;
 export type ApprovalOperation = (typeof APPROVAL_OPERATIONS)[number];
 
@@ -21,6 +22,7 @@ export const DELIVERY_PREREQUISITES: Readonly<
   push: ["commit"],
   pr: ["commit", "push"],
   "delete-worktree": [],
+  "retire-lead": [],
 };
 
 export type ApprovalStatus =
@@ -96,6 +98,10 @@ export class ApprovalGate {
     for (const [id, request] of this.requests) {
       if (request.jobId === jobId) this.requests.delete(id);
     }
+  }
+
+  clear() {
+    this.requests.clear();
   }
 
   missingPrerequisites(

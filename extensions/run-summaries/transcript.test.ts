@@ -125,11 +125,49 @@ test("redacts private keys, URL credentials, and provider tokens", () => {
     "-----BEGIN PRIVATE KEY-----\\nprivate material\\n-----END PRIVATE KEY-----",
     "xoxb-12345678901234567890",
     "npm_123456789012345678901234",
+    "glpat-12345678901234567890",
+    "AIzaSy123456789012345678901234567890123",
+    "Authorization: Token secret-auth-token-val",
+    "Authorization: AWS4-HMAC-SHA256 test-signature-val",
   ].join(" ");
 
   const redacted = redactSecrets(text);
-  assert.doesNotMatch(redacted, /super-secret|private material|xoxb-|npm_/);
+  assert.doesNotMatch(
+    redacted,
+    /super-secret|private material|xoxb-|npm_|glpat-|AIzaSy|secret-auth-token|test-signature/,
+  );
   assert.match(redacted, /REDACTED/);
+});
+
+test("omits bashExecution entries with excludeFromContext=true", () => {
+  const entries: SessionEntry[] = [
+    entry("excluded-bash", {
+      role: "bashExecution",
+      command: "echo private-key-content",
+      output: "private output",
+      exitCode: 0,
+      cancelled: false,
+      truncated: false,
+      excludeFromContext: true,
+      timestamp: 1,
+    }),
+    entry("included-bash", {
+      role: "bashExecution",
+      command: "git status",
+      output: "clean",
+      exitCode: 0,
+      cancelled: false,
+      truncated: false,
+      excludeFromContext: false,
+      timestamp: 2,
+    }),
+  ];
+
+  const transcript = serializeRunTranscript(entries);
+  assert.doesNotMatch(transcript, /private-key-content/);
+  assert.doesNotMatch(transcript, /private output/);
+  assert.match(transcript, /USER SHELL/);
+  assert.match(transcript, /git status/);
 });
 
 test("transcript enforces per-result and total byte caps", () => {

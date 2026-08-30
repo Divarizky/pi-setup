@@ -1,9 +1,9 @@
 /** All model-facing strings for the subagents tools. */
 
-import type { SubagentMode, SubagentReport } from "./domain.ts";
+import type { SubagentMode, SubagentReport, SubagentRole } from "./domain.ts";
 
 export const SUBAGENT_SPAWN_TOOL_DESCRIPTION =
-  "Spawn a background subagent. Build tasks always run as Pi inside an Orca-managed isolated worktree; scout tasks always run as a read-only in-process Pi session in the parent cwd and never create a worktree. Jobs may declare dependencies and priority to enter the durable job queue. Fire-and-forget: this returns immediately with an id. When the job settles, its result is delivered as a new parent turn automatically (untrusted data; disable with SUBAGENT_AUTO_WAKE=0). Subagents cannot orchestrate more agents/workflows or ask the user, and cannot see this conversation, so the briefing must be self-contained. Max 4 subagents can be running at once. Never call subagent_spawn twice for the same task: each call creates a new job id AND a new worktree. Startup takes 10-60s before any output appears; check with subagent_check or subagent_list instead of re-spawning, and use subagent_retry to recover failures.";
+  "Spawn a background Subagent. The main Pi session is the Coordinator and should delegate most project work. Build tasks always run as Pi inside an Orca-managed isolated worktree; scout tasks always run as read-only in-process Pi sessions and never create a worktree. An Agent Lead is a persistent Coordinator with a dedicated home that may manage child Subagents directly; sensitive delivery and destructive operations remain approval-gated by the parent. Jobs may declare dependencies and priority to enter the durable job queue. Fire-and-forget: this returns immediately with an id. When the job settles, its result is delivered as a new parent turn automatically (untrusted data; disable with SUBAGENT_AUTO_WAKE=0). Worker Subagents cannot orchestrate more agents or ask the user; Agent Leads coordinate through structured proposal events. Max 4 Subagents can be running at once. Never call subagent_spawn twice for the same task: each call creates a new job id AND, for build tasks, a new worktree. Startup takes 10-60s before any output appears; check with subagent_check or subagent_list instead of re-spawning, and use subagent_retry to recover failures.";
 
 /**
  * Shared execution policy for every backend. Keeping this in one place prevents
@@ -12,6 +12,7 @@ export const SUBAGENT_SPAWN_TOOL_DESCRIPTION =
  */
 export function buildSubagentExecutionPrompt(options: {
   readonly mode: SubagentMode;
+  readonly role?: SubagentRole;
   readonly title: string;
   readonly prompt: string;
   readonly attempt?: number;
@@ -21,17 +22,25 @@ export function buildSubagentExecutionPrompt(options: {
       ? "initial"
       : `retry attempt ${options.attempt}`;
   const policy =
-    options.mode === "scout"
+    options.role === "lead"
       ? [
-          "You are a scout subagent.",
-          "Inspect only. Do not edit, write, delete, commit, merge, push, install, or otherwise change repository state.",
-          "Return findings, evidence, risks, and recommendations only.",
+          "You are an Agent Lead: a persistent coordinator for a scoped project domain.",
+          "You coordinate from a dedicated Agent Lead home. You may edit the explicitly cloned project directories, run tests, and spawn, inspect, steer, retry, and cancel Scout or Build Subagents inside that home.",
+          "Do not directly commit, merge, push, create PRs, delete worktrees, or retire the home; request parent approval through Agent Lead events.",
+          "Analyze requests, emit structured Agent Lead events, and report worker outcomes to the parent Coordinator.",
+          "Do not ask the user directly; send questions and escalations to the Coordinator through Agent Lead event tools.",
         ]
-      : [
-          "You are a build subagent working only in the assigned isolated worktree.",
-          "You may edit files and run validation, but do not commit, merge, push, create a PR, or perform irreversible delivery actions.",
-          "Never reset or discard existing worktree changes without explicit instruction.",
-        ];
+      : options.mode === "scout"
+        ? [
+            "You are a scout subagent.",
+            "Inspect only. Do not edit, write, delete, commit, merge, push, install, or otherwise change repository state.",
+            "Return findings, evidence, risks, and recommendations only.",
+          ]
+        : [
+            "You are a build subagent working only in the assigned isolated worktree.",
+            "You may edit files and run validation, but do not commit, merge, push, create a PR, or perform irreversible delivery actions.",
+            "Never reset or discard existing worktree changes without explicit instruction.",
+          ];
   return [
     ...policy,
     `Job: ${options.title}`,
@@ -52,10 +61,11 @@ export const SUBAGENT_SPAWN_PROMPT_SNIPPET =
   "Spawn a background Pi subagent for a self-contained task";
 
 export const SUBAGENT_SPAWN_PROMPT_GUIDELINES = [
+  "Act as the Coordinator: delegate most project coding, investigation, and audit work instead of editing the project directly; use direct work only for small coordination or explicitly requested operations.",
   "Use subagent_spawn to delegate self-contained jobs that can run in the background; give the subagent a complete, standalone briefing.",
   "Build subagents always run as Pi in an Orca-managed worktree; scout subagents always run as read-only Pi sessions in the parent cwd without a worktree. Never assume a build subagent is operating in the agent checkout.",
   "Ask the subagent to finish with outcome, summary, changes, tests, and an actionable error cause/recovery. Prefer wrapping a JSON report in <subagent-report>...</subagent-report>.",
-  "Use jobId for a subagent execution, taskId for a workflow task, leadAgentId for a persistent Lead Agent, and proposalId for a child proposal; do not mix them.",
+  "Use jobId for a subagent execution, taskId for a workflow task, leadAgentId for a persistent Agent Lead, and proposalId for a child proposal; do not mix them.",
   "After subagent_spawn, keep working; each settled result arrives as its own parent turn automatically. Only call subagent_wait when you cannot proceed without the result.",
   "Never re-spawn the same task while it is running or queued: each spawn creates a new job id and a new worktree. Early silence is normal (startup takes tens of seconds); use subagent_check/subagent_list, and subagent_retry for failures.",
 ];
@@ -81,7 +91,7 @@ export const SUBAGENT_SPAWN_PARAMETER_DESCRIPTIONS = {
     "Optional job queue priority; higher numbers dispatch first when dependencies are ready.",
   branchType: "Conventional branch type for a build worktree (default: chore).",
   branchScope:
-    "Readable branch scope (default: subagents); keep it short and non-sensitive.",
+    "Readable branch scope (optional; no default scope); keep it short and non-sensitive.",
 };
 
 export function buildSubagentSpawnResult(options: {
@@ -131,7 +141,7 @@ export const SUBAGENT_LIST_TOOL_DESCRIPTION =
   "List all subagents (running and finished) with their harness and status.";
 
 export const SUBAGENT_APPROVE_TOOL_DESCRIPTION =
-  "Approve or reject one pending build-subagent delivery operation. Approval is explicit, fail-closed, and one-shot.";
+  "Approve or reject one pending build-subagent delivery or Lead-retirement operation. Approval is explicit, fail-closed, and one-shot.";
 
 export const SUBAGENT_DELIVER_TOOL_DESCRIPTION =
   "Request or execute an approved build delivery operation. Commit, merge, push, and PR creation all require explicit approval.";
@@ -158,22 +168,22 @@ export const SUBAGENT_APPROVE_PARAMETER_DESCRIPTIONS = {
 };
 
 export const SUBAGENT_LEAD_AGENT_CREATE_TOOL_DESCRIPTION =
-  "Create a Lead Agent: a named persistent subagent whose follow-up messages reuse its live session when possible and retain durable identity across extension restarts.";
+  "Create an Agent Lead: a named persistent Pi Coordinator with a dedicated full home. Explicit local paths or validated HTTPS/SSH Git origins are cloned into that home after readiness checks; the Lead may manage Scout or Build Subagents, while delivery and destructive actions require parent approval.";
 
 export const SUBAGENT_LEAD_AGENT_SEND_TOOL_DESCRIPTION =
-  "Send a follow-up to a Lead Agent. If its live session was lost after restart, reopen it as a new job in the preserved worktree when safe.";
+  "Send a follow-up to an Agent Lead. If its live session was lost after restart, reopen its persistent Pi coordination session safely.";
 
 export const SUBAGENT_LEAD_AGENT_STOP_TOOL_DESCRIPTION =
-  "Stop and remove a Lead Agent registration. This does not delete its worktree.";
+  "Stop an Agent Lead runtime while preserving its registration, home, projects, session state, and durable worker state. Approved retirement is required to remove the home.";
 
 export const SUBAGENT_LEAD_AGENT_EVENT_TOOL_DESCRIPTION =
-  "Emit one structured Lead Agent orchestration event: proposal, worker_done, escalation, ask, or reply. Proposals still require parent approval before dispatch.";
+  "Emit one structured Agent Lead orchestration event: proposal, worker_done, escalation, ask, or reply. Delivery and destructive actions require parent approval before execution.";
 
 export const SUBAGENT_LEAD_AGENT_EVENT_PARAMETER_DESCRIPTIONS = {
   eventId: "Unique id for this orchestration event.",
   type: "Structured event type.",
   actorId: "Agent emitting the event.",
-  leadAgentId: "Lead Agent owning the event.",
+  leadAgentId: "Agent Lead owning the event.",
   taskId: "Related workflow task id, when applicable.",
   correlationId: "Correlation id for an ask/reply exchange.",
   proposalId: "Proposal id for a proposal event.",
@@ -193,12 +203,12 @@ export const SUBAGENT_RETRY_TOOL_DESCRIPTION =
   "Retry one failed subagent, or explicitly re-enqueue a blocked durable job after restart, with bounded exponential backoff. Retries are limited and preserve the existing worktree.";
 
 export const SUBAGENT_LEAD_AGENT_PARAMETER_DESCRIPTIONS = {
-  leadAgentId: "Stable Lead Agent id.",
-  prompt: "Initial or follow-up briefing for the Lead Agent.",
-  name: "Display name for the Lead Agent.",
-  mode: "Lead Agent mode: scout is a read-only Pi session; build uses Pi inside an Orca-managed worktree.",
+  leadAgentId: "Stable Agent Lead id.",
+  prompt: "Initial or follow-up briefing for the Agent Lead.",
+  name: "Display name for the Agent Lead.",
+  mode: "Agent Lead mode is a dedicated Pi Coordinator home; its explicit project clone set is provided during provisioning.",
   backend:
-    "Execution backend is policy-bound: scout uses Pi; build uses Orca with a Pi agent.",
+    "Agent Lead backend: Pi only. Build Subagents use Orca with a managed worktree.",
 };
 
 export const SUBAGENT_RETRY_PARAMETER_DESCRIPTIONS = {

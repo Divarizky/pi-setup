@@ -1,8 +1,11 @@
 ---
-description: Ringkas hasil terakhir, sederhana singkat, tetap poin penting.
-argument-hint: ""
+description: Summarize the latest result concisely.
+argument-hint: "[focus]"
 ---
 
-Make your answers simpler, shorter and still convey the important points.
+Summarize the latest result from this conversation in Indonesia.
 
-$@
+- Use up to 5 bullets.
+- Keep key decisions, changes, tests, blockers, and next steps.
+- Do not invent details.
+- Focus on: ${@:-none}

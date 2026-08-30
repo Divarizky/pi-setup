@@ -11,7 +11,7 @@ src/
   backend.ts              # SubagentBackend + SubagentSession interface
   manager.ts              # SubagentManager service (cap 4, lifecycle, read model)
   job-queue.ts            # durable dependency/priority job queue + restart re-enqueue
-  lead-agent.ts           # durable Lead Agent registry
+  agent-lead.ts           # durable Agent Lead registry
   runtime.ts              # ManagedRuntime + runTool boundary
   prompt.ts               # model-facing tool descriptions
   result-delivery.ts      # deferred result message queue
@@ -20,8 +20,8 @@ src/
   workflow/
     state.ts              # workflow status machine and transition validation
     wake-queue.ts         # durable append-only events and actionable wakes
-    lead-agent-proposals.ts # approval-gated Lead Agent child proposals
-    orchestration.ts       # structured Lead Agent event protocol
+    lead-agent-proposals.ts # approval-gated Agent Lead child proposals
+    orchestration.ts       # structured Agent Lead event protocol
     coordinator.ts         # event-driven orchestration coordinator
     task-ledger.ts         # canonical durable task/event ledger
   format.ts               # context % + status bar formatting
@@ -68,7 +68,8 @@ Local `node_modules/@earendil-works/*` stubs exist only so the skeleton compiles
 - `subagent_cancel` — abort running subagents
 - `subagent_check` — non-blocking subagent status peek
 - `subagent_list` — list all subagents
-- `subagent_approve` — explicitly approve or reject a pending build delivery operation
+- `subagent_detached_worktrees` — list build worktrees preserved after an external Pi session deletion
+- `subagent_approve` — explicitly approve or reject a pending build delivery or Lead-retirement operation
 - `subagent_deliver` — request or execute approved commit, merge, push, or PR delivery
 - `subagent_action_list` — list durable action items from Subagent Monitor
 - `subagent_action_confirm` — record an action receipt; this does not approve delivery
@@ -77,20 +78,36 @@ Local `node_modules/@earendil-works/*` stubs exist only so the skeleton compiles
 - `subagent_retry` — retry a failed subagent or explicitly re-enqueue a blocked durable job with bounded backoff
 - `subagent_retire` — request approval to permanently delete a settled subagent and its worktree
 - `subagent_delete` — permanently delete a Thread, its session/chat history, durable events, approvals, actions, and managed worktree after confirmation
-- `subagent_lead_create` — create a named persistent Lead Agent
+- `subagent_lead_create` — create a named persistent Agent Lead; `projects` explicitly selects local Git paths or validated HTTPS/SSH Git origins to clone into its home
+- `subagent_lead_doctor` — check Lead environment readiness and optionally repair only safe directories/state; it never installs packages or changes credentials
 - `subagent_lead_send` — send a follow-up, reopening its persisted Pi session when needed
-- `subagent_lead_stop` — stop and unregister a Lead Agent
+- `subagent_lead_stop` — stop an Agent Lead while preserving its home and project clones
+- `subagent_lead_retire` — request approval to permanently delete a stopped Agent Lead home
 - `subagent_lead_event` — emit structured proposal, completion, escalation, ask, or reply events
-- `subagent_lead_propose` — record a child task proposed for a Lead Agent
-- `subagent_lead_approve` — approve a Lead Agent child proposal before dispatch
-- `subagent_lead_reject` — reject a Lead Agent child proposal with a reason
+- `subagent_lead_propose` — record a child task proposed for an Agent Lead
+- `subagent_lead_approve` — approve an Agent Lead child proposal before dispatch
+- `subagent_lead_reject` — reject an Agent Lead child proposal with a reason
 
-## Modes
+## Multi-parent runtime isolation
 
-- `scout` — read-only investigation in a separate in-process Pi session, sharing the parent cwd without a worktree; mutating tools are excluded
-- `build` — Pi runs in an Orca-managed isolated worktree and reports validation; delivery requires explicit parent review and approval
+Multiple parent Pi processes may use this extension concurrently. Each parent session gets a stable state namespace under `workspace/state/parents/<session-hash>`, so jobs, queues, approvals, workflow records, monitor actions, and Orca inboxes are owned by the parent that created them. A parent cannot list, cancel, retry, or deliver another parent's jobs.
 
-`subagent_spawn` accepts optional `depends_on` and `priority`. Dependent jobs enter the durable job queue, dispatch only after dependencies finish successfully, and become blocked when a dependency fails. Approved Lead Agent proposals retain a parent-task link in the task ledger through dispatch and settlement.
+All parents share a crash-safe capacity pool under `workspace/state/pool`. The default global limit is four active subagents across all parent processes. A full pool queues new direct spawns without creating a worktree; queued jobs are dispatched when a slot becomes available (with a periodic fallback check). Dead process leases are reclaimed using PID liveness checks.
+
+The legacy shared state directory is not migrated automatically. Existing records remain in the legacy location until an explicit migration flow is added; this avoids silently assigning old jobs to the wrong parent session.
+
+## Roles and modes
+
+The main Pi session is the **Coordinator**. It remains the user's primary terminal and delegates most project work while keeping `/subagents` as the single dashboard and takeover command.
+
+- **Subagent** — a disposable child execution:
+  - `scout`: read-only investigation in a separate in-process Pi session, sharing the parent cwd without a worktree;
+  - `build`: Pi runs in an Orca-managed isolated worktree and reports validation; delivery requires explicit parent review and approval.
+- **Agent Lead** — a persistent Pi Coordinator with a dedicated full home under the parent state namespace. Its explicitly selected projects are cloned into that home; it may spawn, inspect, steer, retry, and cancel Scout or Build Subagents there. Delivery, destructive operations, and home retirement remain approval-gated by the parent Coordinator.
+
+`/subagents` displays Agent Leads and their child Subagents hierarchically, while standalone Subagents remain visible alongside them.
+
+`subagent_spawn` accepts optional `depends_on` and `priority`. Dependent jobs enter the durable job queue, dispatch only after dependencies finish successfully, and become blocked when a dependency fails. Approved Agent Lead proposals retain a parent-task link in the task ledger through dispatch and settlement.
 
 Orca spawns fail closed on runtime readiness: `orca status --json` must report `reachable=true` with `state=ready` before any worktree, terminal, or repo registration is created. Once an agent TUI has produced output, follow-up input is typed literally through `terminal send --text` (no Enter), verified against the bottom-most composer shape (`empty`/`pending`/`unknown`; `unknown` refuses to blind-submit), and submitted with Enter — popup placeholder fills get the required second Enter without retyping. Steering sent while a worker is busy is persisted to a durable per-job inbox under `workspace/state/orca-inbox/<jobId>`; only a short doorbell line reaches the terminal, queued messages drain as one follow-up turn after the next successful settle, and messages left on disk are restored after restarts.
 
@@ -100,14 +117,14 @@ Build worktrees use readable conventional branch names in the form `<type>/<slug
 
 - `jobId` identifies one subagent execution and is the meaning of `SubagentSnapshot.id` and the queue record's compatibility `id` field.
 - `taskId` identifies a workflow task and must not be passed to manager or subagent execution APIs.
-- `leadAgentId` identifies a persistent Lead Agent; `proposalId` identifies a child-task proposal.
+- `leadAgentId` identifies a persistent Agent Lead; `proposalId` identifies a child-task proposal.
 - Public tools may retain the generic `id` parameter for compatibility, but internal code should name the value according to its identity.
 
 Scout runs only on the `pi` backend. Build runs only on the `orca` backend, where Orca creates the checkout with its agent-first worktree CLI and launches Pi in the visible Orca terminal. Explicit mode/backend mismatches are rejected. Orca terminal identity is bound to the canonical job id and persisted; startup attempts to reattach running Orca jobs to a still-connected terminal. Connected terminals remain `unknown` until terminal status is verified, while missing or disconnected terminals produce durable recovery actions and preserve the job/worktree. Orca control fails closed when the CLI does not return a worktree identity.
 
 `subagent_deliver` first requires a parent-approved review operation that validates the diff, then supports approved commit, merge, push, and GitHub PR operations. Merge/push require consumed commit approval, and PR requires consumed commit plus push approvals. Failures leave the approval available for a retry. Retirement is the approval-gated full-delete alias and force-deletes the managed worktree, branch, session, and durable metadata.
 
-Lead Agents are persistent subagents with durable charter/scope metadata. They use a stable name and Pi session identity; child proposals are persisted and require parent approval before `subagent_spawn` dispatch. Follow-ups reuse the live session when available and reopen the preserved worktree after restart. Deleting a settled Lead Pi session removes its registry and undispatched proposals while dispatched children remain. `subagent_lead_event` provides structured `proposal`, `worker_done`, `escalation`, `ask`, and `reply` events; the Coordinator deduplicates and replays them from the canonical task ledger.
+Agent Leads are persistent Coordinators with durable charter/scope metadata and a versioned home manifest. They use a stable name and Pi session identity; explicit local paths or validated HTTPS/SSH Git origins are cloned into the Lead home. Child shells use a minimal executable allowlist for inspection and test/lint/build commands; delivery and destructive operations remain approval-gated. Leads may dispatch ordinary Scout/Build workers directly, while delivery and destructive requests are routed to the parent Coordinator for approval. Follow-ups reuse the live session when available and reopen the verified Lead home after restart. Stopping a Lead pauses its runtime while preserving the registry, home, projects, and durable state; only approved retirement removes the home. `subagent_lead_event` provides structured `proposal`, `worker_done`, `escalation`, `ask`, and `reply` events; the Coordinator deduplicates and replays them from the canonical task ledger.
 
 The zero-token Subagent Monitor classifies CLI-derived terminal evidence as `busy`, `idle`, `unknown`, or `dead`, rejects stale, future, and conflicting evidence, and emits explicit identity-mismatch actions before writing records to the durable `action queue`. An `action receipt` changes the item to `action confirmed`; confirmation is separate from delivery approval. `OrcaCli` supports Orca's documented agent-first launch (`worktree create --agent pi --prompt`) and typed `worktree rm` plus `terminal list/read/send/wait/stop` through `execFile` (never a shell). `OrcaTerminalAdapter` permits terminal control only for a terminal explicitly attached to a job. A connected terminal is still `unknown` until terminal status verifies its lifecycle state; a missing, orphaned, or disconnected terminal is `dead`.
 

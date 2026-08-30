@@ -166,9 +166,16 @@ export function buildSubagentInfoLines(
   const mode = snap.meta.mode ?? "build";
   const origin = snap.origin === "quick-ask" ? "quick-ask" : "model";
   const details = [
+    snap.meta.role === "lead" ? "Agent Lead" : "Subagent",
     `${mode}/${origin}`,
     snap.backend,
+    snap.meta.leadAgentId && snap.meta.role !== "lead"
+      ? `lead ${snap.meta.leadAgentId}`
+      : undefined,
     contextLabel(snap),
+    snap.meta.role === "lead" && snap.meta.sessionFilePath
+      ? "persistent home"
+      : undefined,
     snap.backend === "orca" && snap.meta.nativeTerminalHandle
       ? `terminal ${snap.meta.nativeTerminalHandle}`
       : undefined,
@@ -440,26 +447,51 @@ class SubagentDashboard implements Component {
 
   private subs(): ReadonlyArray<SubagentSnapshot> {
     const all = this.view.list().filter((snap) => !this.hiddenIds.has(snap.id));
-    if (this.showHistory)
-      return all.filter(
-        (snap) => snap.status !== "running" && !snap.restarting,
-      );
-    return all.filter((snap) => {
-      const approvals =
-        this.options
-          ?.getApprovals?.(snap.id)
-          .some((item) => item.status === "pending") ?? false;
-      const actions =
-        this.options
-          ?.getActions?.(snap.id)
-          .some((item) => item.status === "pending") ?? false;
+    const visible = this.showHistory
+      ? all.filter((snap) => snap.status !== "running" && !snap.restarting)
+      : all.filter((snap) => {
+          const approvals =
+            this.options
+              ?.getApprovals?.(snap.id)
+              .some((item) => item.status === "pending") ?? false;
+          const actions =
+            this.options
+              ?.getActions?.(snap.id)
+              .some((item) => item.status === "pending") ?? false;
+          return (
+            snap.status === "running" ||
+            snap.restarting === true ||
+            snap.status === "failed" ||
+            snap.report?.needsParentDecision === true ||
+            approvals ||
+            actions
+          );
+        });
+
+    // Keep the dashboard as one `/subagents` entry point, but make the
+    // Coordinator's view hierarchical: Agent Leads first, then their child
+    // Subagents, followed by standalone jobs.
+    const leadOrder = new Map<string, number>();
+    for (const snap of visible) {
+      if (snap.meta.role === "lead" && snap.meta.leadAgentId)
+        leadOrder.set(snap.meta.leadAgentId, leadOrder.size);
+    }
+    const groupOrder = (snap: SubagentSnapshot) => {
+      if (snap.meta.leadAgentId)
+        return leadOrder.get(snap.meta.leadAgentId) ?? Number.MAX_SAFE_INTEGER;
+      return snap.meta.role === "lead"
+        ? leadOrder.size
+        : Number.MAX_SAFE_INTEGER;
+    };
+    return [...visible].sort((left, right) => {
+      const leftOrder = groupOrder(left);
+      const rightOrder = groupOrder(right);
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      const leftLead = left.meta.role === "lead";
+      const rightLead = right.meta.role === "lead";
+      if (leftLead !== rightLead) return leftLead ? -1 : 1;
       return (
-        snap.status === "running" ||
-        snap.restarting === true ||
-        snap.status === "failed" ||
-        snap.report?.needsParentDecision === true ||
-        approvals ||
-        actions
+        left.createdAt - right.createdAt || left.id.localeCompare(right.id)
       );
     });
   }
@@ -718,7 +750,17 @@ class SubagentDashboard implements Component {
       );
     }
 
-    lines.push(theme.fg("muted", `${mode}/${origin} · ${snap.backend}`));
+    lines.push(
+      theme.fg(
+        "muted",
+        `${snap.meta.role === "lead" ? "Agent Lead" : "Subagent"} · ${mode}/${origin} · ${snap.backend}`,
+      ),
+    );
+    if (snap.meta.leadAgentId && snap.meta.role !== "lead") {
+      lines.push(
+        theme.fg("muted", `Owned by Agent Lead: ${snap.meta.leadAgentId}`),
+      );
+    }
     if (snap.meta.modelLabel)
       lines.push(theme.fg("muted", `Model: ${snap.meta.modelLabel}`));
     if (worktree?.branch)
@@ -849,8 +891,12 @@ class SubagentDashboard implements Component {
       ]
         .filter(Boolean)
         .join(" ");
-      const primary = ` ${marker} ${statusGlyph(snap, theme)} ${title}${badges ? ` ${badges}` : ""}`;
-      const secondary = `     ${theme.fg("dim", snap.id)} ${theme.fg("muted", `· ${contextLabel(snap)}`)}`;
+      const isLead = snap.meta.role === "lead";
+      const isChild = !isLead && snap.meta.leadAgentId !== undefined;
+      const branch = isChild ? "└─ " : "";
+      const primary = ` ${marker} ${isChild ? "  " : ""}${branch}${statusGlyph(snap, theme)} ${title}${badges ? ` ${badges}` : ""}`;
+      const owner = isChild ? ` · lead ${snap.meta.leadAgentId}` : "";
+      const secondary = `     ${theme.fg("dim", snap.id)} ${theme.fg("muted", `· ${contextLabel(snap)}${owner}`)}`;
       out.push(truncateToWidth(primary, width));
       out.push(truncateToWidth(secondary, width));
     }

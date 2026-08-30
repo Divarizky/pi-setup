@@ -77,11 +77,19 @@ async function verifyWorktreeIdentity(worktree: SubagentWorktree) {
   const currentRoot = String(
     (await runGit(["rev-parse", "--show-toplevel"], worktree.path)).stdout,
   ).trim();
+  const commonDirRaw = String(
+    (await runGit(["rev-parse", "--git-common-dir"], worktree.path)).stdout,
+  ).trim();
+  const commonDir = path.isAbsolute(commonDirRaw)
+    ? commonDirRaw
+    : path.resolve(worktree.path, commonDirRaw);
   const currentBranch = String(
     (await runGit(["branch", "--show-current"], worktree.path)).stdout,
   ).trim();
+  const expectedCommonDir = path.join(worktree.repoRoot, ".git");
   if (
     !samePath(currentRoot, worktree.path) ||
+    !samePath(commonDir, expectedCommonDir) ||
     normalizeBranch(currentBranch) !== normalizeBranch(worktree.branch)
   ) {
     throw new DeliveryError(

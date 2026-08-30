@@ -19,15 +19,15 @@ interface CacheEntry {
 }
 
 export class OutputCache {
-  private readonly directory = join(
-    tmpdir(),
-    "pi-context-manager",
-    String(process.pid),
-  );
+  private readonly directory = join(tmpdir(), "pi-context-manager");
+  private readonly activeIds = new Set<string>();
+
+  resetSession(): void {
+    this.activeIds.clear();
+  }
 
   async save(raw: string): Promise<string> {
     await this.ensureDirectory();
-    await this.cleanup();
     const id = `output-${randomUUID().slice(0, 8)}`;
     const entry: CacheEntry = { id, createdAt: Date.now(), raw };
     await writeFile(
@@ -35,6 +35,7 @@ export class OutputCache {
       JSON.stringify(entry),
       "utf8",
     );
+    this.activeIds.add(id);
     return id;
   }
 
@@ -43,7 +44,10 @@ export class OutputCache {
     try {
       const filePath = join(this.directory, `${id}.json`);
       const metadata = await stat(filePath);
-      if (Date.now() - metadata.mtimeMs > CACHE_TTL_MS) {
+      if (
+        !this.activeIds.has(id) &&
+        Date.now() - metadata.mtimeMs > CACHE_TTL_MS
+      ) {
         await unlink(filePath).catch(() => undefined);
         return null;
       }
@@ -56,6 +60,7 @@ export class OutputCache {
 
   async remove(id: string): Promise<void> {
     if (!/^output-[a-f0-9-]+$/.test(id)) return;
+    this.activeIds.delete(id);
     await unlink(join(this.directory, `${id}.json`)).catch(() => undefined);
   }
 
@@ -69,7 +74,11 @@ export class OutputCache {
           const filePath = join(this.directory, file);
           try {
             const metadata = await stat(filePath);
-            if (Date.now() - metadata.mtimeMs > CACHE_TTL_MS)
+            const id = file.slice(0, -5);
+            if (
+              !this.activeIds.has(id) &&
+              Date.now() - metadata.mtimeMs > CACHE_TTL_MS
+            )
               await unlink(filePath);
           } catch {
             // Ignore files removed concurrently or inaccessible cache entries.

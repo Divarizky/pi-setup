@@ -32,7 +32,6 @@ const OPENCODE_ALWAYS_FREE_IDS = new Set(["big-pickle"]);
 const AGENT_DIR =
   process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const AUTH_FILE = join(AGENT_DIR, "auth.json");
-const STATUS_DURATION_MS = 5_000;
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 type AuthEntry = { type: "api_key"; key: string };
@@ -722,7 +721,6 @@ async function logout(
 }
 
 export default function (pi: ExtensionAPI): void {
-  let statusTimer: ReturnType<typeof setTimeout> | undefined;
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
   pi.registerCommand("9router-login", {
@@ -740,9 +738,7 @@ export default function (pi: ExtensionAPI): void {
 
   // Jangan menunggu network/database saat factory extension dimuat.
   // session_start terjadi setelah workspace dan editor Pi siap dirender.
-  pi.on("session_start", async (_event, ctx) => {
-    if (statusTimer) clearTimeout(statusTimer);
-
+  pi.on("session_start", async (_event, _ctx) => {
     try {
       const apiKey = await getApiKey();
       if (!apiKey) return;
@@ -774,36 +770,12 @@ export default function (pi: ExtensionAPI): void {
           }
         })();
       }, REFRESH_INTERVAL_MS);
-
-      ctx.ui.setWidget(
-        "9router",
-        [
-          `9Router: connected · ${connectionCount ?? groupModelsByProvider(models).size} providers · ${models.length} models`,
-        ],
-        { placement: "aboveEditor" },
-      );
-      statusTimer = setTimeout(() => {
-        ctx.ui.setWidget("9router", undefined);
-        statusTimer = undefined;
-      }, STATUS_DURATION_MS);
-    } catch (error) {
-      ctx.ui.setWidget(
-        "9router",
-        [
-          `9Router: error · ${error instanceof Error ? error.message : String(error)}`,
-        ],
-        { placement: "aboveEditor" },
-      );
-      statusTimer = setTimeout(() => {
-        ctx.ui.setWidget("9router", undefined);
-        statusTimer = undefined;
-      }, STATUS_DURATION_MS);
+    } catch {
+      // Katalog gagal dimuat; provider mempertahankan snapshot sebelumnya.
     }
   });
 
   pi.on("session_shutdown", () => {
-    if (statusTimer) clearTimeout(statusTimer);
-    statusTimer = undefined;
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = undefined;
   });

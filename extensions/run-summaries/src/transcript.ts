@@ -77,14 +77,17 @@ export function redactSecrets(text: string) {
       // Credentials embedded in URLs are easy to overlook in command output.
       .replace(/(https?:\/\/)([^\s/@:]+):([^\s/@]+)@/gi, "$1[REDACTED]@")
       // Authorization headers and common provider token formats.
-      .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
       .replace(
-        /\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[baprs]-[A-Za-z0-9-]{12,}|npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,})\b/g,
+        /\b(Bearer|Basic|Token|AWS4-HMAC-SHA256)\s+[A-Za-z0-9._~+/=-]+/gi,
+        "$1 [REDACTED]",
+      )
+      .replace(
+        /\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|glpat-[A-Za-z0-9_-]{20,}|AIzaSy[A-Za-z0-9_-]{33}|xox[baprs]-[A-Za-z0-9-]{12,}|npm_[A-Za-z0-9]{20,}|pypi-[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,})\b/g,
         "[REDACTED TOKEN]",
       )
       // Covers JSON, shell assignments, headers, and case variations.
       .replace(
-        /(["']?(?:api[_-]?key|access[_-]?(?:key|token)|authorization|cookie|credential|password|passwd|private[_-]?key|secret|token)["']?\s*[:=]\s*)(["']?)[^\s,;}]+\2/gi,
+        /(["']?(?:api[_-]?key|access[_-]?(?:key|token)|authorization|cookie|credential|password|passwd|private[_-]?key|secret|token)["']?\s*[:=]\s*)(["']?)[^\r\n,;}"']+\2/gi,
         "$1[REDACTED]",
       )
       .replace(
@@ -186,6 +189,7 @@ function serializeMessage(entry: Extract<SessionEntry, { type: "message" }>) {
   }
 
   if (message.role === "bashExecution") {
+    if (message.excludeFromContext) return "";
     const command = capped(
       redactSecrets(message.command),
       TOOL_ARGUMENT_MAX_BYTES,

@@ -13,12 +13,14 @@ test("Lead Agent protocol validates proposals and operational events", () => {
     proposalId: "proposal-1",
     title: "Inspect docs",
     prompt: "Review the documentation links.",
+    workingDir: "projects/docs",
     mode: "scout",
     dependsOn: ["task-0", "task-0"],
     priority: 5,
   });
   assert.equal(proposal.type, "proposal");
   assert.deepEqual(proposal.dependsOn, ["task-0"]);
+  assert.equal(proposal.workingDir, "projects/docs");
 
   const ask = parseLeadAgentEvent({
     eventId: "event-2",

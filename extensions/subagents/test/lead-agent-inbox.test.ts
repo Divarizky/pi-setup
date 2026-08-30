@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -30,6 +30,17 @@ test("Lead Agent inbox transfers child events without the runtime state lease", 
     );
     assert.deepEqual(received, [event]);
     await assert.rejects(readFile(inbox.filePath, "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Lead Agent inbox rejects writes after reaching its quota", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "subagents-lead-inbox-"));
+  try {
+    const inbox = new LeadAgentInbox(root);
+    await writeFile(inbox.filePath, "x".repeat(4 * 1024 * 1024), "utf8");
+    await assert.rejects(inbox.enqueue(event), /inbox is full/i);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

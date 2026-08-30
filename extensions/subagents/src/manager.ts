@@ -442,6 +442,9 @@ const makeManager = Effect.gen(function* () {
           meta: {
             backend: job.backend ?? "pi",
             role: job.role ?? "worker",
+            ...(job.leadAgentId === undefined
+              ? {}
+              : { leadAgentId: job.leadAgentId }),
             mode: job.mode,
             worktree,
             ...(job.sessionFilePath === undefined
@@ -465,6 +468,9 @@ const makeManager = Effect.gen(function* () {
             ...(job.nativeLaunchToken === undefined
               ? {}
               : { nativeLaunchToken: job.nativeLaunchToken }),
+            ...(job.parentStateRoot === undefined
+              ? {}
+              : { parentStateRoot: job.parentStateRoot }),
           },
           usage: {},
           transcript: [],
@@ -899,8 +905,14 @@ const makeManager = Effect.gen(function* () {
         const meta = {
           ...(yield* session.meta),
           role: task.role ?? "worker",
+          ...(task.leadAgentId === undefined
+            ? {}
+            : { leadAgentId: task.leadAgentId }),
           worktree: task.worktree,
           mode: task.mode ?? "build",
+          ...(task.parent.parentStateRoot === undefined
+            ? {}
+            : { parentStateRoot: task.parent.parentStateRoot }),
         };
         const entry: Entry = {
           snapshot: {
@@ -1217,7 +1229,16 @@ const makeManager = Effect.gen(function* () {
         worktree: restored.meta.worktree,
         mode: restored.meta.mode ?? "build",
         role: restored.meta.role ?? "worker",
-        parent: { parentCwd: restored.cwd, projectTrusted: true },
+        ...(restored.meta.leadAgentId === undefined
+          ? {}
+          : { leadAgentId: restored.meta.leadAgentId }),
+        parent: {
+          parentCwd: restored.cwd,
+          projectTrusted: true,
+          ...(restored.meta.parentStateRoot === undefined
+            ? {}
+            : { parentStateRoot: restored.meta.parentStateRoot }),
+        },
       };
       const session = yield* Scope.provide(
         backend.reattach(task, restored.meta),

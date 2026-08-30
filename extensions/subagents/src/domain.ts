@@ -22,6 +22,7 @@ export type LeadAgentProposalId = string;
 
 export const SUBAGENT_MODES = ["scout", "build"] as const;
 export type SubagentMode = (typeof SUBAGENT_MODES)[number];
+/** Internal compatibility values: `worker` is a Subagent, `lead` is an Agent Lead. */
 export type SubagentRole = "worker" | "lead";
 
 export const REASONING_EFFORTS = [
@@ -43,6 +44,10 @@ export interface ParentContext {
   readonly inheritedModel?: { readonly provider: string; readonly id: string };
   readonly inheritedThinkingLevel?: ReasoningEffort;
   readonly modelRegistry?: ModelRegistry;
+  /** Durable state namespace of the parent runtime that owns this child. */
+  readonly parentStateRoot?: string;
+  /** Coordinator root used for Lead-to-parent event delivery. */
+  readonly coordinatorStateRoot?: string;
 }
 
 export interface SubagentInitialTerminal {
@@ -62,6 +67,8 @@ export interface SpawnTask {
   readonly origin?: SubagentOrigin;
   /** Controls which orchestration tools a child session may receive. */
   readonly role?: SubagentRole;
+  /** Lead Agent that owns this execution, when it was proposed by a lead. */
+  readonly leadAgentId?: LeadAgentId;
   readonly prompt: string;
   readonly title: string;
   readonly cwd: string;
@@ -72,14 +79,18 @@ export interface SpawnTask {
   readonly model?: string;
   readonly reasoningEffort?: ReasoningEffort;
   readonly timeoutMs?: number;
-  /** Optional persisted Pi session file for a Lead Agent reopen. */
+  /** Optional persisted Pi session file for an Agent Lead reopen. */
   readonly sessionFilePath?: string;
+  /** Optional session directory; Agent Leads use a dedicated durable home. */
+  readonly sessionDir?: string;
   readonly parent: ParentContext;
 }
 
 export interface SubagentMeta {
   readonly backend: BackendName;
   readonly role?: SubagentRole;
+  /** Lead Agent that owns this execution, used by the dashboard hierarchy. */
+  readonly leadAgentId?: LeadAgentId;
   readonly worktree?: SubagentWorktree;
   readonly mode?: SubagentMode;
   readonly modelLabel?: string;
@@ -92,6 +103,8 @@ export interface SubagentMeta {
   readonly nativeTabId?: string;
   readonly nativePaneKey?: string;
   readonly nativeLaunchToken?: string;
+  /** Durable parent namespace used by in-process child extensions. */
+  readonly parentStateRoot?: string;
 }
 
 // --- Transcript ------------------------------------------------------------

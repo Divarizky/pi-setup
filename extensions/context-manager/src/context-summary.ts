@@ -90,28 +90,52 @@ export function formatSummary(
   return lines.join("\n");
 }
 
+export interface SnippetOptions {
+  before?: number;
+  after?: number;
+}
+
 export function findSnippets(
   text: string,
   query: string,
   maxSnippets: number,
+  options: SnippetOptions = {},
 ): string[] {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (query.length > 500) return [];
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean).slice(0, 32);
   if (terms.length === 0) return [];
 
+  const limit = Math.max(1, Math.min(maxSnippets, 10));
+  const before = Math.max(0, Math.min(options.before ?? 1, 20));
+  const after = Math.max(0, Math.min(options.after ?? 1, 20));
   const lines = text.split(/\r?\n/);
   const snippets: string[] = [];
   for (let index = 0; index < lines.length; index++) {
     const current = lines[index]?.toLowerCase() ?? "";
     if (!terms.every((term) => current.includes(term))) continue;
 
-    const start = Math.max(0, index - 1);
-    const end = Math.min(lines.length, index + 2);
+    const start = Math.max(0, index - before);
+    const end = Math.min(lines.length, index + after + 1);
     const window = lines
       .slice(start, end)
       .map((line, offset) => `${start + offset + 1}: ${compactLine(line, 300)}`)
       .join("\n");
     snippets.push(window);
-    if (snippets.length === maxSnippets) break;
+    if (snippets.length === limit) break;
   }
   return snippets;
+}
+
+export function formatLineRange(
+  text: string,
+  start: number,
+  end: number,
+): string {
+  const lines = text.split(/\r?\n/);
+  const first = Math.max(1, Math.min(start, lines.length));
+  const last = Math.max(first, Math.min(end, lines.length));
+  return lines
+    .slice(first - 1, last)
+    .map((line, offset) => `${first + offset}: ${compactLine(line, 300)}`)
+    .join("\n");
 }

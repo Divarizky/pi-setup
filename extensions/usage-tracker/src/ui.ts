@@ -29,10 +29,6 @@ function formatTokens(value: number): string {
   return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
 }
 
-function formatMoney(value: number | undefined): string {
-  return value === undefined ? "—" : `$${value.toFixed(2)}`;
-}
-
 function pad(text: string, width: number): string {
   const clipped = truncateToWidth(text, width);
   return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
@@ -50,11 +46,38 @@ function line(
 }
 
 function progressBar(theme: Theme, usedPercent: number, width: number): string {
-  const barWidth = Math.max(10, Math.min(40, width));
-  const usedWidth = Math.round((usedPercent / 100) * barWidth);
-  const used = "■".repeat(usedWidth);
-  const remaining = "-".repeat(barWidth - usedWidth);
-  return theme.fg("text", `[${used}${remaining}]`);
+  const barWidth = Math.max(1, Math.min(40, width));
+  const boundedPercent = Math.max(0, Math.min(100, usedPercent));
+  const usedWidth = Math.round((boundedPercent / 100) * barWidth);
+  const rail =
+    usedWidth <= 0
+      ? "─".repeat(barWidth)
+      : usedWidth >= barWidth
+        ? "━".repeat(barWidth)
+        : `${"━".repeat(usedWidth - 1)}╸${"─".repeat(barWidth - usedWidth)}`;
+  return theme.fg("text", rail);
+}
+
+function wrapPlain(text: string, width: number): string[] {
+  if (width <= 1) return [text.slice(0, 1)];
+  const lines: string[] = [];
+  let current = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (visibleWidth(candidate) <= width) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = word;
+    while (visibleWidth(current) > width) {
+      const chunk = current.slice(0, Math.max(1, width));
+      lines.push(chunk);
+      current = current.slice(chunk.length);
+    }
+  }
+  if (current || lines.length === 0) lines.push(current);
+  return lines;
 }
 
 function resetInfo(limit: UsageLimit, now: Date): string {
@@ -83,42 +106,72 @@ function resetInfo(limit: UsageLimit, now: Date): string {
   return `${state}reset ${absolute} (${relative} lagi)`;
 }
 
+type QuotaLineLayout = {
+  readonly labelWidth: number;
+  readonly barWidth: number;
+  readonly leftSpace: number;
+  readonly rightSpace: number;
+  readonly rightWidth: number;
+};
+
 function limitLines(
   theme: Theme,
   limit: UsageLimit,
   width: number,
   now: Date,
+  layout: QuotaLineLayout,
 ): string[] {
   const used = `${limit.usedPercent.toFixed(0)}%`;
-  const bar = progressBar(theme, limit.usedPercent, Math.max(10, width - 32));
-  const left = theme.fg("muted", limit.label.padEnd(14)) + bar;
-  const right = theme.fg(
-    limit.usedPercent >= 90 ? "warning" : "text",
-    `${used} terpakai`,
+  const rightText = `${used} terpakai`;
+  const right = pad(
+    theme.fg(limit.usedPercent >= 90 ? "warning" : "text", rightText),
+    layout.rightWidth,
   );
+  const label = pad(theme.fg("muted", limit.label), layout.labelWidth);
+  const bar = progressBar(theme, limit.usedPercent, layout.barWidth);
+  const row = `${label}${" ".repeat(layout.leftSpace)}${bar}${" ".repeat(layout.rightSpace)}${right}`;
   return [
-    line(theme, left, right, width),
-    theme.fg("dim", `              ${resetInfo(limit, now)}`),
+    truncateToWidth(row, width),
+    theme.fg(
+      "dim",
+      `${" ".repeat(layout.labelWidth + layout.leftSpace)}${resetInfo(limit, now)}`,
+    ),
   ];
 }
 
-function periodLine(
-  theme: Theme,
-  label: string,
-  usage: ProviderUsage["today"],
-): string {
-  const title = label === "today" ? "Hari ini" : "Billing cycle";
-  if (!usage.totals) {
-    return `${theme.fg("muted", title.padEnd(14))}${theme.fg("warning", usage.message ?? "data tidak tersedia")}`;
-  }
-  const totals = usage.totals;
-  return `${theme.fg("muted", title.padEnd(14))}${formatTokens(totals.total)} tok · ${formatTokens(totals.input)} in · ${formatTokens(totals.output)} out · ${formatMoney(totals.cost)}`;
+function quotaLineLayout(
+  limits: readonly UsageLimit[],
+  width: number,
+): QuotaLineLayout {
+  const rightWidth = Math.max(
+    1,
+    ...limits.map((limit) =>
+      visibleWidth(`${limit.usedPercent.toFixed(0)}% terpakai`),
+    ),
+  );
+  const longestLabel = Math.max(
+    14,
+    ...limits.map((limit) => visibleWidth(limit.label)),
+  );
+  const labelWidth = Math.max(
+    1,
+    Math.min(longestLabel, width - rightWidth - 7),
+  );
+  const available = Math.max(1, width - labelWidth - rightWidth);
+  const barWidth = Math.max(1, Math.min(40, available - 2));
+  const remainingSpace = Math.max(0, available - barWidth);
+  const leftSpace = Math.max(1, Math.floor(remainingSpace / 2));
+  const rightSpace = Math.max(1, remainingSpace - leftSpace);
+  return { labelWidth, barWidth, leftSpace, rightSpace, rightWidth };
 }
 
 function providerStatus(usage: ProviderUsage): {
   label: string;
   color: "success" | "accent" | "warning";
 } {
+  if (usage.source === "9Router lokal" && usage.status === "ok") {
+    return { label: "Lokal", color: "accent" };
+  }
   if (usage.status !== "ok" || !usage.limits?.length) {
     return { label: "N/A", color: "warning" };
   }
@@ -144,8 +197,26 @@ function providerRows(
     providerStatusValue.color,
     `● ${providerStatusValue.label}`,
   );
-  const title = theme.fg("accent", theme.bold(providerName(usage.provider)));
+  const titleText = usage.label ?? providerName(usage.provider);
+  const titleWidth = Math.max(
+    1,
+    inner - visibleWidth(`● ${providerStatusValue.label}`) - 1,
+  );
+  const title = theme.fg(
+    "accent",
+    theme.bold(truncateToWidth(titleText, titleWidth)),
+  );
   const rows = [line(theme, title, status, inner)];
+  if (
+    usage.source === "9Router quota API" ||
+    usage.source === "9Router lokal"
+  ) {
+    rows.push(
+      ...wrapPlain(`Sumber: ${usage.source}`, inner).map((value) =>
+        theme.fg("dim", value),
+      ),
+    );
+  }
   if (usage.limits?.length) {
     if (usage.quota) {
       rows.push(
@@ -157,22 +228,32 @@ function providerRows(
         ),
       );
     }
+    // Codex dan 9Router memakai kolom yang sama. Dengan layout bersama ini,
+    // nama model, bar, dan persentase tetap sejajar untuk setiap limit.
+    const layout = quotaLineLayout(usage.limits, inner);
     rows.push(
-      ...usage.limits.flatMap((limit) => limitLines(theme, limit, inner, now)),
+      ...usage.limits.flatMap((limit) =>
+        limitLines(theme, limit, inner, now, layout),
+      ),
     );
+    if (usage.message) rows.push(theme.fg("dim", usage.message));
   } else {
     rows.push(
       line(
         theme,
-        theme.fg("muted", "Quota / saldo"),
+        theme.fg(
+          "muted",
+          usage.source?.startsWith("9Router")
+            ? "Status koneksi"
+            : "Quota / saldo",
+        ),
         theme.fg(
           usage.quota || usage.balance ? "text" : "warning",
           usage.quota ?? usage.balance ?? "data tidak tersedia",
         ),
         inner,
       ),
-      periodLine(theme, "today", usage.today),
-      periodLine(theme, "billing", usage.billing),
+      ...(usage.message ? [theme.fg("dim", usage.message)] : []),
     );
   }
   return rows.map((row) => pad(row, inner));
@@ -197,6 +278,7 @@ export class UsageTrackerDashboard {
   private readonly keybindings: KeybindingsManager;
   private readonly data: UsageTrackerViewData;
   private readonly done: () => void;
+  private scrollOffset = 0;
 
   constructor(
     tui: TUI,
@@ -218,7 +300,30 @@ export class UsageTrackerDashboard {
       this.keybindings.matches(data, "tui.select.confirm")
     ) {
       this.done();
+      return;
     }
+
+    // Banyak provider quota menghasilkan lebih banyak baris daripada tinggi
+    // terminal. Jangan biarkan overlay terpotong; izinkan navigasi vertikal.
+    const key = data.toLowerCase();
+    const isUp = key === "up" || key === "arrowup" || key === "\u001b[a";
+    const isDown = key === "down" || key === "arrowdown" || key === "\u001b[b";
+    const isPageUp = key === "pageup";
+    const isPageDown = key === "pagedown";
+    if (isUp || isPageUp) {
+      this.scrollOffset = Math.max(
+        0,
+        this.scrollOffset - (isPageUp ? this.pageSize() : 1),
+      );
+      this.tui.requestRender();
+    } else if (isDown || isPageDown) {
+      this.scrollOffset += isPageDown ? this.pageSize() : 1;
+      this.tui.requestRender();
+    }
+  }
+
+  private pageSize(): number {
+    return Math.max(1, (this.tui.terminal.rows || 20) - 4);
   }
 
   render(width: number): string[] {
@@ -229,7 +334,7 @@ export class UsageTrackerDashboard {
       this.theme.bold("Usage Tracker"),
     );
     const headerRight = this.theme.fg("muted", "real-time");
-    const content = [
+    let content = [
       line(this.theme, headerLeft, headerRight, inner),
       this.theme.fg(
         "dim",
@@ -269,10 +374,26 @@ export class UsageTrackerDashboard {
     );
 
     // Isi tinggi terminal seperti dashboard /subagents dan /summary-model,
-    // bukan hanya tinggi konten aktual.
+    // tetapi gunakan viewport untuk quota panjang agar overlay tidak terpotong.
     const terminalRows = this.tui.terminal.rows || content.length + 2;
-    const targetContentRows = Math.max(content.length, terminalRows - 2);
-    while (content.length < targetContentRows) content.push("");
+    const visibleContentRows = Math.max(1, terminalRows - 2);
+    const overflow = content.length > visibleContentRows;
+    const maxOffset = Math.max(0, content.length - visibleContentRows);
+    const offset = Math.min(this.scrollOffset, maxOffset);
+    this.scrollOffset = offset;
+
+    if (overflow) {
+      const viewport = content.slice(offset, offset + visibleContentRows);
+      if (offset > 0) viewport[0] = this.theme.fg("dim", "↑ Gulir ke atas");
+      if (offset < maxOffset)
+        viewport[viewport.length - 1] = this.theme.fg(
+          "dim",
+          "↓ Gulir ke bawah",
+        );
+      content = viewport;
+    } else {
+      while (content.length < visibleContentRows) content.push("");
+    }
 
     const top = this.theme.fg("border", `╭${"─".repeat(frameWidth - 2)}╮`);
     const bottom = this.theme.fg("border", `╰${"─".repeat(frameWidth - 2)}╯`);

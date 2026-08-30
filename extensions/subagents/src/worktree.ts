@@ -111,25 +111,6 @@ export async function resolveRepoRoot(sourceDir: string) {
   });
 }
 
-/**
- * Create a dedicated branch/worktree for one subagent job.
- *
- * The worktree lives in the agent's workspace, outside the source checkout.
- * It is intentionally not removed here: uncommitted subagent output must
- * remain recoverable until the agent explicitly disposes it.
- */
-export async function assertWorktreeClean(worktreePath: string): Promise<void> {
-  const result = await runGit(
-    ["status", "--porcelain", "--untracked-files=all"],
-    worktreePath,
-  );
-  if (result.stdout.trim()) {
-    throw new WorktreeError(
-      `Refusing read-only subagent operation on dirty worktree: ${worktreePath}`,
-    );
-  }
-}
-
 export async function deleteSubagentBranch(
   repoRoot: string,
   branch: string,

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { SUMMARY_SYSTEM_PROMPT } from "./src/prompt.ts";
 import { parseRecapResponse, reasoningOptions } from "./src/summarizer.ts";
+
+test("requires recap fields to be written in Bahasa Indonesia", () => {
+  assert.match(SUMMARY_SYSTEM_PROMPT, /recap.*next.*Bahasa Indonesia/s);
+});
 
 test("omits reasoning when configured off", () => {
   assert.deepEqual(reasoningOptions("off"), {});
