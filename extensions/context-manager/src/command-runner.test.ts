@@ -5,6 +5,7 @@ import {
   runScript,
   sanitizeEnvironment,
 } from "./command-runner.ts";
+import { formatExecutionApproval } from "../index.ts";
 
 test("runScript executes a cross-platform shell and captures output", async () => {
   const script =
@@ -56,6 +57,20 @@ test("mutation detection protects non-shell scripts and write commands", () => {
     false,
   );
   assert.equal(isPotentiallyMutating("shell", "custom-project-command"), false);
+});
+
+test("execution approval clearly identifies the command and its scope", () => {
+  const message = formatExecutionApproval(
+    "shell",
+    "C:/project",
+    "Remove-Item ./temp.txt",
+  );
+  assert.match(message, /memerlukan persetujuan/);
+  assert.match(message, /Runtime: shell/);
+  assert.match(message, /Direktori kerja: C:\/project/);
+  assert.match(message, /Script yang akan dijalankan:/);
+  assert.match(message, /Remove-Item \.\/temp\.txt/);
+  assert.match(message, /Jalankan script ini\?/);
 });
 
 test("sanitizeEnvironment removes common secret variables", () => {

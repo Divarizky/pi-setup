@@ -173,6 +173,13 @@ import {
   openSubagentPicker,
   openSubagentTakeover,
 } from "./src/ui/takeover.ts";
+import {
+  invalidateAgentWidget,
+  renderAgentWidget,
+  type WidgetQueuedJob,
+} from "./src/ui/agent-widget.ts";
+import { invalidateFleetView, renderFleetView } from "./src/ui/fleet-view.ts";
+import { notifySubagentCompletion } from "./src/ui/completion-notification.ts";
 
 const SUBAGENT_OUTPUT_MAX_BYTES = 24 * 1024;
 const WAIT_OUTPUT_MAX_BYTES = 48 * 1024;
@@ -323,6 +330,8 @@ export default function activate(pi: ExtensionAPI) {
   );
   const capacityLeases = new Map<string, CapacityLease>();
   let sessionReconcileTimer: ReturnType<typeof setInterval> | undefined;
+  let uiRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  let hasBuildLeadInSession = false;
   const orcaCli = new OrcaCli();
   const pendingSettled: Array<{ snap: SubagentSnapshot; consumed: boolean }> =
     [];
@@ -1802,11 +1811,19 @@ export default function activate(pi: ExtensionAPI) {
             unsubStatus?.();
             unsubStatus = manager.view.subscribe(() => {
               updateStatus(manager);
+              renderSubagentUi(manager);
               void dispatchQueuedJobs(manager).catch(() => {});
             });
             activeManager = manager;
             await orchestrationCoordinator?.replay();
             updateStatus(manager);
+            renderSubagentUi(manager);
+            if (ui && sessionContext?.mode === "tui") {
+              uiRefreshTimer ??= setInterval(() => {
+                if (activeManager) renderSubagentUi(activeManager);
+              }, 120);
+              uiRefreshTimer.unref?.();
+            }
             return manager;
           });
       } catch (error) {
@@ -1952,6 +1969,34 @@ export default function activate(pi: ExtensionAPI) {
       "subagents",
       formatActivityStatus(ui.theme, { starting, running, done, failed }),
     );
+  };
+
+  const queuedUiJobs = (): ReadonlyArray<WidgetQueuedJob> =>
+    jobQueue.list().map((job) => ({
+      id: job.id,
+      title: job.title,
+      status: job.status,
+      createdAt: job.createdAt,
+      mode: job.mode,
+      role: job.task.role,
+      leadAgentId: job.task.leadAgentId,
+    }));
+
+  const renderSubagentUi = (manager: SubagentManagerShape) => {
+    if (!ui || sessionContext?.mode !== "tui") return;
+    const snapshots = manager.view.list();
+    const queued = queuedUiJobs();
+    if (
+      snapshots.some(
+        (snap) => snap.meta.role === "lead" && snap.meta.mode === "build",
+      ) ||
+      queued.some((job) => job.role === "lead" && job.mode === "build") ||
+      leadAgentStore.list().some((lead) => lead.mode === "build")
+    ) {
+      hasBuildLeadInSession = true;
+    }
+    renderAgentWidget(ui, snapshots, queued);
+    renderFleetView(ui, snapshots, queued, hasBuildLeadInSession);
   };
 
   const syncLedgerStatus = async (options: {
@@ -2418,6 +2463,8 @@ export default function activate(pi: ExtensionAPI) {
       deliverQuickAskResult({ ...snap, meta: { ...snap.meta } });
       return;
     }
+    if (ui && sessionContext?.mode === "tui")
+      notifySubagentCompletion(ui, snap);
     if (consumed) {
       resultDelivery.consume([snap.id]);
       return;
@@ -2432,6 +2479,16 @@ export default function activate(pi: ExtensionAPI) {
     if (ctx.hasUI) ui = ctx.ui;
     const pending = pendingSettled.splice(0);
     for (const item of pending) onSettled(item.snap, item.consumed);
+    if (ctx.mode === "tui" && ctx.hasUI) {
+      void getManager()
+        .then((manager) => renderSubagentUi(manager))
+        .catch((error) => {
+          ui?.notify(
+            `Subagent UI initialization failed: ${error instanceof Error ? error.message : String(error)}`,
+            "warning",
+          );
+        });
+    }
   });
 
   pi.on("agent_settled", flushResults);
@@ -2447,8 +2504,16 @@ export default function activate(pi: ExtensionAPI) {
     if (storesReady) subagentMonitor.stop();
     if (sessionReconcileTimer) clearInterval(sessionReconcileTimer);
     sessionReconcileTimer = undefined;
+    if (uiRefreshTimer) clearInterval(uiRefreshTimer);
+    uiRefreshTimer = undefined;
+    hasBuildLeadInSession = false;
+    if (ui) {
+      invalidateAgentWidget(ui);
+      invalidateFleetView(ui);
+    }
     ui?.setStatus("subagents", undefined);
     ui = undefined;
+    activeManager = undefined;
     const closing = runtime;
     const lease = stateLease;
     runtime = undefined;

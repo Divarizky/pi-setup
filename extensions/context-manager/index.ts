@@ -25,32 +25,48 @@ import {
   selectCompressionMode,
 } from "./src/context-policy.ts";
 import {
+  applyBudgetEnvironmentOverride,
+  loadContextManagerConfig,
+  MAX_CONTEXT_BUDGET_PERCENT,
+  MAX_OUTPUT_CHAR_THRESHOLD,
+  MAX_OUTPUT_LINE_THRESHOLD,
+  MIN_CONTEXT_BUDGET_PERCENT,
+  MIN_OUTPUT_CHAR_THRESHOLD,
+  MIN_OUTPUT_LINE_THRESHOLD,
+  resetContextManagerConfig,
+  saveContextManagerConfig,
+  type ContextManagerConfig,
+} from "./src/context-config.ts";
+import {
   isPotentiallyMutating,
   runScript,
   type RunnerRuntime,
 } from "./src/command-runner.ts";
 
-const LARGE_OUTPUT_CHARS = 15_000;
-const LARGE_OUTPUT_LINES = 500;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_EXECUTION_TIMEOUT_MS = 60_000;
 const DEFAULT_EXECUTION_OUTPUT_CHARS = 5_000;
 const MAX_EXECUTION_TIMEOUT_MS = 300_000;
 const MAX_EXECUTION_OUTPUT_CHARS = 100_000;
-const DEFAULT_CONTEXT_BUDGET_PERCENT = 20;
-const MIN_CONTEXT_BUDGET_PERCENT = 15;
-const MAX_CONTEXT_BUDGET_PERCENT = 30;
 
-function contextBudgetPercent(): number {
-  const configured = Number.parseInt(
-    process.env.PI_CONTEXT_MANAGER_BUDGET_PERCENT ?? "",
-    10,
-  );
-  if (!Number.isFinite(configured)) return DEFAULT_CONTEXT_BUDGET_PERCENT;
-  return Math.max(
-    MIN_CONTEXT_BUDGET_PERCENT,
-    Math.min(configured, MAX_CONTEXT_BUDGET_PERCENT),
-  );
+function currentContextManagerConfig(): ContextManagerConfig {
+  return applyBudgetEnvironmentOverride(loadContextManagerConfig());
+}
+
+function formatConfig(config: ContextManagerConfig): string {
+  return `Threshold: ${config.outputCharThreshold.toLocaleString("id-ID")} karakter / ${config.outputLineThreshold.toLocaleString("id-ID")} baris; budget output lama: ${config.contextBudgetPercent}% context window.`;
+}
+
+function formatConfigValue(
+  label: string,
+  config: ContextManagerConfig,
+): string {
+  if (label === "Threshold karakter")
+    return `${config.outputCharThreshold.toLocaleString("id-ID")} karakter`;
+  if (label === "Threshold baris")
+    return `${config.outputLineThreshold.toLocaleString("id-ID")} baris`;
+  if (label === "Budget context") return `${config.contextBudgetPercent}%`;
+  return "";
 }
 
 function textFromContent(content: unknown): string {
@@ -110,6 +126,45 @@ function updateContextReminder(ctx: ExtensionContext, state: ReminderState) {
     `[Context Manager] penggunaan context ${formatContextPercent(percent)}%. Output berikutnya akan diringkas`,
     "warning",
   );
+}
+
+function parseConfigInteger(
+  value: string | undefined,
+  min: number,
+  max: number,
+): number | undefined {
+  if (!value || !/^\d+$/.test(value.trim())) return undefined;
+  const parsed = Number(value.trim());
+  return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max
+    ? parsed
+    : undefined;
+}
+
+export function formatApprovalScript(script: string, maxChars = 1_200): string {
+  const normalized = script.trim();
+  return normalized.length <= maxChars
+    ? normalized
+    : `${normalized.slice(0, maxChars)}\n… (script dipotong; total ${normalized.length.toLocaleString("id-ID")} karakter)`;
+}
+
+export function formatExecutionApproval(
+  runtime: RunnerRuntime,
+  cwd: string,
+  script: string,
+): string {
+  return [
+    "Tindakan ini memerlukan persetujuan karena berpotensi mengubah data atau menjalankan program lain.",
+    "",
+    `Runtime: ${runtime}`,
+    `Direktori kerja: ${cwd}`,
+    "",
+    "Script yang akan dijalankan:",
+    "---",
+    formatApprovalScript(script),
+    "---",
+    "",
+    "Jalankan script ini?",
+  ].join("\n");
 }
 
 export default function (pi: ExtensionAPI) {
@@ -189,8 +244,8 @@ export default function (pi: ExtensionAPI) {
           );
         }
         const approved = await ctx.ui.confirm(
-          "Konfirmasi ctx_execute",
-          `Script berpotensi mengubah data:\n\n${params.script.slice(0, 2_000)}\n\nJalankan sekarang?`,
+          "Persetujuan diperlukan: ctx_execute",
+          formatExecutionApproval(runtime, realRequestedCwd, params.script),
         );
         if (!approved) throw new Error("Eksekusi dibatalkan oleh user.");
       }
@@ -205,9 +260,10 @@ export default function (pi: ExtensionAPI) {
       });
       const raw = result.output || "[no output]";
       const outputId = await outputCache.save(raw);
+      const config = currentContextManagerConfig();
       if (
-        raw.length >= LARGE_OUTPUT_CHARS ||
-        raw.split(/\r?\n/).length >= LARGE_OUTPUT_LINES
+        raw.length >= config.outputCharThreshold ||
+        raw.split(/\r?\n/).length >= config.outputLineThreshold
       ) {
         notify(
           ctx,
@@ -311,7 +367,7 @@ export default function (pi: ExtensionAPI) {
           throw new Error(
             `Output cache not found or expired: ${params.outputId}`,
           );
-        source = `dari output ${params.outputId}`;
+        source = `dari cache ${params.outputId}`;
         bytes = Buffer.byteLength(raw, "utf8");
         recordRetrieval(stats);
       } else {
@@ -387,12 +443,16 @@ export default function (pi: ExtensionAPI) {
       return;
     const raw = textFromContent(event.content);
     const lineCount = raw.split(/\r?\n/).length;
+    const config = currentContextManagerConfig();
     const contextPercent = ctx.getContextUsage()?.percent;
     const mode = selectCompressionMode(contextPercent);
 
     updateContextReminder(ctx, reminderState);
 
-    if (raw.length < LARGE_OUTPUT_CHARS && lineCount < LARGE_OUTPUT_LINES)
+    if (
+      raw.length < config.outputCharThreshold &&
+      lineCount < config.outputLineThreshold
+    )
       return;
 
     const readInput = event as unknown as {
@@ -460,7 +520,7 @@ export default function (pi: ExtensionAPI) {
         Boolean(toolCallId && cachedToolResults.has(toolCallId)),
       );
     const usage = ctx.getContextUsage();
-    const budgetPercent = contextBudgetPercent();
+    const budgetPercent = currentContextManagerConfig().contextBudgetPercent;
     const budgetTokens = usage?.contextWindow
       ? Math.floor((usage.contextWindow * budgetPercent) / 100)
       : 6_000;
@@ -524,17 +584,133 @@ export default function (pi: ExtensionAPI) {
         usage?.percent === null || usage?.percent === undefined
           ? "Context saat ini: belum tersedia"
           : `Context saat ini: ${formatContextPercent(usage.percent)} (${usage.tokens?.toLocaleString("id-ID") ?? "?"}/${usage.contextWindow.toLocaleString("id-ID")} token)`;
-      ctx.ui.notify(`${formatContextStats(stats)}\n${liveUsage}`, "info");
+      const config = currentContextManagerConfig();
+      ctx.ui.notify(
+        `${formatContextStats(stats)}\n${liveUsage}\n${formatConfig(config)}`,
+        "info",
+      );
     },
   });
 
-  pi.registerCommand("context-manager-info", {
-    description: "Show Context Manager prototype thresholds",
+  pi.registerCommand("context-manager-config", {
+    description:
+      "Configure Context Manager output thresholds and context budget",
     handler: async (_args, ctx) => {
-      ctx.ui.notify(
-        `Context Manager aktif: output >= ${LARGE_OUTPUT_CHARS.toLocaleString("id-ID")} karakter atau ${LARGE_OUTPUT_LINES} baris diproses. Budget output lama ${contextBudgetPercent()}% context window; <30% context dipertahankan; 30–60% mulai dihemat; >60% disarankan /compact. Gunakan ctx_inspect untuk file lokal.`,
-        "info",
-      );
+      if (!ctx.hasUI) {
+        ctx.ui.notify(
+          "/context-manager-config membutuhkan mode interaktif.",
+          "error",
+        );
+        return;
+      }
+
+      let config = currentContextManagerConfig();
+      const menu = [
+        "Threshold karakter",
+        "Threshold baris",
+        "Budget context",
+        "Reset ke default",
+        "Selesai",
+      ];
+
+      while (true) {
+        const choice = await ctx.ui.select(
+          "Context Manager Config",
+          menu.map((item) =>
+            [
+              "Threshold karakter",
+              "Threshold baris",
+              "Budget context",
+            ].includes(item)
+              ? `${item} (${formatConfigValue(item, config)})`
+              : item,
+          ),
+        );
+        if (!choice || choice === "Selesai") return;
+
+        if (choice.startsWith("Reset ke default")) {
+          const confirmed = await ctx.ui.confirm(
+            "Reset Context Manager",
+            "Kembalikan threshold output dan budget context ke nilai default?",
+          );
+          if (!confirmed) continue;
+
+          try {
+            await resetContextManagerConfig();
+            config = currentContextManagerConfig();
+            ctx.ui.notify(
+              `Konfigurasi di-reset. ${formatConfig(config)}`,
+              "info",
+            );
+          } catch (error) {
+            ctx.ui.notify(
+              `Gagal mereset konfigurasi: ${error instanceof Error ? error.message : String(error)}`,
+              "error",
+            );
+          }
+          continue;
+        }
+
+        const isChars = choice.startsWith("Threshold karakter");
+        const isLines = choice.startsWith("Threshold baris");
+        const isBudget = choice.startsWith("Budget context");
+        if (!isChars && !isLines && !isBudget) continue;
+
+        const label = isChars
+          ? "threshold karakter"
+          : isLines
+            ? "threshold baris"
+            : "budget context (%)";
+        const currentValue = isChars
+          ? config.outputCharThreshold
+          : isLines
+            ? config.outputLineThreshold
+            : config.contextBudgetPercent;
+        const min = isChars
+          ? MIN_OUTPUT_CHAR_THRESHOLD
+          : isLines
+            ? MIN_OUTPUT_LINE_THRESHOLD
+            : MIN_CONTEXT_BUDGET_PERCENT;
+        const max = isChars
+          ? MAX_OUTPUT_CHAR_THRESHOLD
+          : isLines
+            ? MAX_OUTPUT_LINE_THRESHOLD
+            : MAX_CONTEXT_BUDGET_PERCENT;
+        const input = await ctx.ui.input(
+          `Atur ${label}`,
+          `Nilai saat ini ${currentValue.toLocaleString("id-ID")}; rentang ${min.toLocaleString("id-ID")}–${max.toLocaleString("id-ID")}`,
+        );
+        if (input === undefined) continue;
+
+        const value = parseConfigInteger(input, min, max);
+        if (value === undefined) {
+          ctx.ui.notify(
+            `Nilai harus bilangan bulat antara ${min.toLocaleString("id-ID")} dan ${max.toLocaleString("id-ID")}.`,
+            "error",
+          );
+          continue;
+        }
+
+        const nextConfig: ContextManagerConfig = {
+          ...config,
+          ...(isChars ? { outputCharThreshold: value } : {}),
+          ...(isLines ? { outputLineThreshold: value } : {}),
+          ...(isBudget ? { contextBudgetPercent: value } : {}),
+        };
+        try {
+          await saveContextManagerConfig(nextConfig);
+          config = nextConfig;
+          ctx.ui.notify(
+            `Konfigurasi tersimpan. ${formatConfig(config)}`,
+            "info",
+          );
+        } catch (error) {
+          ctx.ui.notify(
+            `Gagal menyimpan konfigurasi: ${error instanceof Error ? error.message : String(error)}`,
+            "error",
+          );
+        }
+      }
     },
   });
 }

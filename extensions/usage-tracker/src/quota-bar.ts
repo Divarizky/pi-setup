@@ -220,8 +220,8 @@ function formatReset(resetAt: Date | undefined, now: Date): string | undefined {
 }
 
 /**
- * Render a full-width quota rail:
- * openai-codex │ ━━━━━━━━━━━━━━━━━━━━╸──────── │ 84% used · reset 3h 3m
+ * Render a quota rail directly below Pi's editor separator, followed by a
+ * closing rule that keeps the built-in footer visually separate.
  */
 export function renderQuotaBar(
   _model: QuotaModelRef,
@@ -267,5 +267,5 @@ export function renderQuotaBar(
 
   const rule = borderColor("─".repeat(safeWidth));
 
-  return [rule, truncateToWidth(content, safeWidth)];
+  return [truncateToWidth(content, safeWidth), rule];
 }

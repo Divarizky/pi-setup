@@ -17,6 +17,18 @@ test("summarizeOutput prioritizes errors and includes a compact preview", () => 
   assert.match(formatSummary(summary, "dari test"), /Error penting/);
 });
 
+test("formatSummary uses a non-redundant cache source label", () => {
+  const summary = summarizeOutput("line");
+  assert.match(
+    formatSummary(summary, "dari cache output-4777b12b"),
+    /^\[context-manager\] Output dari cache output-4777b12b diringkas secara lokal/m,
+  );
+  assert.doesNotMatch(
+    formatSummary(summary, "dari cache output-4777b12b"),
+    /Output dari output output-/,
+  );
+});
+
 test("findSnippets returns line-numbered context around a matching query", () => {
   const text = "one\ntwo\nDatabase connection failed\nfour\nfive";
   assert.deepEqual(findSnippets(text, "connection failed", 2), [

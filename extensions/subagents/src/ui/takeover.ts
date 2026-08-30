@@ -41,14 +41,48 @@ function statusGlyph(snap: SubagentSnapshot, theme: Theme): string {
   }
 }
 
+function projectPath(snap: SubagentSnapshot): string {
+  return snap.meta.worktree?.repoRoot ?? snap.cwd;
+}
+
+function projectLabel(snap: SubagentSnapshot): string {
+  const value = projectPath(snap);
+  return value.split(/[\\/]/).filter(Boolean).pop() ?? value;
+}
+
 function contextLabel(snap: SubagentSnapshot): string {
-  const projectPath = snap.meta.worktree?.repoRoot ?? snap.cwd;
-  const project =
-    projectPath.split(/[\\/]/).filter(Boolean).pop() ?? projectPath;
+  const project = projectLabel(snap);
   const worktree =
     snap.meta.worktree?.branch ??
     snap.meta.worktree?.path.split(/[\\/]/).filter(Boolean).pop();
   return worktree ? `${project} · ${worktree}` : project;
+}
+
+export interface DashboardProjectGroup {
+  readonly key: string;
+  readonly label: string;
+  readonly snapshots: ReadonlyArray<SubagentSnapshot>;
+}
+
+/** Groups the existing hierarchy order by project without mutating snapshots. */
+export function groupDashboardByProject(
+  subs: ReadonlyArray<SubagentSnapshot>,
+): ReadonlyArray<DashboardProjectGroup> {
+  const groups = new Map<
+    string,
+    { label: string; snapshots: SubagentSnapshot[] }
+  >();
+  for (const snap of subs) {
+    const key = projectPath(snap).replaceAll("\\", "/").toLowerCase();
+    const group = groups.get(key);
+    if (group) group.snapshots.push(snap);
+    else groups.set(key, { label: projectLabel(snap), snapshots: [snap] });
+  }
+  return [...groups.entries()].map(([key, group]) => ({
+    key,
+    label: group.label,
+    snapshots: group.snapshots,
+  }));
 }
 
 function compactPath(value: string, width: number): string {
@@ -312,6 +346,41 @@ export async function openSubagentPicker(
 export interface DashboardSelection {
   id?: string;
   index: number;
+}
+
+/** Contextual action bar for the dashboard inspector. */
+export function buildDashboardToolbar(
+  snap: SubagentSnapshot | undefined,
+  width: number,
+  theme: Theme,
+  options?: TakeoverOptions,
+): string {
+  const actions = [
+    "↵ open",
+    snap?.status === "running" ? "x abort" : undefined,
+    snap?.status === "failed" && options?.onRetry ? "r retry" : undefined,
+    options
+      ?.getApprovals?.(snap?.id ?? "")
+      .some((item) => item.status === "pending") && options?.onApprove
+      ? "a approve"
+      : undefined,
+    options
+      ?.getActions?.(snap?.id ?? "")
+      .some((item) => item.status === "pending") && options?.onConfirmAction
+      ? "c confirm"
+      : undefined,
+    snap?.backend === "orca" && options?.onInspectTerminal
+      ? "i inspect"
+      : undefined,
+    options?.onDelete ? "d delete" : undefined,
+  ].filter((action): action is string => Boolean(action));
+  return truncateToWidth(
+    theme.fg(
+      "muted",
+      `ACTIONS  ${actions.join(" · ")}  │  h history · Esc close`,
+    ),
+    Math.max(12, width),
+  );
 }
 
 export function reconcileDashboardSelection(
@@ -653,16 +722,18 @@ class SubagentDashboard implements Component {
     reconcileDashboardSelection(this.selection, subs);
     const rows = this.tui.terminal.rows || 30;
     const help = helpLines(
-      `↑/↓ select · ${configuredKeys(this.keybindings, "tui.select.confirm")} open · h ${this.showHistory ? "active" : "history"} · r retry · a approve/deliver · c confirm action · i inspect · d delete · x abort · ${configuredKeys(this.keybindings, "tui.select.cancel")} close`,
+      `↑/↓ select · ${configuredKeys(this.keybindings, "tui.select.confirm")} open · ${configuredKeys(this.keybindings, "tui.select.cancel")} close`,
       width,
-      rows < 10 ? 2 : undefined,
+      rows < 10 ? 1 : undefined,
     );
     const bodyHeight = Math.max(1, rows - 4 - help.length);
+    // Three vertical borders consume three columns: left, separator, right.
+    const contentWidth = Math.max(3, width - 3);
     const leftWidth = Math.max(
-      10,
-      Math.min(48, Math.floor((width - 2) * 0.38)),
+      1,
+      Math.min(48, Math.floor(contentWidth * 0.38)),
     );
-    const rightWidth = Math.max(10, width - 2 - leftWidth);
+    const rightWidth = Math.max(1, contentWidth - leftWidth);
     const selected = subs[this.selection.index];
     const leftRows = this.renderRows(
       subs,
@@ -687,7 +758,11 @@ class SubagentDashboard implements Component {
         )
       : theme.fg("dim", "no selection");
     const leftContent = [...leftTitle, ...leftRows];
-    const rightContent = [rightTitle, ...detail];
+    const rightContent = [
+      rightTitle,
+      buildDashboardToolbar(selected, rightWidth, theme, this.options),
+      ...detail,
+    ];
     const lines: string[] = [];
     lines.push(
       theme.fg(
@@ -861,25 +936,53 @@ class SubagentDashboard implements Component {
     const theme = this.theme;
     const out: string[] = [];
 
-    const itemHeight = 2;
-    const visibleCount = Math.max(1, Math.floor(height / itemHeight));
+    const entries = groupDashboardByProject(subs).flatMap((group) => [
+      { type: "project" as const, label: group.label },
+      ...group.snapshots.map((snap) => ({ type: "snapshot" as const, snap })),
+    ]);
+    const selectedEntry = entries.findIndex(
+      (entry) =>
+        entry.type === "snapshot" && entry.snap.id === this.selection.id,
+    );
+    const visibleCount = Math.max(1, height);
     let start = 0;
-    if (subs.length > visibleCount) {
+    if (entries.length > visibleCount) {
       start = Math.min(
-        Math.max(0, this.selection.index - Math.floor(visibleCount / 2)),
-        subs.length - visibleCount,
+        Math.max(0, selectedEntry - Math.floor(visibleCount / 2)),
+        entries.length - visibleCount,
       );
     }
-    const visible = subs.slice(start, start + visibleCount);
+    const visible = entries.slice(start, start + visibleCount);
 
-    for (let i = 0; i < visible.length; i++) {
-      const snap = visible[i];
-      const index = start + i;
-      const isSelected = index === this.selection.index;
-      const marker = isSelected ? theme.fg("accent", ">") : " ";
-      const title = isSelected
-        ? theme.fg("accent", snap.title)
-        : theme.fg("text", snap.title);
+    for (const entry of visible) {
+      if (entry.type === "project") {
+        out.push(
+          truncateToWidth(
+            theme.fg("borderAccent", `   ▾ ${entry.label}`),
+            width,
+          ),
+        );
+        continue;
+      }
+      const snap = entry.snap;
+      const index = subs.findIndex((item) => item.id === snap.id);
+      const isSelected = snap.id === this.selection.id;
+      const isLead = snap.meta.role === "lead";
+      const isChild = !isLead && snap.meta.leadAgentId !== undefined;
+      const next = subs[index + 1];
+      const hasSibling =
+        isChild &&
+        next?.meta.role !== "lead" &&
+        next?.meta.leadAgentId === snap.meta.leadAgentId &&
+        projectPath(next) === projectPath(snap);
+      const branch = isLead
+        ? "▪ "
+        : isChild
+          ? hasSibling
+            ? "├─ "
+            : "└─ "
+          : "▪ ";
+      const indent = isLead ? "     " : isChild ? "       " : "     ";
       const badges = [
         snap.report?.needsParentDecision ? theme.fg("warning", "DECIDE") : "",
         snap.errorText?.includes("recovery_required")
@@ -891,26 +994,35 @@ class SubagentDashboard implements Component {
       ]
         .filter(Boolean)
         .join(" ");
-      const isLead = snap.meta.role === "lead";
-      const isChild = !isLead && snap.meta.leadAgentId !== undefined;
-      const branch = isChild ? "└─ " : "";
-      const primary = ` ${marker} ${isChild ? "  " : ""}${branch}${statusGlyph(snap, theme)} ${title}${badges ? ` ${badges}` : ""}`;
-      const owner = isChild ? ` · lead ${snap.meta.leadAgentId}` : "";
-      const secondary = `     ${theme.fg("dim", snap.id)} ${theme.fg("muted", `· ${contextLabel(snap)}${owner}`)}`;
-      out.push(truncateToWidth(primary, width));
-      out.push(truncateToWidth(secondary, width));
+      const status = isLead
+        ? badges
+        : [statusGlyph(snap, theme), badges].filter(Boolean).join(" ");
+      const titleWidth = Math.max(
+        1,
+        width -
+          indent.length -
+          branch.length -
+          visibleWidth(status) -
+          (status ? 1 : 0),
+      );
+      const visibleTitle = truncateToWidth(snap.title, titleWidth);
+      const coloredTitle = isSelected
+        ? theme.fg("accent", visibleTitle)
+        : theme.fg("text", visibleTitle);
+      const row = `${indent}${branch}${coloredTitle}${" ".repeat(Math.max(0, titleWidth - visibleWidth(visibleTitle)))}${status ? ` ${status}` : ""}`;
+      const styled = isSelected
+        ? theme.bg("selectedBg", this.pad(row, width))
+        : this.pad(row, width);
+      out.push(truncateToWidth(styled, width));
     }
 
-    if (start > 0) {
-      out[0] = truncateToWidth(theme.fg("dim", `   ... ${start} more`), width);
-      if (out.length > 1) out[1] = "";
-    }
-    if (start + visibleCount < subs.length) {
-      out[out.length - 2] = truncateToWidth(
-        theme.fg("dim", `   ... ${subs.length - start - visibleCount} more`),
+    if (start > 0)
+      out[0] = truncateToWidth(theme.fg("dim", `… ${start} above`), width);
+    if (start + visibleCount < entries.length) {
+      out[out.length - 1] = truncateToWidth(
+        theme.fg("dim", `… ${entries.length - start - visibleCount} below`),
         width,
       );
-      out[out.length - 1] = "";
     }
     return out;
   }

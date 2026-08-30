@@ -4,11 +4,15 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { ApprovalRequest } from "../src/approval.ts";
 import {
+  buildDashboardToolbar,
   buildSubagentInfoLines,
   formatSubagentError,
   formatSubagentStats,
   formatSubagentStatsLines,
 } from "../src/ui/takeover.ts";
+import { buildAgentWidgetLines } from "../src/ui/agent-widget.ts";
+import { buildCompletionNotification } from "../src/ui/completion-notification.ts";
+import { buildFleetViewLines } from "../src/ui/fleet-view.ts";
 import { buildTranscriptLines } from "../src/ui/transcript.ts";
 import { isSubagentBooting } from "../src/domain.ts";
 import type { SubagentSnapshot } from "../src/domain.ts";
@@ -98,6 +102,33 @@ test("subagent info exposes mode, report, and pending approval without overflowi
   assert.ok(lines.every((line) => visibleWidth(line) <= 32));
 });
 
+test("dashboard toolbar exposes only contextual actions", () => {
+  const approval = {
+    id: "approval:sa-1:commit",
+    jobId: "sa-1",
+    operation: "commit",
+    status: "pending",
+    requestedAt: 1,
+  } as ApprovalRequest;
+  const toolbar = buildDashboardToolbar(
+    { ...snapshot, status: "running" },
+    80,
+    theme,
+    {
+      getApprovals: () => [approval],
+      onApprove: async () => {},
+      onInspectTerminal: async () => {},
+      onDelete: async () => {},
+    },
+  );
+  assert.match(toolbar, /x abort/);
+  assert.match(toolbar, /a approve/);
+  assert.match(toolbar, /d delete/);
+  assert.doesNotMatch(toolbar, /r retry/);
+  assert.doesNotMatch(toolbar, /i inspect/);
+  assert.ok(visibleWidth(toolbar) <= 80);
+});
+
 test("dashboard exposes useful run statistics and boot state", () => {
   assert.equal(
     formatSubagentStats(snapshot),
@@ -118,6 +149,66 @@ test("dashboard exposes useful run statistics and boot state", () => {
     }),
     true,
   );
+});
+
+test("agent widget contains only active subagents and stays width-safe", () => {
+  const lines = buildAgentWidgetLines(
+    [
+      { ...snapshot, status: "running", settledAt: undefined },
+      { ...snapshot, id: "done", status: "done" },
+    ],
+    [],
+    48,
+    theme,
+  );
+  assert.ok(lines.some((line) => line.includes("Build feature")));
+  assert.ok(lines.some((line) => line.startsWith("└─")));
+  assert.ok(lines.every((line) => visibleWidth(line) <= 48));
+  assert.equal(
+    buildAgentWidgetLines([{ ...snapshot, status: "done" }], [], 48, theme)
+      .length,
+    0,
+  );
+});
+
+test("FleetView requires a build lead and includes its children", () => {
+  const lead: SubagentSnapshot = {
+    ...snapshot,
+    id: "lead-job",
+    title: "Coordinate build",
+    meta: {
+      ...snapshot.meta,
+      role: "lead",
+      leadAgentId: "lead-1",
+      mode: "build",
+    },
+    status: "running",
+    settledAt: undefined,
+  };
+  const child: SubagentSnapshot = {
+    ...snapshot,
+    id: "child-job",
+    title: "Add tests",
+    meta: {
+      ...snapshot.meta,
+      role: "worker",
+      leadAgentId: "lead-1",
+      mode: "build",
+    },
+  };
+  assert.equal(buildFleetViewLines([snapshot], [], false, 80, theme).length, 0);
+  const lines = buildFleetViewLines([lead, child], [], true, 80, theme);
+  assert.ok(lines.some((line) => line.includes("lead-build")));
+  assert.ok(lines.some((line) => line.includes("Add tests")));
+  assert.ok(lines.every((line) => visibleWidth(line) <= 80));
+});
+
+test("completion notification includes status, preview, and detail action", () => {
+  const text = buildCompletionNotification(snapshot, theme);
+  assert.match(text, /Build feature completed/);
+  assert.match(text, /A long summary/);
+  assert.match(text, /\/subagents/);
+  assert.ok(text.length < 500);
 });
 
 test("transcript tool results preserve tool names and outcomes", () => {

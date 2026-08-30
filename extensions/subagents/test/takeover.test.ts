@@ -1,9 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  groupDashboardByProject,
   reconcileDashboardSelection,
   type DashboardSelection,
 } from "../src/ui/takeover.ts";
+import type { SubagentSnapshot } from "../src/domain.ts";
+
+const snapshot = (id: string, cwd: string) =>
+  ({
+    id,
+    cwd,
+    meta: { backend: "pi" as const },
+  }) as unknown as SubagentSnapshot;
+
+test("dashboard groups snapshots by repository or source directory", () => {
+  const groups = groupDashboardByProject([
+    snapshot("docs-1", "/workspace/docs"),
+    snapshot("api-1", "/workspace/api"),
+    snapshot("docs-2", "/workspace/docs"),
+  ]);
+  assert.deepEqual(
+    groups.map((group) => ({
+      label: group.label,
+      ids: group.snapshots.map((snap) => snap.id),
+    })),
+    [
+      { label: "docs", ids: ["docs-1", "docs-2"] },
+      { label: "api", ids: ["api-1"] },
+    ],
+  );
+});
 
 test("dashboard selection follows its subagent id and falls back by row", () => {
   const selection: DashboardSelection = { id: "sa-7", index: 6 };

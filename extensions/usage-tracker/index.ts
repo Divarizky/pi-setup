@@ -229,7 +229,7 @@ function createQuotaBarRuntime(
           },
         };
       },
-      { placement: "aboveEditor" },
+      { placement: "belowEditor" },
     );
     widgetMounted = true;
   };
@@ -400,7 +400,7 @@ export default function usageTrackerExtension(pi: ExtensionAPI) {
             0,
             0,
           ),
-        { placement: "aboveEditor" },
+        { placement: "belowEditor" },
       );
       let data: UsageTrackerViewData;
       try {
