@@ -17,6 +17,7 @@ import {
   renderRecap,
   type RecapEntryData,
 } from "./src/ui.ts";
+import { MEMORY_RECAP_CHANNEL } from "../dashboard-state/dashboard-state.ts";
 
 const RECAP_ENTRY_TYPE = "summary-recap";
 const STATUS_KEY = "summaries";
@@ -226,6 +227,16 @@ export default function (pi: ExtensionAPI) {
 
         try {
           pi.appendEntry(RECAP_ENTRY_TYPE, { ...recap, runKey });
+          if (recap.durable) {
+            pi.events.emit(MEMORY_RECAP_CHANNEL, {
+              cwd: ctx.cwd,
+              sessionId: targetSessionId ?? "",
+              runKey,
+              durable: true,
+              recap: recap.recap,
+              next: recap.next,
+            });
+          }
         } catch {
           scheduledRunKeys.delete(runKey);
         }

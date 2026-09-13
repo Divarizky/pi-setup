@@ -15,6 +15,7 @@ export class SummaryError extends Error {
 }
 
 export interface RunRecap {
+  readonly durable: boolean;
   readonly recap: string;
   readonly next: string;
 }
@@ -43,7 +44,8 @@ function parseCandidate(candidate: string) {
     const value: unknown = JSON.parse(candidate);
     if (
       !isRecord(value) ||
-      Object.keys(value).sort().join(",") !== "next,recap" ||
+      Object.keys(value).sort().join(",") !== "durable,next,recap" ||
+      typeof value.durable !== "boolean" ||
       typeof value.recap !== "string" ||
       typeof value.next !== "string"
     ) {
@@ -51,12 +53,13 @@ function parseCandidate(candidate: string) {
     }
 
     const recap = cleanField(value.recap, RECAP_MAX_LENGTH);
+    if (value.durable && !recap) return undefined;
     const next = cleanField(
       value.next.replace(/^next\s*:\s*/i, ""),
       NEXT_MAX_LENGTH,
     );
-    if (!recap || !next) return undefined;
-    return { recap, next } satisfies RunRecap;
+    if (!next) return undefined;
+    return { durable: value.durable, recap, next } satisfies RunRecap;
   } catch {
     return undefined;
   }

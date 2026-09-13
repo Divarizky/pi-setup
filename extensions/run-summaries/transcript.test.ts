@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import {
+  buildFallbackRecap,
   createRunBoundary,
   getRunEntries,
   redactSecrets,
@@ -168,6 +169,29 @@ test("omits bashExecution entries with excludeFromContext=true", () => {
   assert.doesNotMatch(transcript, /private output/);
   assert.match(transcript, /USER SHELL/);
   assert.match(transcript, /git status/);
+});
+
+test("fallback recap is durable when the run changed files", () => {
+  const result = buildFallbackRecap([
+    entry("assistant", {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "call-1",
+          name: "write",
+          arguments: { path: "src/index.ts" },
+        },
+      ],
+      api: "openai-completions",
+      provider: "test",
+      model: "test",
+      usage,
+      stopReason: "toolUse",
+      timestamp: 1,
+    }),
+  ]);
+  assert.equal(result.durable, true);
 });
 
 test("transcript enforces per-result and total byte caps", () => {

@@ -32,8 +32,8 @@ import {
 } from "../dashboard-state/dashboard-state.ts";
 
 /** Protokol footer-chain: ui-customization publish factory footer custom agar extension lain (mis. fleet subagents) bisa membungkusnya, bukan menimpanya. */
-export const CUSTOM_FOOTER_CHAIN_KEY = '__piCustomFooterFactory';
-export const CUSTOM_FOOTER_CHAIN_EVENT = 'ui-customization:footer';
+export const CUSTOM_FOOTER_CHAIN_KEY = "__piCustomFooterFactory";
+export const CUSTOM_FOOTER_CHAIN_EVENT = "ui-customization:footer";
 
 import type { Model } from "@earendil-works/pi-ai";
 
@@ -50,6 +50,7 @@ interface DashboardTui extends RenderableNode {
 
 const RESET = "\x1b[0m";
 const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
 const PALETTE: Rgb[] = [
   [22, 83, 189],
   [48, 129, 247],
@@ -277,21 +278,24 @@ function sessionUsage(ctx: ExtensionContext) {
   let cacheHitRate: number | undefined;
 
   for (const entry of ctx.sessionManager.getEntries()) {
-    const record = entry as { message?: { role?: string; usage?: any }; usage?: any };
+    const record = entry as {
+      message?: { role?: string; usage?: any };
+      usage?: any;
+    };
     const usage = record.message?.usage ?? record.usage;
     if (!usage) continue;
 
     totals.input += typeof usage.input === "number" ? usage.input : 0;
     totals.output += typeof usage.output === "number" ? usage.output : 0;
-    totals.cacheRead += typeof usage.cacheRead === "number" ? usage.cacheRead : 0;
-    totals.cacheWrite += typeof usage.cacheWrite === "number" ? usage.cacheWrite : 0;
+    totals.cacheRead +=
+      typeof usage.cacheRead === "number" ? usage.cacheRead : 0;
+    totals.cacheWrite +=
+      typeof usage.cacheWrite === "number" ? usage.cacheWrite : 0;
     totals.cost += typeof usage.cost?.total === "number" ? usage.cost.total : 0;
 
     if (record.message?.role === "assistant") {
       const promptTokens =
-        (usage.input ?? 0) +
-        (usage.cacheRead ?? 0) +
-        (usage.cacheWrite ?? 0);
+        (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
       if (promptTokens > 0) {
         cacheHitRate = ((usage.cacheRead ?? 0) / promptTokens) * 100;
       }
@@ -346,6 +350,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
   let activeTui: DashboardTui | undefined;
   let themeRemovalTimers: Array<ReturnType<typeof setTimeout>> = [];
   let memoryInsertTimers: Array<ReturnType<typeof setTimeout>> = [];
+  let memoryTheme: Theme | undefined;
   let memoryInserted = false;
   let mcpSnapshot = loadInitialMcpSnapshot();
 
@@ -445,9 +450,17 @@ export default function uiCustomization(pi: ExtensionAPI) {
         const container = new Container();
         container.addChild(new Spacer(1));
         container.addChild(
+          new Text(`${sectionLabelAnsi(child)}[Memory]`, 0, 0),
+        );
+        container.addChild(
           new Text(
-            `${sectionLabelAnsi(child)}Memory:${RESET} ${memoryStatus.ok ? "active" : "missing"} · ${memoryStatus.shortPath}`,
-            1,
+            memoryTheme
+              ? memoryTheme.fg(
+                  "muted",
+                  `  ${memoryStatus.ok ? "Active" : "Missing"}`,
+                )
+              : `${DIM}  ${memoryStatus.ok ? "Active" : "Missing"}${RESET}`,
+            0,
             0,
           ),
         );
@@ -500,6 +513,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
 
     ctx.ui.setHeader((tui, theme) => {
       activeTui = tui;
+      memoryTheme = theme;
       requestRender = () => tui.requestRender();
       scheduleThemeRemoval(tui);
       scheduleMemoryInsert(tui);
@@ -525,7 +539,11 @@ export default function uiCustomization(pi: ExtensionAPI) {
     publishFooterFactory(footerFactory);
 
     function createFooterFactory(ctx: ExtensionContext) {
-      return (tui: DashboardTui, theme: Theme, footerData: ReadonlyFooterDataProvider) => {
+      return (
+        tui: DashboardTui,
+        theme: Theme,
+        footerData: ReadonlyFooterDataProvider,
+      ) => {
         requestRender = () => tui.requestRender();
 
         return {
@@ -544,62 +562,62 @@ export default function uiCustomization(pi: ExtensionAPI) {
       theme: Theme,
     ): string[] {
       const directory = theme.fg("text", formatDirectory(ctx.cwd));
-          const fileLabel = gitInfo.changedFiles === 1 ? "file" : "files";
-          let git = gitInfo.branch
-            ? `${gitInfo.branch} · ${gitInfo.changedFiles} ${fileLabel}`
-            : "";
+      const fileLabel = gitInfo.changedFiles === 1 ? "file" : "files";
+      let git = gitInfo.branch
+        ? `${gitInfo.branch} · ${gitInfo.changedFiles} ${fileLabel}`
+        : "";
 
-          if (gitInfo.pullRequest) {
-            const prLabel = `PR #${gitInfo.pullRequest.number}`;
-            const linkedPr = getCapabilities().hyperlinks
-              ? hyperlink(prLabel, gitInfo.pullRequest.url)
-              : prLabel;
-            git += ` · ${linkedPr}`;
-          }
+      if (gitInfo.pullRequest) {
+        const prLabel = `PR #${gitInfo.pullRequest.number}`;
+        const linkedPr = getCapabilities().hyperlinks
+          ? hyperlink(prLabel, gitInfo.pullRequest.url)
+          : prLabel;
+        git += ` · ${linkedPr}`;
+      }
 
-          const contextUsage = ctx.getContextUsage();
-          const percent = contextUsage?.percent ?? null;
-          const contextWindow = contextUsage?.contextWindow ?? 0;
-          const contextDisplay =
-            percent === null
-              ? `?/${formatTokens(contextWindow)}`
-              : `${percent.toFixed(1)}%/${formatTokens(contextWindow)}`;
-          const { totals, cacheHitRate } = sessionUsage(ctx);
-          const cacheDisplay =
-            totals.cacheRead > 0 && cacheHitRate !== undefined
-              ? `${formatTokens(totals.cacheRead)}/${cacheHitRate.toFixed(1)}%`
-              : "—/—%";
-          const stats = `${contextDisplay} · ${formatCost(totals.cost)} · ${cacheDisplay}`;
-          const model = modelInfo.provider
-            ? `${modelInfo.provider}/${modelInfo.modelId} · ${modelInfo.thinking}`
-            : modelInfo.modelId;
-          const mcp = renderMcpLine(mcpSnapshot, width).replace(
-            /\x1b\[[0-9;]*m/g,
-            "",
+      const contextUsage = ctx.getContextUsage();
+      const percent = contextUsage?.percent ?? null;
+      const contextWindow = contextUsage?.contextWindow ?? 0;
+      const contextDisplay =
+        percent === null
+          ? `?/${formatTokens(contextWindow)}`
+          : `${percent.toFixed(1)}%/${formatTokens(contextWindow)}`;
+      const { totals, cacheHitRate } = sessionUsage(ctx);
+      const cacheDisplay =
+        totals.cacheRead > 0 && cacheHitRate !== undefined
+          ? `${formatTokens(totals.cacheRead)}/${cacheHitRate.toFixed(1)}%`
+          : "—/—%";
+      const stats = `${contextDisplay} · ${formatCost(totals.cost)} · ${cacheDisplay}`;
+      const model = modelInfo.provider
+        ? `${modelInfo.provider}/${modelInfo.modelId} · ${modelInfo.thinking}`
+        : modelInfo.modelId;
+      const mcp = renderMcpLine(mcpSnapshot, width).replace(
+        /\x1b\[[0-9;]*m/g,
+        "",
+      );
+      const external = mcp || "MCP: 0/0";
+
+      const lines = [
+        columns(directory, theme.fg("muted", git), width),
+        columns(theme.fg("muted", stats), theme.fg("muted", model), width),
+        truncateToWidth(
+          theme.fg("dim", external),
+          width,
+          theme.fg("dim", "..."),
+        ),
+      ];
+
+      // Keep dynamic extension statuses such as subagent activity and summarizing.
+      const statuses = footerData.getExtensionStatuses();
+      for (const [, text] of statuses) {
+        for (const statusLine of text.split("\n")) {
+          lines.push(
+            truncateToWidth(statusLine, width, theme.fg("dim", "...")),
           );
-          const external = mcp || "MCP: 0/0";
+        }
+      }
 
-          const lines = [
-            columns(directory, theme.fg("muted", git), width),
-            columns(theme.fg("muted", stats), theme.fg("muted", model), width),
-            truncateToWidth(
-              theme.fg("dim", external),
-              width,
-              theme.fg("dim", "..."),
-            ),
-          ];
-
-          // Keep dynamic extension statuses such as subagent activity and summarizing.
-          const statuses = footerData.getExtensionStatuses();
-          for (const [, text] of statuses) {
-            for (const statusLine of text.split("\n")) {
-              lines.push(
-                truncateToWidth(statusLine, width, theme.fg("dim", "...")),
-              );
-            }
-          }
-
-          return lines;
+      return lines;
     }
 
     function publishFooterFactory(factory: unknown) {

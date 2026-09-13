@@ -11,6 +11,7 @@ const dummyTheme = {
 test("renderRecap produces valid Card box and renders without crashing", () => {
   const recap = renderRecap(
     {
+      durable: true,
       recap: "Completed task safely",
       next: "No further action required.",
       provider: "openai-codex",

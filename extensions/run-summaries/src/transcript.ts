@@ -261,16 +261,20 @@ export function buildFallbackRecap(entries: readonly SessionEntry[]) {
   }
 
   const tools = [...new Set(toolNames)];
+  const durable = toolNames.some((name) =>
+    ["write", "edit"].includes(name),
+  );
   const activity =
     tools.length > 0
-      ? ` The run used ${toolNames.length} tool call${toolNames.length === 1 ? "" : "s"} across ${tools.join(", ")}.`
+      ? ` Run ini memakai ${toolNames.length} tool${toolNames.length === 1 ? "" : "s"}: ${tools.join(", ")}.`
       : "";
   const result = finalAssistantText
-    ? ` ${capped(finalAssistantText.replace(/\s+/g, " "), 700, "final response capped")}`
+    ? ` ${capped(finalAssistantText.replace(/\s+/g, " "), 700, "respons akhir dipotong")}`
     : "";
 
   return {
-    recap: `The main-agent run completed.${activity}${result}`.trim(),
-    next: "Review the completed work above and continue if anything remains.",
+    durable,
+    recap: `Run agent selesai.${activity}${result}`.trim(),
+    next: "Tinjau hasil kerja dan lanjutkan jika masih ada yang tersisa.",
   };
 }

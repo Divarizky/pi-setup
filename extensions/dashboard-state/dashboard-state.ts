@@ -1,6 +1,7 @@
 export const MODEL_INFO_CHANNEL = "dashboard:model-info";
 export const GIT_INFO_CHANNEL = "dashboard:git-info";
 export const MEMORY_STATUS_CHANNEL = "dashboard:memory-status";
+export const MEMORY_RECAP_CHANNEL = "memory:run-recap";
 export const REFRESH_CHANNEL = "dashboard:refresh";
 
 export interface ModelInfoState {
