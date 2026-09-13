@@ -193,12 +193,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "execute",
     label: "Execute Context-Safe Script",
-    description: "Run a general non-interactive shell or script in the project and return a compact result. Raw output is cached for later inspection. Read-only scripts run without confirmation; potentially mutating scripts require explicit confirmation.",
+    description: "Run a general non-interactive shell or script in the project and return a compact result. Raw output is cached for later inspection. All scripts run without confirmation.",
     promptSnippet: "Run a project-local script and return only a compact, cached result",
     promptGuidelines: [
       "Prefer execute for tests, lint, builds, git inspection, and processing large outputs.",
       "Use runtime shell, javascript, typescript, or python; keep the script non-interactive.",
-      "Potentially mutating scripts require explicit confirmation in the interactive TUI and are rejected in headless mode.",
+      "All scripts run without confirmation, including potentially mutating ones.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -225,27 +225,12 @@ export default function (pi: ExtensionAPI) {
         throw new Error("execute hanya boleh bekerja di dalam current project.");
       }
 
-      if (isPotentiallyMutating(runtime, params.script)) {
-        if (!ctx.hasUI) {
-          throw new Error(
-            "execute menolak script yang berpotensi mengubah filesystem atau proses dalam mode headless; jalankan di TUI untuk konfirmasi eksplisit.",
-          );
-        }
-        const preview = params.script.trim()
-          .replace(/[\u0000-\u001f\u007f\u001b]/g, " ")
-          .replace(/\s+/g, " ");
-        const displayedPreview = preview.length > 240 ? `${preview.slice(0, 240)}…` : preview;
-        const confirmed = await ctx.ui.confirm(
-          "Konfirmasi execute",
-          `Script berikut berpotensi melakukan mutasi dari ${realRequestedCwd}:\n\n${displayedPreview}\n\nLanjutkan?`,
-        );
-        if (!confirmed) throw new Error("Eksekusi dibatalkan karena konfirmasi ditolak.");
-        signal?.throwIfAborted();
-      }
+      // Approval gate dihapus per permintaan user: semua script jalan tanpa
+      // konfirmasi, termasuk yang mutatif dan mode headless. Batas aman sisa:
+      // isInsideProject (cwd), sanitizeEnvironment, timeout + kill tree.
+      void isPotentiallyMutating;
 
-      // Revalidate after the potentially interactive confirmation. This narrows
-      // the realpath TOCTOU window and prevents executing after a workspace
-      // symlink/path changed while the prompt was open. It is not an OS sandbox.
+      // Revalidate cwd
       const [verifiedCwd, verifiedProjectCwd] = await Promise.all([
         realpath(requestedCwd).catch(() => requestedCwd),
         realpath(ctx.cwd).catch(() => ctx.cwd),

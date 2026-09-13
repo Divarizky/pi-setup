@@ -30,6 +30,8 @@ test("sandbox cwd: menolak escape via .. dan symlink ke luar project", async (t)
   try {
     assert.equal(await isInsideProjectResolved(root, resolve(root, "..")), false);
     assert.equal(await isInsideProjectResolved(root, linkPath), false);
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(root, "sub"), { recursive: true });
     assert.equal(await isInsideProjectResolved(root, join(root, "sub")), true);
     // file di dalam project dgn realpath yang tetap inside
     await writeFile(join(root, "a.txt"), "hi", "utf8");

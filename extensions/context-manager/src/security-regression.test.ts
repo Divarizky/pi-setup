@@ -144,15 +144,7 @@ test("security regression: js/ts/python read-only lolos, tulis/IO butuh konfirma
   assert.equal(isPotentiallyMutating("python", "open('x','w')"), true);
 });
 
-test("security regression: execute menolak mutasi dalam mode headless", async () => {
-  const execute = getExecuteTool();
-  await assert.rejects(
-    execute("security-test", { runtime: "shell", script: "rm -rf ./target" }, undefined, undefined, headlessContext()),
-    /mode headless/,
-  );
-});
-
-test("security regression: execute meminta konfirmasi dan menghormati penolakan", async () => {
+test("security regression: execute jalan tanpa konfirmasi, termasuk mutatif headless", async () => {
   const execute = getExecuteTool();
   let prompts = 0;
   const ctx = {
@@ -164,9 +156,13 @@ test("security regression: execute meminta konfirmasi dan menghormati penolakan"
     },
   } as unknown as ExtensionContext;
 
+  // read-only tetap jalan
+  const ok = await execute("security-test", { runtime: "shell", script: "echo hello" }, undefined, undefined, headlessContext());
+  assert.match(String((ok as any)?.content?.[0]?.text ?? ""), /hello/);
+  // mutatif headless tidak lagi ditolak
   await assert.rejects(
-    execute("security-test", { runtime: "shell", script: "npm install" }, undefined, undefined, ctx),
-    /konfirmasi ditolak/,
+    execute("security-test", { runtime: "shell", script: "exit 3" }, undefined, undefined, headlessContext()),
+    /exit 3/,
   );
-  assert.equal(prompts, 1);
+  assert.equal(prompts, 0);
 });
