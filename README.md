@@ -30,6 +30,11 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `to-requirements` — Synthesize approved requirements into SRS and feature work cards
 - `to-tasks` — Break approved feature work into vertical-slice tasks
 
+**Themes (3)**
+- `catppuccin-mocha` — tema aktif saat ini (lihat `settings.json`)
+- `github-dark-default` — varian gelap GitHub
+- `urple` — varian ungu gelap
+
 `dashboard-state` adalah modul internal yang dipakai bersama oleh `git-info`, `ui-customization`, dan `usage-tracker`; bukan extension user-facing terpisah.
 
 Setup aktif juga memakai skill eksternal dari `.agents/skills` (`computer-use`, `find-skills`, `orca-cli`, dan `orchestration`). Skill eksternal tersebut sengaja tidak divendor ke repo ini.
@@ -51,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.sh 
 bash /tmp/pi-install.sh
 ```
 
-Installer menempatkan resource runtime Pi (`extensions/`, `skills/`, `prompts/`, dan `node_modules/`) ke root agent Pi, tanpa metadata Git atau file setup repository. State pribadi tetap dipertahankan. Skill eksternal dari `.agents/skills` dan package Pi tambahan dikelola terpisah. Untuk direktori lama, gunakan mode repair di [SETUP.md](SETUP.md).
+Installer menempatkan resource runtime Pi (`extensions/`, `skills/`, `prompts/`, `themes/`, dan `node_modules/`) ke root agent Pi, tanpa metadata Git atau file setup repository. State pribadi tetap dipertahankan. Skill eksternal dari `.agents/skills` dan package Pi tambahan dikelola terpisah. Untuk direktori lama, gunakan mode repair di [SETUP.md](SETUP.md).
 
 ### Instal manual
 

@@ -533,11 +533,23 @@ async function showStatus(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promi
     const top = `╭──${title}${"─".repeat(Math.max(0, innerWidth - title.length - 2))}╮`;
     const bottom = `╰${"─".repeat(innerWidth)}╯`;
 
-    ctx.ui.notify([
+    const statusLines = [
       top,
       ...rawLines.map((l) => `│ ${l.padEnd(maxContentWidth)} │`),
       bottom,
-    ].join("\n"), "warning");
+    ];
+
+    // Pi menambahkan prefix "Warning: " hanya pada baris pertama.
+    // Indent baris lanjutan agar bingkai tetap sejajar dengan prefix tersebut.
+    const warningPrefix = "Warning: ";
+    ctx.ui.notify(
+      statusLines
+        .map((line, index) =>
+          index === 0 ? line : `${" ".repeat(warningPrefix.length)}${line}`,
+        )
+        .join("\n"),
+      "warning",
+    );
     return;
   }
 

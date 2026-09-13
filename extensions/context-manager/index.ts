@@ -649,7 +649,7 @@ export default function (pi: ExtensionAPI) {
         if (budgetTokens !== null && keptTokens > budgetTokens) {
           badge = `\n⚠ Budget output tool ${config.contextBudgetPercent}% (~${budgetTokens.toLocaleString("id-ID")} token) terlampaui: kept ~${keptTokens.toLocaleString("id-ID")} token (protected ~${protectedTokens.toLocaleString("id-ID")}).`;
         }
-        if (lastPrunePrefixDirty) badge += "\n↻ Prefix berubah akibat pruning — hemat teks ≠ hemat biaya (cache-hit bisa turun).";
+        if (lastPrunePrefixDirty) badge += "\n↻ Prefix berubah setelah pruning. Teks lebih sedikit belum tentu lebih murah karena cache hit dapat berkurang.";
       } catch {}
       ctx.ui.notify(`${formatContextStats(stats)}\n${liveUsage}\n${formatConfig(config)}${badge}`, badge ? "warning" : "info");
       lastPrunePrefixDirty = false;
