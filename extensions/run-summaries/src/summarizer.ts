@@ -1,16 +1,18 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { completeSimple } from "@earendil-works/pi-ai/compat";
-import { Data, Effect } from "effect";
 import type { SummaryConfig } from "./config.ts";
 import { buildSummaryPrompt, SUMMARY_SYSTEM_PROMPT } from "./prompt.ts";
 
 const RECAP_MAX_LENGTH = 2_400;
 const NEXT_MAX_LENGTH = 400;
 
-class SummaryError extends Data.TaggedError("SummaryError")<{
-  readonly message: string;
+export class SummaryError extends Error {
   readonly cause?: unknown;
-}> {}
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.name = "SummaryError";
+    this.cause = cause;
+  }
+}
 
 export interface RunRecap {
   readonly recap: string;
@@ -76,9 +78,7 @@ export function parseRecapResponse(text: string) {
     const parsed = parseCandidate(candidate);
     if (parsed) return parsed;
   }
-  throw new SummaryError({
-    message: "The summary model did not return valid recap JSON.",
-  });
+  throw new SummaryError("The summary model did not return valid recap JSON.");
 }
 
 export function reasoningOptions(reasoning: SummaryConfig["reasoning"]) {
@@ -86,77 +86,85 @@ export function reasoningOptions(reasoning: SummaryConfig["reasoning"]) {
 }
 
 function assistantText(
-  content: Awaited<ReturnType<typeof completeSimple>>["content"],
+  content: ReadonlyArray<unknown>,
 ) {
   return content
-    .filter((block) => block.type === "text")
+    .filter(
+      (block): block is { type: "text"; text: string } =>
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        (block as any).type === "text" &&
+        typeof (block as any).text === "string",
+    )
     .map((block) => block.text)
     .join("\n");
 }
 
-export function summarizeRun(options: {
+export async function summarizeRun(options: {
   readonly modelRegistry: ModelRegistry;
   readonly config: SummaryConfig;
   readonly transcript: string;
-  readonly signal: AbortSignal;
+  readonly signal?: AbortSignal;
 }) {
-  const completion = Effect.tryPromise({
-    try: async (effectSignal) => {
-      const model = options.modelRegistry.find(
-        options.config.provider,
-        options.config.model,
+  const timeoutSignal = AbortSignal.timeout(35_000);
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, timeoutSignal])
+    : timeoutSignal;
+
+  const model = options.modelRegistry.find(
+    options.config.provider,
+    options.config.model,
+  );
+  if (!model) {
+    throw new SummaryError(
+      `Summary model is unavailable: ${options.config.provider}/${options.config.model}`,
+    );
+  }
+
+  const auth = await options.modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok) throw new SummaryError(auth.error);
+
+  const effectiveModel = auth.baseUrl
+    ? { ...model, baseUrl: auth.baseUrl }
+    : model;
+
+  try {
+    const response = await options.modelRegistry.complete(
+      effectiveModel,
+      {
+        systemPrompt: SUMMARY_SYSTEM_PROMPT,
+        messages: [
+          {
+            role: "user",
+            content: buildSummaryPrompt(options.transcript),
+            timestamp: Date.now(),
+          },
+        ],
+      },
+      {
+        apiKey: auth.apiKey,
+        env: auth.env,
+        headers: auth.headers,
+        maxTokens: 1_000,
+        maxRetries: 1,
+        signal,
+        timeoutMs: 30_000,
+        ...reasoningOptions(options.config.reasoning),
+      },
+    );
+
+    if (response.stopReason === "error" || response.stopReason === "aborted") {
+      throw new SummaryError(
+        response.errorMessage ?? "Summary model request failed.",
       );
-      if (!model) {
-        throw new SummaryError({
-          message: `Summary model is unavailable: ${options.config.provider}/${options.config.model}`,
-        });
-      }
-
-      const auth = await options.modelRegistry.getApiKeyAndHeaders(model);
-      if (!auth.ok) throw new SummaryError({ message: auth.error });
-
-      const response = await completeSimple(
-        model,
-        {
-          systemPrompt: SUMMARY_SYSTEM_PROMPT,
-          messages: [
-            {
-              role: "user",
-              content: buildSummaryPrompt(options.transcript),
-              timestamp: Date.now(),
-            },
-          ],
-        },
-        {
-          apiKey: auth.apiKey,
-          env: auth.env,
-          headers: auth.headers,
-          maxTokens: 1_000,
-          maxRetries: 1,
-          signal: effectSignal,
-          timeoutMs: 30_000,
-          ...reasoningOptions(options.config.reasoning),
-        },
-      );
-
-      if (
-        response.stopReason === "error" ||
-        response.stopReason === "aborted"
-      ) {
-        throw new SummaryError({
-          message: response.errorMessage ?? "Summary model request failed.",
-        });
-      }
-      return parseRecapResponse(assistantText(response.content));
-    },
-    catch: (cause) =>
-      cause instanceof SummaryError
-        ? cause
-        : new SummaryError({
-            message: cause instanceof Error ? cause.message : String(cause),
-            cause,
-          }),
-  }).pipe(Effect.timeout("35 seconds"));
-
-  return Effect.runPromise(completion, { signal: options.signal });
+    }
+    return parseRecapResponse(assistantText(response.content));
+  } catch (error) {
+    if (error instanceof SummaryError) throw error;
+    throw new SummaryError(
+      error instanceof Error ? error.message : String(error),
+      error,
+    );
+  }
 }

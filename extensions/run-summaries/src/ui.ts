@@ -96,14 +96,17 @@ function padText(text: string, width: number): string {
 }
 
 function borderSegment(theme: Theme, width: number, title: string): string {
+  const safeWidth = Math.max(0, width);
+  if (safeWidth <= 0) return "";
   const label = title
-    ? ` ${truncateToWidth(title, Math.max(0, width - 3))} `
+    ? ` ${truncateToWidth(title, Math.max(0, safeWidth - 3))} `
     : "";
   const labelWidth = visibleWidth(label);
+  const remaining = Math.max(0, safeWidth - 1 - labelWidth);
   return (
     theme.fg("border", "─") +
     (label ? theme.fg("text", label) : "") +
-    theme.fg("border", "─".repeat(Math.max(0, width - 1 - labelWidth)))
+    theme.fg("border", "─".repeat(remaining))
   );
 }
 
@@ -136,6 +139,10 @@ class ModelPickerDashboard {
 
   handleInput(data: string): void {
     const n = this.models.length;
+    if (n === 0) {
+      this.done(undefined);
+      return;
+    }
     if (this.keybindings.matches(data, "tui.select.cancel")) {
       this.done(undefined);
       return;
@@ -159,7 +166,8 @@ class ModelPickerDashboard {
   render(width: number): string[] {
     const theme = this.theme;
     const n = this.models.length;
-    const innerWidth = width - 2;
+    const safeWidth = Math.max(10, width);
+    const innerWidth = Math.max(1, safeWidth - 2);
     const rows = this.tui.terminal.rows || 30;
     const bodyHeight = Math.min(n, Math.max(4, rows - 7));
 
@@ -169,12 +177,12 @@ class ModelPickerDashboard {
     const headerRight = theme.fg("muted", `${n} model${n === 1 ? "" : "s"}`);
     const headerPad = Math.max(
       1,
-      width - visibleWidth(headerLeft) - visibleWidth(headerRight) - 4,
+      safeWidth - visibleWidth(headerLeft) - visibleWidth(headerRight) - 4,
     );
     lines.push(
       truncateToWidth(
         `  ${headerLeft}${" ".repeat(headerPad)}${headerRight}  `,
-        width,
+        safeWidth,
       ),
     );
 
@@ -210,13 +218,8 @@ class ModelPickerDashboard {
       const rightWidth = visibleWidth(right);
       const leftMax = Math.max(0, innerWidth - rightWidth - 2);
       const leftTruncated = truncateToWidth(left, leftMax);
-      const gap = Math.max(
-        2,
-        innerWidth - visibleWidth(leftTruncated) - rightWidth,
-      );
-      body.push(
-        truncateToWidth(leftTruncated + " ".repeat(gap) + right, innerWidth),
-      );
+      const gap = Math.max(2, innerWidth - visibleWidth(leftTruncated) - rightWidth);
+      body.push(truncateToWidth(leftTruncated + " ".repeat(gap) + right, innerWidth));
     }
 
     if (start > 0) {
@@ -248,7 +251,7 @@ class ModelPickerDashboard {
           "dim",
           `  ${configuredKeys(this.keybindings, "tui.select.up")}/${configuredKeys(this.keybindings, "tui.select.down")}/jk select · ${configuredKeys(this.keybindings, "tui.select.confirm")} choose · ${configuredKeys(this.keybindings, "tui.select.cancel")} close`,
         ),
-        width,
+        safeWidth,
       ),
     );
 
@@ -262,9 +265,19 @@ export async function openModelPicker(
   ctx: ExtensionCommandContext,
   config: SummaryConfig,
 ) {
-  const models = [...ctx.modelRegistry.getAvailable()].sort((a, b) =>
-    `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`),
-  );
+  const scoped = ctx.scopedModels?.map((entry) => entry.model) ?? [];
+  const rawList = scoped.length > 0 ? scoped : [...ctx.modelRegistry.getAvailable()];
+  const seen = new Set<string>();
+  const models = rawList
+    .filter((model) => {
+      const key = `${model.provider}/${model.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) =>
+      `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`),
+    );
   if (models.length === 0) {
     ctx.ui.notify(
       "No configured models are available for run recaps.",
@@ -279,15 +292,7 @@ export async function openModelPicker(
   const index = currentIndex === -1 ? 0 : currentIndex;
   return ctx.ui.custom<Model<Api> | undefined>(
     (tui, theme, keybindings, done) =>
-      new ModelPickerDashboard(
-        tui,
-        theme,
-        keybindings,
-        models,
-        index,
-        currentKey,
-        done,
-      ),
+      new ModelPickerDashboard(tui, theme, keybindings, models, index, currentKey, done),
     {
       overlay: true,
       overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%" },
@@ -316,11 +321,16 @@ export function openReasoningPicker(
       const list = selector.getSelectList();
       return {
         render: (width: number) => {
-          const inner = Math.max(1, width - 4);
-          const title = ` reasoning for ${model.provider}/${model.id} `;
-          const titleW = visibleWidth(title);
-          const dashLen = Math.max(0, width - titleW - 4);
-          const top = theme.fg("border", `╭─${title}${"─".repeat(dashLen)}╮`);
+          const safeWidth = Math.max(10, width);
+          const inner = Math.max(1, safeWidth - 4);
+          const titleText = truncateToWidth(
+            ` reasoning for ${model.provider}/${model.id} `,
+            Math.max(1, safeWidth - 6),
+          );
+          const titleW = visibleWidth(titleText);
+          const dashLen = Math.max(0, safeWidth - titleW - 4);
+          const top =
+            theme.fg("border", `╭─${titleText}${"─".repeat(dashLen)}╮`);
           const body = selector.render(inner);
           const rows = body.map(
             (line) =>
@@ -328,7 +338,8 @@ export function openReasoningPicker(
               padText(line, inner) +
               theme.fg("border", " │"),
           );
-          const bottom = theme.fg("border", `╰${"─".repeat(width - 2)}╯`);
+          const bottom =
+            theme.fg("border", `╰${"─".repeat(Math.max(0, safeWidth - 2))}╯`);
           const hint = theme.fg(
             "dim",
             `  ↑↓/jk select · ${configuredKeys(keybindings, "tui.select.confirm")} choose · ${configuredKeys(keybindings, "tui.select.cancel")} close`,

@@ -7,8 +7,7 @@ export interface OutputSummary {
   omittedLines: number;
 }
 
-const ERROR_PATTERN =
-  /\b(error|exception|failed|failure|fatal|panic|traceback)\b/i;
+const ERROR_PATTERN = /\b(error|exception|failed|failure|fatal|panic|traceback)\b/i;
 const WARNING_PATTERN = /\b(warn(?:ing)?|deprecated|retry|timeout)\b/i;
 
 function compactLine(line: string, maxChars: number): string {
@@ -17,29 +16,46 @@ function compactLine(line: string, maxChars: number): string {
     ? normalized
     : `${normalized.slice(0, maxChars - 1)}…`;
 }
+function windowAroundTerms(line: string, terms: string[], windowRadius = 150, maxChars = 300): string {
+  const lower = line.toLowerCase();
+  let firstHit = -1;
+  for (const t of terms) { const p = lower.indexOf(t); if (p !== -1 && (firstHit === -1 || p < firstHit)) firstHit = p; }
+  if (firstHit === -1) return compactLine(line, maxChars);
+  // pertahankan indent leading
+  const indent = line.match(/^\s*/)?.[0] ?? "";
+  const start = Math.max(indent.length, firstHit - windowRadius);
+  const end = Math.min(line.length, firstHit + windowRadius + (terms[0]?.length ?? 0));
+  let slice = line.slice(start, end);
+  if (start > indent.length) slice = `…${slice}`;
+  if (end < line.length) slice = `${slice}…`;
+  // gabung indent + slice, lalu batasi total
+  const out = indent + slice.slice(indent.length > start ? 0 : 0);
+  // compactLine sudah trim, tapi kita ingin pertahankan indent satu level: pakai slice langsung
+  if (out.length <= maxChars) return out;
+  return `${out.slice(0, maxChars - 1)}…`;
+}
 
-function uniqueMatches(
-  lines: string[],
-  pattern: RegExp,
-  limit: number,
-): string[] {
-  const matches: string[] = [];
+function normalizeForDedup(line: string): string {
+  return line.trim().toLowerCase().replaceAll(/\d+/g, "#").replaceAll(/\s+/g, " ");
+}
+function uniqueMatches(lines: string[], pattern: RegExp, limit: number): string[] {
+  const seen = new Map<string, { text: string; count: number }>();
   for (const line of lines) {
-    if (pattern.test(line)) {
-      matches.push(compactLine(line, 240));
-      if (matches.length === limit) break;
-    }
+    if (!pattern.test(line)) continue;
+    const compacted = compactLine(line, 240);
+    const key = normalizeForDedup(compacted);
+    const prev = seen.get(key);
+    if (prev) prev.count += 1;
+    else seen.set(key, { text: compacted, count: 1 });
+    if (seen.size >= limit) break;
   }
-  return matches;
+  return [...seen.values()].map(v => v.count > 1 ? `${v.text} (×${v.count})` : v.text);
 }
 
 export function summarizeOutput(text: string, previewSize = 3): OutputSummary {
   const lines = text.split(/\r?\n/);
   const nonEmpty = lines.filter((line) => line.trim().length > 0);
-  const preview = [
-    ...nonEmpty.slice(0, previewSize),
-    ...nonEmpty.slice(-previewSize),
-  ]
+  const preview = [...nonEmpty.slice(0, previewSize), ...nonEmpty.slice(-previewSize)]
     .filter((line, index, values) => values.indexOf(line) === index)
     .map((line) => compactLine(line, 240));
 
@@ -64,28 +80,19 @@ export function formatSummary(
   ];
 
   if (summary.errorLines.length > 0) {
-    lines.push(
-      "Error penting:",
-      ...summary.errorLines.map((line) => `- ${line}`),
-    );
+    lines.push("Error penting:", ...summary.errorLines.map((line) => `- ${line}`));
   }
   if (summary.warningLines.length > 0) {
-    lines.push(
-      "Peringatan:",
-      ...summary.warningLines.map((line) => `- ${line}`),
-    );
+    lines.push("Peringatan:", ...summary.warningLines.map((line) => `- ${line}`));
   }
   if (summary.preview.length > 0) {
     lines.push("Preview:", ...summary.preview.map((line) => `- ${line}`));
   }
   if (summary.omittedLines > 0) {
-    lines.push(
-      `${summary.omittedLines} baris lain tidak dimasukkan ke context.`,
-    );
+    lines.push(`${summary.omittedLines} baris lain tidak dimasukkan ke context.`);
   }
   lines.push(
-    retrievalInstruction ??
-      "Gunakan ctx_inspect dengan path dan query untuk mengambil snippet yang relevan; untuk command, jalankan ulang dengan filter yang lebih sempit.",
+    retrievalInstruction ?? "Gunakan inspect dengan path dan query untuk mengambil snippet yang relevan; untuk command, jalankan ulang dengan filter yang lebih sempit.",
   );
   return lines.join("\n");
 }
@@ -116,9 +123,13 @@ export function findSnippets(
 
     const start = Math.max(0, index - before);
     const end = Math.min(lines.length, index + after + 1);
-    const window = lines
-      .slice(start, end)
-      .map((line, offset) => `${start + offset + 1}: ${compactLine(line, 300)}`)
+    const window = lines.slice(start, end)
+      .map((line, offset) => {
+        const ln = start + offset + 1;
+        const isHit = (start + offset) === index;
+        const rendered = isHit ? windowAroundTerms(line, terms, 150, 300) : compactLine(line, 300);
+        return `${ln}: ${rendered}`;
+      })
       .join("\n");
     snippets.push(window);
     if (snippets.length === limit) break;
@@ -126,16 +137,11 @@ export function findSnippets(
   return snippets;
 }
 
-export function formatLineRange(
-  text: string,
-  start: number,
-  end: number,
-): string {
+export function formatLineRange(text: string, start: number, end: number): string {
   const lines = text.split(/\r?\n/);
   const first = Math.max(1, Math.min(start, lines.length));
   const last = Math.max(first, Math.min(end, lines.length));
-  return lines
-    .slice(first - 1, last)
+  return lines.slice(first - 1, last)
     .map((line, offset) => `${first + offset}: ${compactLine(line, 300)}`)
     .join("\n");
 }

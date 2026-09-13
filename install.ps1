@@ -31,7 +31,7 @@ $CleanItems = @(
 # State Pi dan tools lokal tidak pernah diganti.
 $StateItems = @(
   "auth.json", "settings.json", "trust.json", "models.json", "models-store.json", "usage-tracker.json",
-  "mcp.json", "mcp-cache.json", "sessions", "bin", "npm"
+  "mcp.json", "mcp-cache.json", "run-summaries.config.json", ".pi", "sessions", "bin", "npm"
 )
 
 try {

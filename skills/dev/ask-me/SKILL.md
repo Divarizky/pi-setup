@@ -1,6 +1,6 @@
 ---
 name: ask-me
-description: 'Jalur utama + grill. Auto-trigger saat user bilang: "gimana caranya", "mau nambah X", "bantu aku Y", "lanjutin kerjaan", atau intent ambigu. Route ke skill tepat berdasarkan Step 1 table. Untuk fitur baru, grill 3-5 pertanyaan dulu sebelum routing. Jangan trigger kalau user sudah sebut skill eksplisit.'
+description: "Jalur utama + grill. Auto-trigger saat user bilang: \"gimana caranya\", \"mau nambah X\", \"bantu aku Y\", \"lanjutin kerjaan\", atau intent ambigu. Route ke skill tepat berdasarkan Step 1 table. Untuk fitur baru, grill 3-5 pertanyaan dulu sebelum routing. Jangan trigger kalau user sudah sebut skill eksplisit."
 model-invocation: enabled
 ---
 
@@ -23,7 +23,6 @@ Baca `../WORKFLOW.md` hanya ketika jawaban mengarah ke pekerjaan coding/project.
 General Grill tidak dibatasi pada project, coding, atau domain tertentu.
 
 ### Off-Ramps
-
 - Bug → `bug-diagnosis`
 - Merge conflict → `merge-conflict`
 - Arsitektur → `improve-architecture` (catat, jangan perbaiki sekarang)
@@ -40,25 +39,25 @@ Urutan prioritas:
 3. User menyebut tujuan coding/project dengan jelas → **Dev Router**.
 4. Intent ambigu atau cocok dengan lebih dari satu arah → **General Grill** dulu.
 
-| Sinyal                                                                      | Jalur                                                |
-| --------------------------------------------------------------------------- | ---------------------------------------------------- |
-| "tambah fitur baru", "buat halaman baru", "mau bikin X" — no breakdown      | → **Step 2 (Grill)**                                 |
-| "kerjakan task X", "lanjut task berikutnya", "implement task dari tasks.md" | `implement`                                          |
-| "error", "bug", "crash", "gagal", "lambat", stack trace                     | `bug-diagnosis`                                      |
-| "resolve conflict", "ada conflict", "CONFLICT", "konflik merge"             | `merge-conflict`                                     |
-| "buat requirements", "buat PRD", "dokumentasikan fitur ini", "tulis spec"   | `to-requirements`                                    |
-| "pecah jadi task", "breakdown plan ini", "buat daftar task"                 | `to-tasks`                                           |
-| "refactor", "kode susah dibaca", "modul berantakan" (same project)          | `improve-architecture`                               |
-| "migrasi", "pindah project lama", "port ke project baru"                    | `setup-workflow` → `project-migration`               |
-| "review perubahan ini", "cek diff sejak X", "vet sebelum commit"            | `code-review`                                        |
-| "handoff", "compact sesi ini", "lanjut di sesi lain"                        | `handoff`                                            |
-| "gua lagi di mana", "status", "lagi ngerjain apa"                           | `status`                                             |
-| "coba explore", "test ide", "spike", "prototype", "ragu desain"             | `prototype` (tanya: logic/state atau visual/layout?) |
-| Ambigu, >1 skill match                                                      | **General Grill** dulu                               |
-| "grill dalam", "analisis mendalam", "bedah ide ini"                         | **Grill Dalam** — tanyakan topik/ide jika belum ada  |
-| User memanggil `ask-me` secara eksplisit                                    | **General Grill** — tanyakan ide kasar dulu          |
-| User butuh persistence lintas sesi                                          | Tawarkan `setup-workflow`                            |
-| Migrasi project                                                             | `setup-workflow` → `project-migration`               |
+| Sinyal | Jalur |
+|--------|-------|
+| "tambah fitur baru", "buat halaman baru", "mau bikin X" — no breakdown | → **Step 2 (Grill)** |
+| "kerjakan task X", "lanjut task berikutnya", "implement task dari work card" | `implement` |
+| "error", "bug", "crash", "gagal", "lambat", stack trace | `bug-diagnosis` |
+| "resolve conflict", "ada conflict", "CONFLICT", "konflik merge" | `merge-conflict` |
+| "buat requirements", "buat PRD", "dokumentasikan fitur ini", "tulis spec" | `to-requirements` |
+| "pecah jadi task", "breakdown plan ini", "buat daftar task" | `to-tasks` |
+| "refactor", "kode susah dibaca", "modul berantakan" (same project) | `improve-architecture` |
+| "migrasi", "pindah project lama", "port ke project baru" | `setup-workflow` → `project-migration` |
+| "review perubahan ini", "cek diff sejak X", "vet sebelum commit" | `code-review` |
+| "handoff", "compact sesi ini", "lanjut di sesi lain" | `handoff` |
+| "gua lagi di mana", "status", "lagi ngerjain apa" | `status` |
+| "coba explore", "test ide", "spike", "prototype", "ragu desain" | `prototype` (tanya: logic/state atau visual/layout?) |
+| Ambigu, >1 skill match | **General Grill** dulu |
+| "grill dalam", "analisis mendalam", "bedah ide ini" | **Grill Dalam** — tanyakan topik/ide jika belum ada |
+| User memanggil `ask-me` secara eksplisit | **General Grill** — tanyakan ide kasar dulu |
+| User butuh persistence lintas sesi | Tawarkan `setup-workflow` |
+| Migrasi project | `setup-workflow` → `project-migration` |
 
 Jika intent sudah jelas coding/project, lewati General Grill dan masuk ke Dev Grill atau langsung ke skill spesifik. Jika rekomendasi sudah jelas, lanjut ke Step 4 (Konfirmasi).
 
@@ -78,7 +77,6 @@ Jika user memanggil `ask-me` secara eksplisit atau intent belum jelas, gunakan s
 ```
 
 Aturan selection awal:
-
 - Jangan menambahkan opsi free-form sendiri; opsi ke-4 selalu disediakan extension.
 - Gunakan hanya saat user belum menyebut tujuan atau skill yang spesifik.
 - Untuk layout compact, gunakan tiga label pendek tanpa deskripsi; UI menambahkan free-form sebagai opsi ke-4.
@@ -125,7 +123,6 @@ Istilah baru → Project mode: update file inline mengikuti **Aturan Split** di 
 ### Deep Grill (large scope / ambiguous / new project)
 
 **Mode Sharpen** (existing project, scope besar/ambigu):
-
 1. Domain model — "Istilah kunci? Bentrok PROJECT.md?"
 2. Keputusan arsitektur — "Hard to reverse?" → ADR kalau lolos 3 filter
 3. Validasi kode — "Klaim cocok kode existing?" → eksplorasi codebase
@@ -133,7 +130,6 @@ Istilah baru → Project mode: update file inline mengikuti **Aturan Split** di 
 5. Test — "Punya test? Butuh characterization test?"
 
 **Mode Bangun Domain** (new project atau domain yang belum jelas):
-
 - Interview loop: 1 pertanyaan/giliran, rekomendasi jawaban
 - **Max 15 pertanyaan** → tanya "Lanjut? (y/n)"
 - Fokus: terminology inti, konsep, hubungan entitas, batasan sistem
@@ -144,13 +140,13 @@ Aturan kedua mode: eksplorasi codebase dulu kalau bisa jawab. Tulis ke PROJECT.m
 
 ### Determine Route
 
-| Scope                              | Rekomendasi                                  |
-| ---------------------------------- | -------------------------------------------- |
-| Kecil (1 modul), behavior jelas    | `implement` langsung                         |
-| Besar (lintas modul)               | Grill dalam → `to-requirements` → `to-tasks` |
-| Banyak ambigu / desain belum solid | Grill dalam → `prototype`                    |
-| State machine / logic complex      | `prototype` LOGIC                            |
-| UI layout belum decided            | `prototype` UI                               |
+| Scope | Rekomendasi |
+|-------|-------------|
+| Kecil (1 modul), behavior jelas | `implement` langsung |
+| Besar (lintas modul) | Grill dalam → `to-requirements` → `to-tasks` |
+| Banyak ambigu / desain belum solid | Grill dalam → `prototype` |
+| State machine / logic complex | `prototype` LOGIC |
+| UI layout belum decided | `prototype` UI |
 
 ## Step 4 — Confirm
 
@@ -182,17 +178,16 @@ Status: routed | waiting-confirmation
 
 ## Session Rules
 
-| Jenis                 | Aturan                                                                                                                       |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Single-session        | Grill + implement kecil selesai 1 sesi                                                                                       |
-| Multi-session         | Grill dalam + to-requirements + to-tasks: 1 sesi, no compact tengah; handoff sebelum tutup; implement per task di sesi fresh |
-| Bug di tengah feature | 1. handoff feature context 2. bug-diagnosis terpisah 3. handoff fix 4. balik ke feature                                      |
-| Compact vs Handoff    | Normal → lanjut; Thread sama penuh → compact; Ganti task/phase → handoff; Tengah phase → handoff (no compact)                |
+| Jenis | Aturan |
+|-------|--------|
+| Single-session | Grill + implement kecil selesai 1 sesi |
+| Multi-session | Grill dalam + to-requirements + to-tasks: 1 sesi, no compact tengah; handoff sebelum tutup; implement per task di sesi fresh |
+| Bug di tengah feature | 1. handoff feature context 2. bug-diagnosis terpisah 3. handoff fix 4. balik ke feature |
+| Compact vs Handoff | Normal → lanjut; Thread sama penuh → compact; Ganti task/phase → handoff; Tengah phase → handoff (no compact) |
 
 ## Auto-Trigger Rules
 
 `model-invocation: enabled`. Rules:
-
 - User sebut skill dev selain `ask-me` → no trigger; invoke skill tersebut langsung
 - User memanggil `ask-me` eksplisit → mulai General Grill dengan pertanyaan ide kasar
 - Sinyal match skill spesifik → route ke skill tersebut secara eksplisit

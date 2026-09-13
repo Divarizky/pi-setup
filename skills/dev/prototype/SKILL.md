@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 Output bergantung pada mode ([deteksi mode](../shared/COMMON.md#prerequisites): marker `.workspace/project-meta.md` tersedia → Project mode; tidak tersedia → Universal mode):
 
-- Project mode: tulis decision capture ke `.workspace/.scratch/<slug>/prototype-decision.md`.
+- Project mode: tulis decision capture ke section `## Prototype Decision` pada `.workspace/work/F-<id>.md`. Jika work card belum ada, alokasikan `F-<id>` dan buat card melalui pola `to-requirements` terlebih dahulu.
 - Universal mode: tampilkan decision capture langsung sebagai pesan chat; **jangan membuat file `.md`**.
 
 Jangan mengubah production code dalam skill ini.
@@ -35,7 +35,6 @@ Sebelum analisis, buat brief singkat dan minta persetujuan user. Jangan mulai da
 ```
 
 Aturan gate:
-
 1. Brief harus menjawab **satu** pertanyaan dan punya success criteria yang bisa diamati.
 2. Jika `Research needed` tidak kosong, lakukan riset terfokus dan rangkum temuan + sumber sebelum menyusun keputusan.
 3. Tampilkan brief dan minta konfirmasi eksplisit (gunakan `ask_user` bila tersedia). Revisi brief bila user memberi feedback.
@@ -44,10 +43,10 @@ Aturan gate:
 
 ## Branch Selection
 
-| Pertanyaan                                               | Branch                                          |
-| -------------------------------------------------------- | ----------------------------------------------- |
+| Pertanyaan | Branch |
+|---|---|
 | "Apakah state machine / reducer ini handle edge case X?" | `LOGIC` — analisis state, transition, invariant |
-| "Gimana kalau tampilannya beda?"                         | `UI` — analisis varian layout dan interaction   |
+| "Gimana kalau tampilannya beda?" | `UI` — analisis varian layout dan interaction |
 
 Jika ambigu, default ke `LOGIC` untuk pertanyaan backend/state atau `UI` untuk frontend/layout, lalu tuliskan asumsi di brief.
 
@@ -58,7 +57,7 @@ Jika ambigu, default ke `LOGIC` untuk pertanyaan backend/state atau `UI` untuk f
 3. **Research/context review** — baca code, docs, data shape, design system, dan constraint yang relevan.
 4. **Compare options** — susun opsi, evidence, trade-off, edge case, accessibility/responsive concern, dan risiko.
 5. **Recommend** — pilih `validated`, `inconclusive`, atau `rejected` berdasarkan success criteria.
-6. **Capture** — Project mode menulis hasil ke `prototype-decision.md`; Universal mode menampilkannya sebagai pesan chat tanpa membuat file.
+6. **Capture** — Project mode memperbarui section `## Prototype Decision` pada `.workspace/work/F-<id>.md`; Universal mode menampilkannya sebagai pesan chat tanpa membuat file.
 7. **Phase exit** — sarankan skill berikutnya, tetapi jangan otomatis menjalankannya.
 
 ## Executable Prototype Is Opt-In
@@ -103,7 +102,7 @@ Jika diaktifkan:
 
 Setelah decision capture selesai:
 
-1. Project mode: tampilkan ringkasan keputusan dan path `.workspace/.scratch/<slug>/prototype-decision.md`. Universal mode: tampilkan ringkasan keputusan langsung di chat.
+1. Project mode: tampilkan ringkasan keputusan dan path `.workspace/work/F-<id>.md`. Universal mode: tampilkan ringkasan keputusan langsung di chat.
 2. Sarankan skill berikutnya berdasarkan hasil:
    - `implement` — keputusan tervalidasi dan siap dibuat;
    - `to-tasks` — keputusan perlu dipecah menjadi task;
@@ -118,15 +117,15 @@ Jika success criteria belum terjawab, status wajib `inconclusive`. Jika user men
 
 ## When to Use or Skip
 
-| Situasi                            | Aksi                                                            |
-| ---------------------------------- | --------------------------------------------------------------- |
-| State machine rawan edge case      | Pakai `prototype` decision-first, branch `LOGIC`                |
-| API contract belum fix             | Pakai `prototype` untuk membandingkan contract dan failure mode |
-| Layout UI belum decided            | Pakai `prototype` decision-first, branch `UI`                   |
-| User perlu melihat interaksi nyata | Tanyakan/konfirmasi executable prototype secara eksplisit       |
-| Task sederhana, behavior jelas     | Skip — `implement` langsung                                     |
-| Refactor code existing             | Skip — `improve-architecture`                                   |
-| Persistensi/network real           | Skip — `prototype` tidak menjalankan dependency real            |
+| Situasi | Aksi |
+|---|---|
+| State machine rawan edge case | Pakai `prototype` decision-first, branch `LOGIC` |
+| API contract belum fix | Pakai `prototype` untuk membandingkan contract dan failure mode |
+| Layout UI belum decided | Pakai `prototype` decision-first, branch `UI` |
+| User perlu melihat interaksi nyata | Tanyakan/konfirmasi executable prototype secara eksplisit |
+| Task sederhana, behavior jelas | Skip — `implement` langsung |
+| Refactor code existing | Skip — `improve-architecture` |
+| Persistensi/network real | Skip — `prototype` tidak menjalankan dependency real |
 
 ## Anti-Patterns
 

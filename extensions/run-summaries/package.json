@@ -6,14 +6,16 @@
     "check": "tsc --noEmit -p .",
     "test": "node --test --experimental-strip-types *.test.ts"
   },
-  "dependencies": {
-    "@earendil-works/pi-ai": "file:../subagents/node_modules/@earendil-works/pi-ai",
-    "@earendil-works/pi-coding-agent": "file:../subagents/node_modules/@earendil-works/pi-coding-agent",
-    "@earendil-works/pi-tui": "file:../subagents/node_modules/@earendil-works/pi-tui",
-    "effect": "^4.0.0-beta.99"
-  },
   "devDependencies": {
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-coding-agent": "^0.84.2",
+    "@earendil-works/pi-tui": "^0.84.2",
     "@types/node": "^22.0.0",
     "typescript": "^7.0.2"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   }
 }

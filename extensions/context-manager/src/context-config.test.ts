@@ -12,10 +12,7 @@ import {
 } from "./context-config.ts";
 
 test("context manager config uses defaults for missing or invalid values", () => {
-  assert.deepEqual(
-    parseContextManagerConfig(undefined),
-    DEFAULT_CONTEXT_MANAGER_CONFIG,
-  );
+  assert.deepEqual(parseContextManagerConfig(undefined), DEFAULT_CONTEXT_MANAGER_CONFIG);
   assert.deepEqual(
     parseContextManagerConfig({
       outputCharThreshold: 0,
@@ -54,10 +51,7 @@ test("context manager config saves, loads, and resets atomically", async () => {
     await saveContextManagerConfig(config, path);
     assert.deepEqual(loadContextManagerConfig(path), config);
     await resetContextManagerConfig(path);
-    assert.deepEqual(
-      loadContextManagerConfig(path),
-      DEFAULT_CONTEXT_MANAGER_CONFIG,
-    );
+    assert.deepEqual(loadContextManagerConfig(path), DEFAULT_CONTEXT_MANAGER_CONFIG);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

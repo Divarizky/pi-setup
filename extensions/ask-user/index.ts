@@ -265,10 +265,7 @@ export default function askUser(pi: ExtensionAPI) {
 
             // Compact mode changes the layout, not the amount of information:
             // the complete question must remain visible in every mode.
-            for (const line of wrapText(
-              params.question,
-              Math.max(1, width - 1),
-            )) {
+            for (const line of wrapText(params.question, Math.max(1, width - 1))) {
               add(` ${theme.fg("text", theme.bold(line))}`);
             }
             if (!compact) lines.push("");
@@ -281,31 +278,23 @@ export default function askUser(pi: ExtensionAPI) {
               const marker = `${i + 1}.`;
               const suffix = opt.isOther ? " [edit]" : "";
               const label = `${marker} ${opt.label}${suffix}`;
-              const labelColor =
-                selected || (opt.isOther && editMode)
-                  ? "accent"
-                  : opt.isOther
-                    ? "muted"
-                    : "text";
+              const labelColor = selected || (opt.isOther && editMode)
+                ? "accent"
+                : opt.isOther
+                  ? "muted"
+                  : "text";
               const labelLines = wrapText(
                 label,
                 Math.max(1, width - prefixWidth),
               );
 
               for (const [lineIndex, labelLine] of labelLines.entries()) {
-                const linePrefix =
-                  lineIndex === 0 ? prefix : " ".repeat(prefixWidth);
+                const linePrefix = lineIndex === 0 ? prefix : " ".repeat(prefixWidth);
                 add(linePrefix + theme.fg(labelColor, labelLine));
               }
 
-              if (
-                opt.description &&
-                (!compact || selected || (opt.isOther && editMode))
-              ) {
-                for (const dl of wrapText(
-                  opt.description,
-                  Math.max(1, width - 6),
-                )) {
+              if (opt.description && (!compact || selected || (opt.isOther && editMode))) {
+                for (const dl of wrapText(opt.description, Math.max(1, width - 6))) {
                   add(`      ${theme.fg("muted", dl)}`);
                 }
               }

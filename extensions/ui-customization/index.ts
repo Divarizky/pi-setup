@@ -31,6 +31,10 @@ import {
   isModelInfoState,
 } from "../dashboard-state/dashboard-state.ts";
 
+/** Protokol footer-chain: ui-customization publish factory footer custom agar extension lain (mis. fleet subagents) bisa membungkusnya, bukan menimpanya. */
+export const CUSTOM_FOOTER_CHAIN_KEY = '__piCustomFooterFactory';
+export const CUSTOM_FOOTER_CHAIN_EVENT = 'ui-customization:footer';
+
 import type { Model } from "@earendil-works/pi-ai";
 
 type Rgb = [number, number, number];
@@ -273,22 +277,21 @@ function sessionUsage(ctx: ExtensionContext) {
   let cacheHitRate: number | undefined;
 
   for (const entry of ctx.sessionManager.getEntries()) {
-    const record = entry as {
-      message?: { role?: string; usage?: any };
-      usage?: any;
-    };
+    const record = entry as { message?: { role?: string; usage?: any }; usage?: any };
     const usage = record.message?.usage ?? record.usage;
     if (!usage) continue;
 
-    totals.input += usage.input ?? 0;
-    totals.output += usage.output ?? 0;
-    totals.cacheRead += usage.cacheRead ?? 0;
-    totals.cacheWrite += usage.cacheWrite ?? 0;
-    totals.cost += usage.cost?.total ?? 0;
+    totals.input += typeof usage.input === "number" ? usage.input : 0;
+    totals.output += typeof usage.output === "number" ? usage.output : 0;
+    totals.cacheRead += typeof usage.cacheRead === "number" ? usage.cacheRead : 0;
+    totals.cacheWrite += typeof usage.cacheWrite === "number" ? usage.cacheWrite : 0;
+    totals.cost += typeof usage.cost?.total === "number" ? usage.cost.total : 0;
 
     if (record.message?.role === "assistant") {
       const promptTokens =
-        (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+        (usage.input ?? 0) +
+        (usage.cacheRead ?? 0) +
+        (usage.cacheWrite ?? 0);
       if (promptTokens > 0) {
         cacheHitRate = ((usage.cacheRead ?? 0) / promptTokens) * 100;
       }
@@ -517,13 +520,30 @@ export default function uiCustomization(pi: ExtensionAPI) {
       };
     });
 
-    ctx.ui.setFooter((tui, theme, footerData: ReadonlyFooterDataProvider) => {
-      requestRender = () => tui.requestRender();
+    const footerFactory = createFooterFactory(ctx);
+    ctx.ui.setFooter(footerFactory);
+    publishFooterFactory(footerFactory);
 
-      return {
-        invalidate() {},
-        render(width: number) {
-          const directory = theme.fg("text", formatDirectory(ctx.cwd));
+    function createFooterFactory(ctx: ExtensionContext) {
+      return (tui: DashboardTui, theme: Theme, footerData: ReadonlyFooterDataProvider) => {
+        requestRender = () => tui.requestRender();
+
+        return {
+          invalidate() {},
+          render(width: number) {
+            return renderCustomFooter(ctx, footerData, width, theme);
+          },
+        };
+      };
+    }
+
+    function renderCustomFooter(
+      ctx: ExtensionContext,
+      footerData: ReadonlyFooterDataProvider,
+      width: number,
+      theme: Theme,
+    ): string[] {
+      const directory = theme.fg("text", formatDirectory(ctx.cwd));
           const fileLabel = gitInfo.changedFiles === 1 ? "file" : "files";
           let git = gitInfo.branch
             ? `${gitInfo.branch} · ${gitInfo.changedFiles} ${fileLabel}`
@@ -557,11 +577,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
             /\x1b\[[0-9;]*m/g,
             "",
           );
-          const external = [
-            mcp || "MCP: 0/0",
-            `Memory: ${memoryStatus.ok ? "active" : "missing"}`,
-            `Orca: ${process.env.ORCA_PANE_KEY ? "connected" : "offline"}`,
-          ].join(" · ");
+          const external = mcp || "MCP: 0/0";
 
           const lines = [
             columns(directory, theme.fg("muted", git), width),
@@ -584,9 +600,12 @@ export default function uiCustomization(pi: ExtensionAPI) {
           }
 
           return lines;
-        },
-      };
-    });
+    }
+
+    function publishFooterFactory(factory: unknown) {
+      (globalThis as any)[CUSTOM_FOOTER_CHAIN_KEY] = factory;
+      pi.events.emit(CUSTOM_FOOTER_CHAIN_EVENT, { factory });
+    }
 
     ctx.ui.setTitle(`pi · ${title}`);
     pi.events.emit(REFRESH_CHANNEL, undefined);

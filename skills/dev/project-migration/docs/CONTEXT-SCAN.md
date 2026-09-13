@@ -7,7 +7,6 @@ Dipakai di dua tempat: `setup-workflow` Step 3 (versi ringan, existing project) 
 Tujuan: isi awal `.workspace/context/PROJECT.md` (quick) + `.workspace/context/CONTEXT.md` (detail), bukan analisis mendalam. Ikuti **Aturan Split** di `setup-workflow`: temuan 1-baris → PROJECT.md, penjelasan/pattern/edge case → CONTEXT.md. `--no-context` → semua ke PROJECT.md.
 
 Scan:
-
 - Struktur folder top-level + pattern arsitektur yang kelihatan (MVC, MVVM, layered, dll)
 - Dependency utama dari file manifest (`package.json`, `pubspec.yaml`, `build.gradle`, `Podfile`)
 - Istilah domain yang muncul berulang di nama class/fungsi/comment
@@ -19,7 +18,6 @@ Output: entry kedua file secukupnya untuk agent tidak "buta" saat mulai kerja. T
 Tujuan: dasar untuk Risk Register (Step 4), jadi harus lebih dalam dari versi ringan.
 
 Scan tambahan:
-
 - Peta dependency antar modul — siapa memanggil siapa, coupling tersembunyi
 - Modul mana yang shallow (interface hampir sekompleks implementasinya) vs deep
 - Test coverage existing per area — area tanpa test = risk tinggi otomatis

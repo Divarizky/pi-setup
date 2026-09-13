@@ -53,12 +53,11 @@ export default function (pi: ExtensionAPI) {
   const updateStatus = () => {
     const pending = summaryQueue?.pendingCount ?? 0;
     const active = activeSummaries.size;
-    const label =
-      active > 0
-        ? pending > 0
-          ? `▪ summarizing run… (${pending} queued)`
-          : "▪ summarizing run…"
-        : undefined;
+    const label = active > 0
+      ? pending > 0
+        ? `▪ summarizing run… (${pending} queued)`
+        : "▪ summarizing run…"
+      : undefined;
     statusContext?.ui.setStatus(
       STATUS_KEY,
       label ? statusContext.ui.theme.fg("muted", label) : undefined,

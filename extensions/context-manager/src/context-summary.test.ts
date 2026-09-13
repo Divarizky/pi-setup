@@ -1,16 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  findSnippets,
-  formatLineRange,
-  formatSummary,
-  summarizeOutput,
-} from "./context-summary.ts";
+import { findSnippets, formatLineRange, formatSummary, summarizeOutput } from "./context-summary.ts";
 
 test("summarizeOutput prioritizes errors and includes a compact preview", () => {
-  const summary = summarizeOutput(
-    "booting\nwarn: old config\nERROR: database unavailable\nfinished",
-  );
+  const summary = summarizeOutput("booting\nwarn: old config\nERROR: database unavailable\nfinished");
   assert.equal(summary.totalLines, 4);
   assert.deepEqual(summary.errorLines, ["ERROR: database unavailable"]);
   assert.deepEqual(summary.warningLines, ["warn: old config"]);
@@ -23,10 +16,7 @@ test("formatSummary uses a non-redundant cache source label", () => {
     formatSummary(summary, "dari cache output-4777b12b"),
     /^\[context-manager\] Output dari cache output-4777b12b diringkas secara lokal/m,
   );
-  assert.doesNotMatch(
-    formatSummary(summary, "dari cache output-4777b12b"),
-    /Output dari output output-/,
-  );
+  assert.doesNotMatch(formatSummary(summary, "dari cache output-4777b12b"), /Output dari output output-/);
 });
 
 test("findSnippets returns line-numbered context around a matching query", () => {
@@ -41,13 +31,9 @@ test("findSnippets returns no results for an empty query", () => {
 });
 
 test("findSnippets supports bounded context around a match", () => {
-  assert.deepEqual(
-    findSnippets("one\ntwo\nmatch\nfour\nfive", "match", 2, {
-      before: 2,
-      after: 1,
-    }),
-    ["1: one\n2: two\n3: match\n4: four"],
-  );
+  assert.deepEqual(findSnippets("one\ntwo\nmatch\nfour\nfive", "match", 2, { before: 2, after: 1 }), [
+    "1: one\n2: two\n3: match\n4: four",
+  ]);
 });
 
 test("formatLineRange returns numbered head and tail ranges", () => {

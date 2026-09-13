@@ -3,12 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import type {
-  ProviderPeriodUsage,
-  ProviderUsage,
-  UsageLimit,
-  UsageTotals,
-} from "./providers.ts";
+import type { ProviderPeriodUsage, ProviderUsage, UsageLimit, UsageTotals } from "./providers.ts";
 
 export interface NineRouterDailyRow {
   readonly dateKey?: unknown;
@@ -39,7 +34,7 @@ const DEFAULT_SOURCE = "9Router lokal";
 
 function asRecord(value: unknown): JsonRecord | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
+    ? value as JsonRecord
     : undefined;
 }
 
@@ -65,15 +60,9 @@ function emptyTotals(): UsageTotals {
 function addTotals(target: UsageTotals, value: unknown): UsageTotals {
   const record = asRecord(value);
   if (!record) return target;
-  const input = number(
-    record.promptTokens ?? record.inputTokens ?? record.input_tokens,
-  );
-  const output = number(
-    record.completionTokens ?? record.outputTokens ?? record.output_tokens,
-  );
-  const cached = number(
-    record.cachedTokens ?? record.cacheReadTokens ?? record.cached_input_tokens,
-  );
+  const input = number(record.promptTokens ?? record.inputTokens ?? record.input_tokens);
+  const output = number(record.completionTokens ?? record.outputTokens ?? record.output_tokens);
+  const cached = number(record.cachedTokens ?? record.cacheReadTokens ?? record.cached_input_tokens);
   return {
     input: target.input + input,
     output: target.output + output,
@@ -85,55 +74,30 @@ function addTotals(target: UsageTotals, value: unknown): UsageTotals {
 
 function parseDailyData(row: NineRouterDailyRow): JsonRecord | undefined {
   if (typeof row.data === "string") {
-    try {
-      return asRecord(JSON.parse(row.data));
-    } catch {
-      return undefined;
-    }
+    try { return asRecord(JSON.parse(row.data)); } catch { return undefined; }
   }
   return asRecord(row.data);
 }
 
-function statusFromConnection(
-  rows: readonly NineRouterConnectionRow[],
-): string {
+function statusFromConnection(rows: readonly NineRouterConnectionRow[]): string {
   if (rows.length === 0) return "no-auth / passthrough";
-  const active = rows.filter(
-    (row) => row.isActive !== 0 && row.isActive !== false,
-  );
+  const active = rows.filter((row) => row.isActive !== 0 && row.isActive !== false);
   const unavailable = active.filter((row) => {
-    const data = asRecord(
-      typeof row.data === "string" ? parseJson(row.data) : row.data,
-    );
-    return (
-      data?.testStatus === "unavailable" ||
-      data?.testStatus === "error" ||
-      data?.errorCode === 429
-    );
+    const data = asRecord(typeof row.data === "string" ? parseJson(row.data) : row.data);
+    return data?.testStatus === "unavailable" || data?.testStatus === "error" || data?.errorCode === 429;
   });
   if (unavailable.length > 0) {
     const errorCodes = unavailable
-      .map(
-        (row) =>
-          asRecord(
-            typeof row.data === "string" ? parseJson(row.data) : row.data,
-          )?.errorCode,
-      )
+      .map((row) => asRecord(typeof row.data === "string" ? parseJson(row.data) : row.data)?.errorCode)
       .filter((code): code is number => typeof code === "number");
-    return errorCodes.length > 0
-      ? `bermasalah (${[...new Set(errorCodes)].join(", ")})`
-      : "bermasalah";
+    return errorCodes.length > 0 ? `bermasalah (${[...new Set(errorCodes)].join(", ")})` : "bermasalah";
   }
   return active.length > 0 ? `aktif (${active.length} koneksi)` : "nonaktif";
 }
 
 function parseJson(value: unknown): unknown {
   if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
+  try { return JSON.parse(value); } catch { return undefined; }
 }
 
 function period(
@@ -150,25 +114,17 @@ export function parseNineRouterUsage(
 ): readonly ProviderUsage[] {
   const todayKey = dateKey(now);
   const billingKey = dateKey(monthStart(now));
-  const totalsByProvider = new Map<
-    string,
-    { today: UsageTotals; billing: UsageTotals }
-  >();
+  const totalsByProvider = new Map<string, { today: UsageTotals; billing: UsageTotals }>();
 
   for (const row of dailyRows) {
     if (typeof row.dateKey !== "string") continue;
     const data = parseDailyData(row);
     const byProvider = asRecord(data?.byProvider);
-    if (!byProvider || row.dateKey < billingKey || row.dateKey > todayKey)
-      continue;
+    if (!byProvider || row.dateKey < billingKey || row.dateKey > todayKey) continue;
     for (const [provider, value] of Object.entries(byProvider)) {
-      const current = totalsByProvider.get(provider) ?? {
-        today: emptyTotals(),
-        billing: emptyTotals(),
-      };
+      const current = totalsByProvider.get(provider) ?? { today: emptyTotals(), billing: emptyTotals() };
       current.billing = addTotals(current.billing, value);
-      if (row.dateKey === todayKey)
-        current.today = addTotals(current.today, value);
+      if (row.dateKey === todayKey) current.today = addTotals(current.today, value);
       totalsByProvider.set(provider, current);
     }
   }
@@ -182,38 +138,29 @@ export function parseNineRouterUsage(
     connectionsByProvider.set(provider, rows);
   }
 
-  const providerIds = new Set([
-    ...connectionsByProvider.keys(),
-    ...totalsByProvider.keys(),
-  ]);
-  return (
-    [...providerIds]
-      .filter((provider) => provider !== NINEROUTER_PROVIDER)
-      // Provider tanpa quota API hanya ditampilkan jika memang memiliki token
-      // usage lokal pada periode yang sedang ditampilkan.
-      .filter((provider) => {
-        const totals = totalsByProvider.get(provider);
-        return Boolean(totals && totals.today.input + totals.today.output > 0);
-      })
-      .sort()
-      .map((provider): ProviderUsage => {
-        const totals = totalsByProvider.get(provider) ?? {
-          today: emptyTotals(),
-          billing: emptyTotals(),
-        };
-        const connections = connectionsByProvider.get(provider) ?? [];
-        return {
-          provider,
-          source: DEFAULT_SOURCE,
-          status: "ok",
-          today: period("today", totals.today),
-          billing: period("billing", totals.billing),
-          quota: statusFromConnection(connections),
-          message:
-            "Usage token tercatat lokal; sisa kuota upstream tidak disediakan 9Router.",
-        };
-      })
-  );
+  const providerIds = new Set([...connectionsByProvider.keys(), ...totalsByProvider.keys()]);
+  return [...providerIds]
+    .filter((provider) => provider !== NINEROUTER_PROVIDER)
+    // Provider tanpa quota API hanya ditampilkan jika memang memiliki token
+    // usage lokal pada periode yang sedang ditampilkan.
+    .filter((provider) => {
+      const totals = totalsByProvider.get(provider);
+      return Boolean(totals && (totals.today.input + totals.today.output) > 0);
+    })
+    .sort()
+    .map((provider): ProviderUsage => {
+      const totals = totalsByProvider.get(provider) ?? { today: emptyTotals(), billing: emptyTotals() };
+      const connections = connectionsByProvider.get(provider) ?? [];
+      return {
+        provider,
+        source: DEFAULT_SOURCE,
+        status: "ok",
+        today: period("today", totals.today),
+        billing: period("billing", totals.billing),
+        quota: statusFromConnection(connections),
+        message: "Usage token tercatat lokal; sisa kuota upstream tidak disediakan 9Router.",
+      };
+    });
 }
 
 function dataDirCandidates(): readonly string[] {
@@ -221,45 +168,27 @@ function dataDirCandidates(): readonly string[] {
   if (override) return [override];
   const home = homedir();
   if (process.platform === "win32") {
-    return [
-      join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "9router"),
-    ];
+    return [join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "9router")];
   }
   if (process.platform === "darwin") {
-    return [
-      join(home, "Library", "Application Support", "9router"),
-      join(home, ".9router"),
-    ];
+    return [join(home, "Library", "Application Support", "9router"), join(home, ".9router")];
   }
-  return [
-    join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "9router"),
-    join(home, ".9router"),
-  ];
+  return [join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "9router"), join(home, ".9router")];
 }
 
 function sqlitePath(dataDir: string): string | undefined {
   const candidates = [
     join(dataDir, "runtime", "node_modules", "better-sqlite3"),
     join(dataDir, "node_modules", "better-sqlite3"),
-    join(
-      dataDir,
-      "resources",
-      "app.asar.unpacked",
-      "node_modules",
-      "better-sqlite3",
-    ),
+    join(dataDir, "resources", "app.asar.unpacked", "node_modules", "better-sqlite3"),
   ];
   return candidates.find((candidate) => existsSync(candidate));
 }
 
 function cliToken(dataDir: string): string {
   const rawMachineId = readFileSync(join(dataDir, "machine-id"), "utf8").trim();
-  const cliSecret = readFileSync(
-    join(dataDir, "auth", "cli-secret"),
-    "utf8",
-  ).trim();
-  if (!rawMachineId || !cliSecret)
-    throw new Error("autentikasi CLI 9Router tidak tersedia");
+  const cliSecret = readFileSync(join(dataDir, "auth", "cli-secret"), "utf8").trim();
+  if (!rawMachineId || !cliSecret) throw new Error("autentikasi CLI 9Router tidak tersedia");
   return createHash("sha256")
     .update(rawMachineId + "9r-cli-auth" + cliSecret)
     .digest("hex")
@@ -267,35 +196,24 @@ function cliToken(dataDir: string): string {
 }
 
 function openDatabase(): { database: SqliteDatabase; dataDir: string } {
-  const dataDir = dataDirCandidates().find((candidate) =>
-    existsSync(join(candidate, "db", "data.sqlite")),
-  );
+  const dataDir = dataDirCandidates().find((candidate) => existsSync(join(candidate, "db", "data.sqlite")));
   if (!dataDir) throw new Error("database 9Router tidak ditemukan");
   const modulePath = sqlitePath(dataDir);
   if (!modulePath) throw new Error("modul database 9Router tidak ditemukan");
-  const Database = createRequire(import.meta.url)(
-    modulePath,
-  ) as SqliteConstructor;
+  const Database = createRequire(import.meta.url)(modulePath) as SqliteConstructor;
   return {
-    database: new Database(join(dataDir, "db", "data.sqlite"), {
-      readonly: true,
-    }),
+    database: new Database(join(dataDir, "db", "data.sqlite"), { readonly: true }),
     dataDir,
   };
 }
 
-function readNineRouterConnections(): {
-  rows: NineRouterConnectionRow[];
-  dataDir: string;
-} {
+function readNineRouterConnections(): { rows: NineRouterConnectionRow[]; dataDir: string } {
   const { database, dataDir } = openDatabase();
   try {
     return {
-      rows: database
-        .prepare(
-          "SELECT id, provider, name, isActive, data FROM providerConnections",
-        )
-        .all(),
+      rows: database.prepare(
+        "SELECT id, provider, name, isActive, data FROM providerConnections",
+      ).all(),
       dataDir,
     };
   } finally {
@@ -318,27 +236,23 @@ function quotaLimit(value: unknown, label: string): UsageLimit | undefined {
   const explicitRemaining = finite(quota.remainingPercentage);
   const used = finite(quota.used);
   const total = finite(quota.total);
-  const usedPercent =
-    explicitRemaining !== undefined
-      ? 100 - Math.max(0, Math.min(100, explicitRemaining))
-      : used !== undefined && total !== undefined && total > 0
-        ? (used / total) * 100
-        : undefined;
-  if (usedPercent === undefined || !Number.isFinite(usedPercent))
-    return undefined;
+  const usedPercent = explicitRemaining !== undefined
+    ? 100 - Math.max(0, Math.min(100, explicitRemaining))
+    : used !== undefined && total !== undefined && total > 0
+      ? (used / total) * 100
+      : undefined;
+  if (usedPercent === undefined || !Number.isFinite(usedPercent)) return undefined;
   const resetValue = quota.resetAt;
   const resetNumber = finite(resetValue);
-  const resetDate =
-    resetNumber !== undefined
-      ? new Date(resetNumber < 1e12 ? resetNumber * 1000 : resetNumber)
-      : typeof resetValue === "string"
-        ? new Date(resetValue)
-        : undefined;
+  const resetDate = resetNumber !== undefined
+    ? new Date(resetNumber < 1e12 ? resetNumber * 1000 : resetNumber)
+    : typeof resetValue === "string"
+      ? new Date(resetValue)
+      : undefined;
   return {
     label: typeof quota.name === "string" ? quota.name : label,
     usedPercent: Math.max(0, Math.min(100, usedPercent)),
-    resetsAt:
-      resetDate && Number.isFinite(resetDate.getTime()) ? resetDate : undefined,
+    resetsAt: resetDate && Number.isFinite(resetDate.getTime()) ? resetDate : undefined,
   };
 }
 
@@ -357,28 +271,18 @@ function parseNineRouterQuota(
   if (limits.length === 0) return undefined;
 
   const local = localUsage.find((entry) => entry.provider === provider);
-  const id =
-    typeof connection.id === "string" ? connection.id.slice(0, 8) : "unknown";
-  const name =
-    typeof connection.name === "string" && connection.name.trim()
-      ? ` · ${connection.name.trim()}`
-      : ` · koneksi ${id}`;
+  const id = typeof connection.id === "string" ? connection.id.slice(0, 8) : "unknown";
+  const name = typeof connection.name === "string" && connection.name.trim()
+    ? ` · ${connection.name.trim()}`
+    : ` · koneksi ${id}`;
   const plan = typeof root?.plan === "string" ? root.plan : undefined;
   return {
     provider,
     label: `${provider}${name}`,
     source: "9Router quota API",
     status: "ok",
-    today: local?.today ?? {
-      period: "today",
-      status: "unavailable",
-      message: "usage lokal tidak tersedia",
-    },
-    billing: local?.billing ?? {
-      period: "billing",
-      status: "unavailable",
-      message: "usage lokal tidak tersedia",
-    },
+    today: local?.today ?? { period: "today", status: "unavailable", message: "usage lokal tidak tersedia" },
+    billing: local?.billing ?? { period: "billing", status: "unavailable", message: "usage lokal tidak tersedia" },
     limits,
     quota: plan,
     message: typeof root?.message === "string" ? root.message : undefined,
@@ -398,43 +302,24 @@ export async function fetchNineRouterQuotas(
   }
 
   let token: string;
-  try {
-    token = cliToken(connectionInfo.dataDir);
-  } catch {
-    return [];
-  }
-  const baseUrl =
-    process.env.NINEROUTER_URL?.trim() || "http://localhost:20128";
+  try { token = cliToken(connectionInfo.dataDir); } catch { return []; }
+  const baseUrl = process.env.NINEROUTER_URL?.trim() || "http://localhost:20128";
   const activeConnections = connectionInfo.rows.filter(
-    (row) =>
-      row.isActive !== 0 &&
-      row.isActive !== false &&
-      typeof row.id === "string" &&
-      typeof row.provider === "string",
+    (row) => row.isActive !== 0 && row.isActive !== false && typeof row.id === "string" && typeof row.provider === "string",
   );
-  const results = await Promise.all(
-    activeConnections.map(async (connection) => {
-      const provider = String(connection.provider);
-      try {
-        const response = await fetchImpl(
-          `${baseUrl}/api/usage/${encodeURIComponent(String(connection.id))}`,
-          {
-            headers: { Accept: "application/json", "x-9r-cli-token": token },
-            signal: options.signal,
-          },
-        );
-        if (!response.ok) return undefined;
-        return parseNineRouterQuota(
-          provider,
-          connection,
-          await response.json(),
-          localUsage,
-        );
-      } catch {
-        return undefined;
-      }
-    }),
-  );
+  const results = await Promise.all(activeConnections.map(async (connection) => {
+    const provider = String(connection.provider);
+    try {
+      const response = await fetchImpl(
+        `${baseUrl}/api/usage/${encodeURIComponent(String(connection.id))}`,
+        { headers: { Accept: "application/json", "x-9r-cli-token": token }, signal: options.signal },
+      );
+      if (!response.ok) return undefined;
+      return parseNineRouterQuota(provider, connection, await response.json(), localUsage);
+    } catch {
+      return undefined;
+    }
+  }));
 
   // usageDaily hanya menyimpan agregat per provider. Tampilkan agregat itu
   // sekali saja agar dua koneksi provider yang sama tidak menggandakan angka.
@@ -445,16 +330,8 @@ export async function fetchNineRouterQuotas(
       if (seenProviders.has(value.provider)) {
         return {
           ...value,
-          today: {
-            period: "today",
-            status: "unavailable",
-            message: "usage agregat ditampilkan pada koneksi pertama",
-          },
-          billing: {
-            period: "billing",
-            status: "unavailable",
-            message: "usage agregat ditampilkan pada koneksi pertama",
-          },
+          today: { period: "today", status: "unavailable", message: "usage agregat ditampilkan pada koneksi pertama" },
+          billing: { period: "billing", status: "unavailable", message: "usage agregat ditampilkan pada koneksi pertama" },
         };
       }
       seenProviders.add(value.provider);
@@ -462,29 +339,19 @@ export async function fetchNineRouterQuotas(
     });
 }
 
-export function readNineRouterUsage(
-  now = new Date(),
-): readonly ProviderUsage[] {
-  const dataDir = dataDirCandidates().find((candidate) =>
-    existsSync(join(candidate, "db", "data.sqlite")),
-  );
+export function readNineRouterUsage(now = new Date()): readonly ProviderUsage[] {
+  const dataDir = dataDirCandidates().find((candidate) => existsSync(join(candidate, "db", "data.sqlite")));
   if (!dataDir) throw new Error("database 9Router tidak ditemukan");
   const modulePath = sqlitePath(dataDir);
   if (!modulePath) throw new Error("modul database 9Router tidak ditemukan");
 
-  const Database = createRequire(import.meta.url)(
-    modulePath,
-  ) as SqliteConstructor;
-  const database = new Database(join(dataDir, "db", "data.sqlite"), {
-    readonly: true,
-  });
+  const Database = createRequire(import.meta.url)(modulePath) as SqliteConstructor;
+  const database = new Database(join(dataDir, "db", "data.sqlite"), { readonly: true });
   try {
-    const dailyRows = database
-      .prepare("SELECT dateKey, data FROM usageDaily")
-      .all();
-    const connectionRows = database
-      .prepare("SELECT provider, name, isActive, data FROM providerConnections")
-      .all();
+    const dailyRows = database.prepare("SELECT dateKey, data FROM usageDaily").all();
+    const connectionRows = database.prepare(
+      "SELECT provider, name, isActive, data FROM providerConnections",
+    ).all();
     return parseNineRouterUsage(dailyRows, connectionRows, now);
   } finally {
     database.close();

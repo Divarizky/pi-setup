@@ -20,15 +20,14 @@ git rev-parse --git-dir 2>/dev/null || error "Bukan repo git"
 
 Deteksi state konflik aktif (cek salah satu):
 
-| State        | Deteksi                                                                      |
-| ------------ | ---------------------------------------------------------------------------- |
-| Merge        | `.git/MERGE_HEAD` ada                                                        |
-| Rebase       | `.git/rebase-merge/` atau `.git/rebase-apply/` ada                           |
-| Cherry-pick  | `.git/CHERRY_PICK_HEAD` ada                                                  |
+| State | Deteksi |
+|-------|---------|
+| Merge | `.git/MERGE_HEAD` ada |
+| Rebase | `.git/rebase-merge/` atau `.git/rebase-apply/` ada |
+| Cherry-pick | `.git/CHERRY_PICK_HEAD` ada |
 | Konflik umum | `git status --porcelain` mengandung `UU`, `AA`, `DD`, `AU`, `UA`, `DU`, `UD` |
 
 Tidak ada state konflik → error + stop:
-
 - "Tidak ada merge conflict aktif." Arahkan `git-commit` jika working tree bersih.
 - Jika user bermaksud merge branch yang belum dilakukan → stop, sarankan jalankan merge manual dulu.
 
@@ -55,7 +54,6 @@ git status --porcelain | grep -E '^(UU|AA|DD|AU|UA|DU|UD)'
 Output: sumber konflik (merge/rebase/cherry-pick) + branch/kommit terlibat. Tampilkan sebelum lanjut.
 
 Abort option tersedia di setiap step sebelum commit:
-
 - Merge: `git merge --abort`
 - Rebase: `git rebase --abort`
 - Cherry-pick: `git cherry-pick --abort`
@@ -70,13 +68,13 @@ Klasifikasikan setiap file berdasarkan risiko sebelum membaca atau menerapkan re
 
 Klasifikasi per file:
 
-| Kode        | Arti                           | Bisa auto-analyze?                              |
-| ----------- | ------------------------------ | ----------------------------------------------- |
-| `UU`        | Both modified                  | Ya — analisis hunk                              |
-| `AA`        | Both added                     | Ya — bandingkan isi kedua versi                 |
-| `DD`        | Both deleted                   | Ya — biasanya cukup hapus dari index            |
-| `DU` / `UD` | Deleted vs modified            | Tidak — wajib keputusan user (keep atau delete) |
-| `AU` / `UA` | Added vs unmerged (rename/add) | Tidak — wajib keputusan user                    |
+| Kode | Arti | Bisa auto-analyze? |
+|------|------|--------------------|
+| `UU` | Both modified | Ya — analisis hunk |
+| `AA` | Both added | Ya — bandingkan isi kedua versi |
+| `DD` | Both deleted | Ya — biasanya cukup hapus dari index |
+| `DU` / `UD` | Deleted vs modified | Tidak — wajib keputusan user (keep atau delete) |
+| `AU` / `UA` | Added vs unmerged (rename/add) | Tidak — wajib keputusan user |
 
 Binary file (`git diff --numstat` menampilkan `-`) → tidak bisa auto-analyze, minta user pilih versi (`--ours`/`--theirs`) atau resolve manual.
 
@@ -87,11 +85,11 @@ File rahasia dalam konflik (`.env`, key, credential) → **stop** untuk file itu
 Untuk tiap file `UU`/`AA`, baca blok konflik:
 
 ```
-<conflict-start> HEAD
+<<<<<<< HEAD
 <versi ours>
-<conflict-separator>
+=======
 <versi theirs>
-<conflict-end> <branch>
+>>>>>>> <branch>
 ```
 
 Untuk tiap hunk, jelaskan singkat:
@@ -102,13 +100,13 @@ Untuk tiap hunk, jelaskan singkat:
 
 Usulkan strategi per hunk:
 
-| Kondisi                                           | Strategi usulan          |
-| ------------------------------------------------- | ------------------------ |
-| Identik setelah normalisasi whitespace/formatting | Keep salah satu          |
-| Perubahan non-overlap yang digabung formatter     | Gabung manual kedua sisi |
-| Ours = refactor, theirs = fix lama                | Keep ours + port fix     |
-| Logika benar-benar bertentangan                   | Butuh input user         |
-| Hanya ada di satu sisi                            | Keep sisi yang punya     |
+| Kondisi | Strategi usulan |
+|---------|-----------------|
+| Identik setelah normalisasi whitespace/formatting | Keep salah satu |
+| Perubahan non-overlap yang digabung formatter | Gabung manual kedua sisi |
+| Ours = refactor, theirs = fix lama | Keep ours + port fix |
+| Logika benar-benar bertentangan | Butuh input user |
+| Hanya ada di satu sisi | Keep sisi yang punya |
 
 Jangan menebak intent bisnis. Kalau dua sisi sama-sama valid tapi beda perilaku → tandai "butuh input user".
 
@@ -129,24 +127,28 @@ Hunk 2/2 (baris 40-45):
   theirs: edit fungsi validateLegacy()
   usulan: BUTUH INPUT — fungsi dihapus di HEAD tapi masih diedit di branch
 
-Pilih: [a] apply semua usulan  [n] next hunk  [o] keep ours  [t] keep theirs
-       [m] edit manual (buka file)  [s] skip file ini dulu  [x] abort operasi
+Pilih: [a] apply rencana yang sudah disetujui  [n] next hunk
+       [o] pilih ours untuk hunk ini  [t] pilih theirs untuk hunk ini
+       [O] pilih ours untuk seluruh file  [T] pilih theirs untuk seluruh file
+       [m] tentukan pengganti manual untuk hunk ini  [s] skip file ini dulu  [x] abort operasi
 ```
 
 Aturan:
 
-- Resolusi per-hunk untuk file dengan >1 hunk; per-file kalau cuma 1 hunk.
-- `BUTUH INPUT` tidak boleh ikut "apply semua usulan" — user harus memutuskan satu-satu.
+- Resolusi per-hunk berarti keputusan dikumpulkan sebagai **rencana final per file**; jangan menulis atau men-stage file di tengah pengumpulan keputusan.
+- `o`/`t` pada prompt hunk hanya memilih sisi untuk hunk aktif. Pilihan seluruh file harus diberi label eksplisit sebagai keputusan file-level.
+- `a` hanya boleh menerapkan rencana yang seluruh hunk-nya sudah memiliki keputusan dan sudah dipreview. `BUTUH INPUT` tidak boleh ikut `a` — user harus memutuskan hunk tersebut satu per satu.
 - Skip file → tetap unmerged, tidak boleh lanjut Step 7 sampai semua resolved atau user memilih abort.
-- Setiap pilihan selain apply/skip/abort → tampilkan ulang hasilnya sebelum tulis ke file.
+- Setiap pilihan selain apply/skip/abort → tampilkan ulang rencana final per file sebelum menulis ke working tree.
 
 ## Step 5 — Apply and Stage
 
 Apply resolusi yang sudah dikonfirmasi:
 
-- Keep ours: `git checkout --ours <file>` ; keep theirs: `git checkout --theirs <file>`
-- Gabungan manual / hasil edit: tulis konten final ke file
-- Deleted-vs-deleted / user pilih delete: `git rm <file>`
+- Keputusan **seluruh file** keep ours/theirs boleh memakai `git checkout --ours <file>` atau `git checkout --theirs <file>`.
+- Untuk keputusan **per-hunk**, jangan gunakan checkout ours/theirs karena perintah tersebut mengganti seluruh file dan dapat menghapus resolusi hunk lain maupun perubahan non-konflik. Susun konten final dari working tree: pertahankan baris non-konflik, lalu ganti setiap blok conflict marker dengan sisi atau edit manual yang sudah dipilih. Tampilkan diff final, lalu tulis sekali ke file setelah rencana disetujui.
+- Gabungan manual / hasil edit: tulis konten final ke file hanya setelah preview resolusi lengkap.
+- Deleted-vs-deleted / user pilih delete: `git rm <file>`.
 
 Stage tiap file yang selesai:
 
@@ -167,11 +169,11 @@ Ada marker tersisa → kembali Step 3 untuk file itu. Semua bersih → lanjut.
 
 ## Step 7 — Continue Pending Operation
 
-| Sumber      | Aksi                                                                             | Konfirmasi         |
-| ----------- | -------------------------------------------------------------------------------- | ------------------ |
-| Merge       | Selesai — siap commit (merge commit otomatis dibuat oleh step berikutnya)        | Chain `git-commit` |
-| Rebase      | `git rebase --continue` — ulangi skill ini jika muncul konflik kommit berikutnya | Ya, tiap iterasi   |
-| Cherry-pick | `git cherry-pick --continue`                                                     | Ya                 |
+| Sumber | Aksi | Konfirmasi |
+|--------|------|------------|
+| Merge | Selesai — siap commit (merge commit otomatis dibuat oleh step berikutnya) | Chain `git-commit` |
+| Rebase | `git rebase --continue` — ulangi skill ini jika muncul konflik kommit berikutnya | Ya, tiap iterasi |
+| Cherry-pick | `git cherry-pick --continue` | Ya |
 
 Rebase multi-kommit bisa menghasilkan konflik berulang → loop Step 2-6 per kommit, tampilkan progres ("konflik 2/5"). Lebih dari 3 siklus gagal berturut-turut → Escape Hatch [COMMON.md](../shared/COMMON.md#escape-hatch).
 
@@ -194,24 +196,23 @@ Hanya setelah merge sukses. Invoke `git-commit` via [Chain Pattern](../shared/CO
 ## Auto-Trigger Rules
 
 [Format](../shared/COMMON.md#auto-trigger-rules-format)
-
-| Trigger                                                                 | Action                                       |
-| ----------------------------------------------------------------------- | -------------------------------------------- |
-| "resolve conflict", "ada conflict", "CONFLICT warning", "konflik merge" | Run skill                                    |
-| "git merge", "git pull", "git rebase" tanpa indikasi konflik            | No trigger                                   |
-| "abort merge", "batalkan rebase"                                        | No trigger — aksi langsung dengan konfirmasi |
+| Trigger | Action |
+|---------|--------|
+| "resolve conflict", "ada conflict", "CONFLICT warning", "konflik merge" | Run skill |
+| "git merge", "git pull", "git rebase" tanpa indikasi konflik | No trigger |
+| "abort merge", "batalkan rebase" | No trigger — aksi langsung dengan konfirmasi |
 
 ## Guardrails
 
-| Kondisi                          | Action                                      |
-| -------------------------------- | ------------------------------------------- |
-| Tidak ada state konflik          | Error + stop                                |
-| File secret (`.env`, credential) | Stop untuk file itu, user resolve manual    |
-| Binary / DU/UD/AU/UA             | Wajib keputusan eksplisit user              |
-| Hunk "butuh input"               | Tidak boleh ikut apply-all                  |
-| Abort                            | Wajib konfirmasi — membuang proses berjalan |
-| Stage di luar file konflik       | Dilarang                                    |
-| Rebase stuck >3 siklus           | Escape Hatch                                |
+| Kondisi | Action |
+|---------|--------|
+| Tidak ada state konflik | Error + stop |
+| File secret (`.env`, credential) | Stop untuk file itu, user resolve manual |
+| Binary / DU/UD/AU/UA | Wajib keputusan eksplisit user |
+| Hunk "butuh input" | Tidak boleh ikut apply-all |
+| Abort | Wajib konfirmasi — membuang proses berjalan |
+| Stage di luar file konflik | Dilarang |
+| Rebase stuck >3 siklus | Escape Hatch |
 
 ## Dependencies
 

@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: 'Review diff dari sumber eksplisit: staged, fixed point (commit/branch/tag), atau none untuk repo baru. 2 axis — Standards dan Spec — paralel sub-agent, tidak saling polusi. Trigger: "review perubahan ini", "cek diff sejak X", "vet sebelum commit".'
+description: "Review diff dari sumber eksplisit: staged, fixed point (commit/branch/tag), atau none untuk repo baru. 2 axis — Standards dan Spec — paralel sub-agent, tidak saling polusi. Trigger: \"review perubahan ini\", \"cek diff sejak X\", \"vet sebelum commit\"."
 disable-model-invocation: true
 ---
 
@@ -15,11 +15,11 @@ Dua axis review, dijalankan terpisah supaya tidak saling pengaruh:
 
 Ditentukan eksplisit oleh caller — satu dari:
 
-| Sumber          | Isi                                  | Kapan                                                        |
-| --------------- | ------------------------------------ | ------------------------------------------------------------ |
-| `staged`        | `git diff --staged`                  | Chain dari `implement`/`git-commit` — perubahan belum commit |
-| `<fixed-point>` | `git diff <ref>` — commit/branch/tag | Review rentang sejak ref tertentu, diminta user              |
-| `none`          | Semua file diperlakukan sebagai baru | Repo baru tanpa commit                                       |
+| Sumber | Isi | Kapan |
+|--------|-----|-------|
+| `staged` | `git diff --staged` | Chain dari `implement`/`git-commit` — perubahan belum commit |
+| `<fixed-point>` | `git diff <ref>` — commit/branch/tag | Review rentang sejak ref tertentu, diminta user |
+| `none` | Semua file diperlakukan sebagai baru | Repo baru tanpa commit |
 
 Tanpa konteks caller dan user tidak menyebut → tanya user sebelum jalan.
 
@@ -55,13 +55,13 @@ Salah satu ketemu → jangan langsung review. Tampilkan daftar filenya, tanya us
 ## Step 2 — Find Spec Source (priority, stop when found)
 
 1. **Inline dari caller** — dipanggil dari `implement`: Detail + Done criteria di konteks
-2. **File requirements** — Project: `.workspace/.scratch/<slug>/requirements.md` (slug = segment terakhir branch: `feature/user-auth` → `user-auth`)
-3. **Detail task** — Project: `.workspace/.scratch/<slug>/tasks.md` (format: `## Queue`/`## In Progress`/`## Done`, ambil `Detail:`)
+2. **SRS Feature Requirements** — Project: `.workspace/context/SRS.md`, cari blok `F-<id>` yang sesuai. Ini adalah baseline requirement SOT; ambil scope, `REQ-xx`, status, dan verification.
+3. **Work card** — Project: `.workspace/work/F-<id>.md` (format: Problem/Solution/Acceptance Criteria/`## Tasks`, ambil `Detail:`, `Ref:`, dan `Done:`). Gunakan `Ref:` untuk menelusuri coverage ke AC/REQ; jika baseline SRS tersedia tetapi work card atau `Ref:` hilang, kosong, atau tidak cocok, laporkan sebagai gap traceability pada axis Spec.
 4. **Path dari user** — validasi file exists/readable. Invalid → kembali ke sumber sebelumnya
 
 Universal mode tidak mengasumsikan requirements/tasks `.workspace`; gunakan inline spec, file yang user berikan, atau laporkan "no spec available".
 
-Project mode: Global Requirements di `.workspace/context/SRS.md` (bila ada) ikut jadi acuan axis Spec — requirement global dilanggar/neglected oleh diff → laporkan di axis Spec.
+Project mode: Global Requirements dan Feature Requirements di `.workspace/context/SRS.md` (bila ada) ikut jadi acuan axis Spec — requirement global/fitur yang dilanggar atau diabaikan oleh diff → laporkan di axis Spec.
 
 Tidak ketemu → tanya user. User bilang tidak ada → sub-agent Spec skip, laporkan "no spec available".
 
@@ -69,8 +69,7 @@ Tidak ketemu → tanya user. User bilang tidak ada → sub-agent Spec skip, lapo
 
 Gunakan Context Resolver. Cari file dokumentasi coding style (`CODING_STANDARDS.md`, `CONTRIBUTING.md`, dll) jika tersedia.
 
-**Smell baseline** (selalu bawa, Fowler _Refactoring_ ch.3):
-
+**Smell baseline** (selalu bawa, Fowler *Refactoring* ch.3):
 - Speculative Generality → hapus, inline sampai kebutuhan nyata
 - Message Chains (`a.b().c().d()`) → sembunyikan di balik 1 method
 - Middle Man (delegasi saja) → potong, panggil target langsung

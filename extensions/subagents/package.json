@@ -1,23 +1,63 @@
 {
-  "name": "subagents-skeleton",
-  "version": "0.0.1",
+  "name": "subagents",
+  "version": "2.0.0",
+  "description": "Personal pi extension for autonomous sub-agents and workflow orchestration.",
+  "author": "Personal pi setup",
+  "license": "MIT",
   "type": "module",
-  "main": "index.ts",
-  "scripts": {
-    "test": "node --test test/multi-parent.test.ts test/state-lock.test.ts test/action-queue.test.ts test/durable-write.test.ts test/detached-worktrees.test.ts test/provisioning.test.ts test/subagent-monitor.test.ts test/execution-policy.test.ts test/workflow-state.test.ts test/wake-queue.test.ts test/lead-agent-inbox.test.ts test/orchestration.test.ts test/task-ledger.test.ts test/lead-agent-proposal.test.ts test/spawn-claims.test.ts test/orca-backend.test.ts test/orca-cli.test.ts test/composer.test.ts test/agent-lead.test.ts test/agent-lead-lifecycle.test.ts test/lead-home.test.ts test/readiness.test.ts test/integration-workflow.test.ts test/approval.test.ts test/delivery.test.ts test/job-queue.test.ts test/persistence.test.ts test/recovery.test.ts test/manager.test.ts test/result-delivery.test.ts test/report.test.ts test/takeover.test.ts test/ui.test.ts test/worktree.test.ts",
-    "test:live": "node --test test/pi.test.ts",
-    "typecheck": "tsc --noEmit"
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "subagent",
+    "agent",
+    "autonomous"
+  ],
+  "files": [
+    "index.ts",
+    "src",
+    "docs",
+    "!docs/archive",
+    "examples",
+    "CHANGELOG.md",
+    "NOTICE.md"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=0.84.0",
+    "@earendil-works/pi-coding-agent": ">=0.84.0",
+    "@earendil-works/pi-tui": ">=0.84.0"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "file:~/.pi/agent/node_modules/@earendil-works/pi-ai",
-    "@earendil-works/pi-coding-agent": "file:~/.pi/agent/node_modules/@earendil-works/pi-coding-agent",
-    "@earendil-works/pi-tui": "file:~/.pi/agent/node_modules/@earendil-works/pi-tui",
-    "effect": "^4.0.0-beta.102",
-    "get-east-asian-width": "^1.6.0",
-    "typebox": "^1.3.6"
+    "@sinclair/typebox": "^0.34.49",
+    "typebox": "^1.3.7"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run e2e --reporter=verbose",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src/ test/",
+    "lint:fix": "biome check --fix src/ test/",
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "test:coverage": "vitest run --coverage",
+    "bench": "vitest bench",
+    "bench:ab": "node test/perf/ab.mjs"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.7.0"
+    "@biomejs/biome": "^2.4.14",
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-coding-agent": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2",
+    "@types/node": "^25.5.0",
+    "@vitest/coverage-istanbul": "^4.1.10",
+    "typescript": "^6.0.0",
+    "vitest": "^4.0.18"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
   }
 }

@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  formatContextPercent,
-  selectCompressionMode,
-} from "./context-policy.ts";
+import { formatContextPercent, selectCompressionMode } from "./context-policy.ts";
 
 test("selectCompressionMode preserves detail below 30 percent", () => {
   assert.equal(selectCompressionMode(29.9), "preserve");

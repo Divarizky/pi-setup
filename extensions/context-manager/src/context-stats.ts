@@ -11,6 +11,7 @@ export interface ContextStats {
   prunedOutputs: number;
   prunedChars: number;
   estimatedPrunedTokens: number;
+  highContextHits: number;
 }
 
 export function createContextStats(): ContextStats {
@@ -27,6 +28,7 @@ export function createContextStats(): ContextStats {
     prunedOutputs: 0,
     prunedChars: 0,
     estimatedPrunedTokens: 0,
+    highContextHits: 0,
   };
 }
 
@@ -48,20 +50,18 @@ export function recordRetrieval(stats: ContextStats): void {
   stats.outputRetrievals += 1;
 }
 
-export function recordPrune(
-  stats: ContextStats,
-  original: string,
-  replacement: string,
-): void {
+export function recordHighContext(stats: ContextStats): void {
+  stats.highContextHits += 1;
+}
+
+export function recordPrune(stats: ContextStats, original: string, replacement: string): void {
   stats.prunedOutputs += 1;
   stats.prunedChars += Math.max(0, original.length - replacement.length);
-  stats.estimatedPrunedTokens += Math.max(
-    0,
-    estimateTokens(original) - estimateTokens(replacement),
-  );
+  stats.estimatedPrunedTokens += Math.max(0, estimateTokens(original) - estimateTokens(replacement));
 }
 
 export function estimateTokens(text: string): number {
+  // ponytail: ceil(len/4) — cukup untuk budget pruning; upgrade ke tiktoken/js hanya bila akurasi token perlu (usage >80% sering).
   return Math.ceil(text.length / 4);
 }
 
@@ -72,8 +72,9 @@ function formatPercent(value: number): string {
 export function formatContextStats(stats: ContextStats): string {
   const savedChars = stats.originalChars - stats.retainedChars;
   const savedLines = stats.originalLines - stats.retainedLines;
-  const savingsPercent =
-    stats.originalChars === 0 ? 0 : (savedChars / stats.originalChars) * 100;
+  const savingsPercent = stats.originalChars === 0
+    ? 0
+    : (savedChars / stats.originalChars) * 100;
 
   return [
     "Context Manager — Sesi Aktif",
@@ -85,7 +86,9 @@ export function formatContextStats(stats: ContextStats): string {
     "├─ Pemangkasan Output Lama",
     `│  └─ Hasil: ${stats.prunedOutputs} output | ${stats.prunedChars.toLocaleString("id-ID")} karakter | ${stats.estimatedPrunedTokens.toLocaleString("id-ID")} token dihemat`,
     "├─ Aktivitas",
-    `│  └─ Operasi: ${stats.summarizedOutputs} output diringkas | ${stats.inspectCalls} kali ctx_inspect | ${stats.outputRetrievals} kali output cache`,
+    `│  └─ Operasi: ${stats.summarizedOutputs} output diringkas | ${stats.inspectCalls} kali inspect | ${stats.outputRetrievals} kali output cache`,
+    `├─ Context Tinggi (>80%): ${stats.highContextHits} kali`,
+    ...(stats.highContextHits >= 5 ? ["│  └─ Saran: usage >80% sering — pertimbangkan tiktoken untuk akurasi token."] : []),
     "└─ Status: Normal",
   ].join("\n");
 }

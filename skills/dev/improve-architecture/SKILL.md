@@ -1,6 +1,6 @@
 ---
 name: improve-architecture
-description: 'Scan modul shallow (interface lebar) yang bisa di-deepen (interface kecil, behavior besar di baliknya). Filter pakai deletion test, presentasi laporan teks, lalu interview kandidat. Manual invoke, periodic health check. Trigger: "refactor", "kode ini susah dibaca", "modul ini berantakan".'
+description: "Scan modul shallow (interface lebar) yang bisa di-deepen (interface kecil, behavior besar di baliknya). Filter pakai deletion test, presentasi laporan teks, lalu interview kandidat. Manual invoke, periodic health check. Trigger: \"refactor\", \"kode ini susah dibaca\", \"modul ini berantakan\"."
 disable-model-invocation: true
 ---
 
@@ -25,7 +25,6 @@ Manual invoke only. Health check periodik: tiap beberapa hari, atau codebase ter
 Inti: **depth**. Modul deep sembunyikan banyak fungsi di balik interface kecil & stabil. Modul shallow bocorkan implementasi lewat interface selebar kode di baliknya.
 
 Cari tanda shallow (lihat [Vocabulary](../shared/VOCABULARY.md#architecture)):
-
 - Pure function diekstrak cuma demi testability, padahal bug asli di cara dipanggil (locality hilang)
 - Modul bocor lintas seam
 - Konsep butuh buka banyak file buat dipahami
@@ -42,27 +41,25 @@ Output: laporan teks. Tiap kandidat: file terkait, friksi, solusi plain-English,
 **Rekomendasi Prioritas:** 1. Deepen <Nama Modul> (Strong)
 
 ### Candidate 1: <Module Name>
-
 **Files:** <file1>, <file2>, <file3>
 **Masalah:** <1-2 kalimat>
 **Solusi:** <deepening yang diusulkan>
 **Manfaat:**
-
 - <manfaat 1>
 - <manfaat 2>
-  **Rating:** Strong | Worth Exploring | Speculative
+**Rating:** Strong | Worth Exploring | Speculative
 ```
 
 **Rating Strong** = lolos deletion test (concentrates).
 
 Klasifikasi dependency (dasar solusi):
 
-| Tipe dependency                 | Cara handle                                           |
-| ------------------------------- | ----------------------------------------------------- |
-| Pure computation, in-memory     | Selalu bisa dideepen, gabung modul                    |
-| Ada local test stand-in         | Bisa dideepen, test pakai stand-in                    |
+| Tipe dependency | Cara handle |
+|---|---|
+| Pure computation, in-memory | Selalu bisa dideepen, gabung modul |
+| Ada local test stand-in | Bisa dideepen, test pakai stand-in |
 | Internal service lintas network | Definisikan port, transport di-inject sebagai adapter |
-| Third-party service             | Terima sebagai injected port, test pakai mock adapter |
+| Third-party service | Terima sebagai injected port, test pakai mock adapter |
 
 **Seam rule**: jangan buat seam kecuali ada yang benar-benar bervariasi. 1 adapter = hipotetis. 2 adapter = nyata.
 
@@ -79,7 +76,6 @@ Setelah laporan → berhenti, tanya kandidat mana mau di-interview. User pilih s
 **Periodic maintenance** — tiap beberapa hari, bukan step dalam chain.
 
 Kombinasi relevan:
-
 - `bug-diagnosis` — temuan arsitektur saat debug jadi kandidat
 - `code-review` — temuan arsitektur saat review, lanjut ke sini
 - `implement` — cek deepening dulu sebelum implementasi area kompleks

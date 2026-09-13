@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # To Requirements
 
-Sintesis + iterasi requirement, bukan interview panjang. Input dari percakapan aktif atau hasil `ask-me` grill. Output: dokumen requirements siap di-review user + sinkronisasi `.workspace/context/SRS.md`.
+Sintesis + iterasi requirement, bukan interview panjang. Input dari percakapan aktif atau hasil `ask-me` grill. Output: work card fitur siap di-review user + sinkronisasi baseline `.workspace/context/SRS.md`.
 
 ## Draft First
 
@@ -19,14 +19,14 @@ Dipanggil eksplisit atau melalui route `ask-me`: "buat requirements", "buat PRD"
 ## Prerequisites
 
 [Prerequisites](../shared/COMMON.md#prerequisites) — `.workspace/project-meta.md` opsional. Tanpa workspace, gunakan universal mode: draft hanya ditampilkan di chat dan statusnya dicatat di respons.
-`implement` mungkin sudah memiliki tracking tambahan. Project mode: cek `.workspace/.scratch/<slug>/tasks.md` sebagai sumber tambahan jika file tersedia. Universal mode: gunakan hanya context percakapan dan file yang user berikan.
+`implement` mungkin sudah memiliki tracking tambahan. Project mode: baca Feature Registry di `.workspace/context/SRS.md` dan work card `.workspace/work/F-<id>.md` jika tersedia. Universal mode: gunakan hanya context percakapan dan file yang user berikan.
 
 ## Step 1 — Context Before Exploration
 
 Jangan eksplorasi codebase dulu. Gunakan Context Resolver dari `../shared/COMMON.md`.
 
-1. Baca context project hanya jika tersedia: `PROJECT.md` untuk vocabulary, `CONTEXT.md` untuk detail, `ADR.md` untuk keputusan arsitektur, dan `.workspace/context/SRS.md` untuk global requirements yang sudah ada.
-2. Project mode: cek `.workspace/.scratch/<slug>/tasks.md` jika tersedia.
+1. Baca context project hanya jika tersedia: `PROJECT.md` untuk quick reference, `CONTEXT.md` untuk detail, `ADR.md` untuk keputusan arsitektur, dan `.workspace/context/SRS.md` untuk baseline requirements/Feature Registry.
+2. Project mode: cari feature berdasarkan `F-<id>` di Feature Registry dan baca `.workspace/work/F-<id>.md` jika tersedia.
 3. Universal mode: gunakan keputusan dari percakapan dan file project relevan yang dapat diakses.
 4. Eksplorasi codebase terfokus — maks 10 file atau 5 menit. Fokus area relevan fitur (baca nama file/directory di path terkait, bukan seluruh repo).
 
@@ -35,14 +35,12 @@ Jangan eksplorasi codebase dulu. Gunakan Context Resolver dari `../shared/COMMON
 Selama eksplorasi, deteksi seam — titik kode behavior bisa diganti tanpa edit langsung.
 
 **Universal heuristic** (TS, Java, Kotlin, Dart, Go, C#, Swift):
-
 - Grep `interface`, `abstract class`, `protocol`, `trait`
 - Filter method publik ≤3 — seam kandidat terkuat
 - Cek constructor/function parameter: parameter bertipe interface/abstract = injection point, preferred seam
 - Cek >1 implementasi concrete dari interface sama — seam sudah terbukti dipakai
 
 **Dynamic language fallback** (JS, Python, Ruby, PHP tanpa type hints):
-
 - Grep file test: `mock(`, `patch(`, `stub(`, `Mock(`, `unittest.mock`
 - Tiap mock object → dependency yang bisa diganti = seam tersembunyi
 - Prioritaskan seam dari file paling banyak di-mock di test suite
@@ -55,17 +53,18 @@ Format dengan frontmatter YAML:
 
 ```yaml
 ---
+id: F-01
 version: 1.0.0
 created: <YYYY-MM-DD>
 updated: <YYYY-MM-DD>
-source: to-requirements # atau ask-me (grill dalam), manual
-status: draft # lifecycle: draft → approved → superseded
-supersedes: <path versi sebelumnya> # opsional, isi kalau update requirements lama
+source: to-requirements  # atau ask-me (grill dalam), manual
+status: draft  # lifecycle: draft → approved → superseded
+supersedes: <F-id/version sebelumnya>  # opsional, jangan pakai path work card
 ---
 ```
 
-```
-# <Feature Title>
+```markdown
+# F-01 — <Feature Title>
 
 ## Problem
 <Masalah dari perspektif user — 2-4 kalimat>
@@ -85,18 +84,16 @@ Label prioritas: MUST (critical path), SHOULD (penting tapi bisa tunda), NICE (n
 Format **EARS** (Easy Approach to Requirements Syntax) — tiap kriteria satu baris, terukur, bisa jadi bahan test langsung:
 
 ```
-
 1. WHEN <event/trigger> THEN <sistem> SHALL <respons terukur>
 2. IF <precondition> THEN <sistem> SHALL <respons>
-3. WHILE <state berlangsung> THEN <sistem> SHALL <respons> (opsional)
-4. WHERE <kondisi lingkungan/konfigurasi> THEN <sistem> SHALL <respons> (opsional)
-
+3. WHILE <state berlangsung> THEN <sistem> SHALL <respons>  (opsional)
+4. WHERE <kondisi lingkungan/konfigurasi> THEN <sistem> SHALL <respons>  (opsional)
 ```
 
 Contoh:
-1. WHEN login sukses THEN sistem SHALL arahkan ke dashboard dalam < 2 detik
-2. IF email tidak terdaftar THEN sistem SHALL tampilkan error "email atau password salah"
-3. WHEN sesi expired THEN sistem SHALL redirect ke login dengan pesan "sesi berakhir"
+1. AC-01: WHEN login sukses THEN sistem SHALL arahkan ke dashboard dalam < 2 detik
+2. AC-02: IF email tidak terdaftar THEN sistem SHALL tampilkan error "email atau password salah"
+3. AC-03: WHEN sesi expired THEN sistem SHALL redirect ke login dengan pesan "sesi berakhir"
 
 ## Implementation Decisions
 **Final** (sudah disepakati, tidak bisa diganti tanpa ADR):
@@ -116,10 +113,15 @@ Contoh:
 
 ## Further Notes (optional)
 <Catatan tambahan penting dibawa ke implementasi>
+
+## Tasks
+<!-- Diisi `to-tasks`; task aktif tetap berada di work card ini. -->
+
+## Evidence
+<!-- Test/commit/validasi setelah implementasi. -->
 ```
 
 ### Content Rules
-
 - **Jangan sertakan file path atau code snippet spesifik** — cepat basi. Semua deskripsi pakai prosa.
   - Schema: "User punya field: email (string), passwordHash (string), role enum (admin|user)."
   - State machine: "4 state: loading, error, empty, data. Transisi loading→data (sukses) atau loading→error (timeout)."
@@ -131,10 +133,15 @@ Contoh:
 
 ### Project Mode
 
-Gunakan `.workspace/.scratch/<feature-slug>/requirements.md`.
+Gunakan work card `.workspace/work/F-<id>.md`.
 
-- **Belum ada**: tulis baru dengan `version: 1.0.0`, `status: draft`, `created: hari ini`.
-- **Sudah ada**: baca isinya. Update konten, increment `version` minor, update `updated`, pertahankan `created` serta `source`. `supersedes` hanya diisi kalau requirements dipindah ke path/file baru; update in-place dikosongkan.
+- **ID baru**: baca Feature Registry, alokasikan ID `F-<id>` berikutnya yang belum pernah dipakai; jangan memakai ulang ID walaupun work card lama sudah dihapus. Buat `.workspace/work/` bila belum ada.
+- **Feature existing**: baca work card dan SRS Feature Requirements berdasarkan ID; update konten dan increment `version` minor.
+- **Metadata**: pertahankan `id`, `created`, dan `source`; update `updated`. `supersedes` hanya berisi ID/version requirement sebelumnya, bukan path.
+- **Draft**: tulis seluruh requirement detail ke work card dengan `status: draft`; SRS belum dianggap baseline approved.
+- **Approved**: salin requirement yang disetujui ke SRS Feature Requirements melalui Step 6. Work card tetap boleh ada sampai task selesai lalu dapat dihapus setelah konfirmasi user.
+
+SRS yang hilang atau formatnya rusak → jangan overwrite diam-diam. Tampilkan masalah, tawarkan scaffold dari template, dan minta konfirmasi sebelum membuat atau memperbaikinya.
 
 ### Universal Mode
 
@@ -147,11 +154,12 @@ requirements tidak masuk siklus triage task; triage dilakukan oleh `to-tasks`. r
 ## Step 4 — Self-Validation
 
 Sebelum kasih ke user, cek:
-
 1. **Error check**: Ada placeholder `<...>` yang belum keisi? → tanya user
 2. **Alignment check**: Semua Problem punya minimal 1 User Story address? Semua Acceptance Criteria trace ke Solution?
 3. **Seam check**: Seam yang dipilih benar-benar ada di codebase (bukan khayalan)? Seam baru → sebut butuh dibuat.
 4. **Version check**: `version` di-increment benar (baru: 1.0.0, update: minor bump).
+5. **ID check**: `F-<id>` belum pernah dipakai; setiap AC memiliki ID stabil (`AC-01`, `AC-02`, dst.).
+6. **SRS check**: saat approval, Feature Registry memakai status lifecycle (`draft|approved|superseded`) dan Feature Requirements tetap berupa requirement terukur, bukan detail implementasi.
 
 Ada gap → tanyakan user, jangan publish dulu.
 
@@ -161,10 +169,10 @@ Tampilkan requirements ke user:
 
 ```
 Project mode:
-Draft requirements: `.workspace/.scratch/<slug>/requirements.md` v<version>
+Draft work card: `.workspace/work/F-<id>.md` v<version>
 
 Universal mode:
-Draft requirements: ditampilkan di chat, v<version>
+Draft work card: ditampilkan di chat, v<version>
 
 [ringkasan — Problem + Solution + Acceptance Criteria]
 
@@ -173,8 +181,9 @@ Approve? (y/n)
 ```
 
 - **y** → Project: update `status: approved` di frontmatter, jalankan Step 6 (sinkronisasi SRS). Universal: catat `status: approved` di respons + kontribusi SRS di chat. Lanjut **chain to-tasks** (lihat bawah).
-- **n** / revisi → update konten di file (Project) atau context sesi (Universal). Increment version minor, `status` tetap `draft`. Update Feature Index status jadi draft bila sebelumnya approved. Tanya lagi sampai approve.
+- **n** / revisi → update work card (Project) atau context sesi (Universal). Increment version minor, `status` tetap `draft`. Jika feature sebelumnya approved, tandai baseline SRS sebagai draft dan minta approval ulang. Tanya lagi sampai approve.
 - **Perubahan besar** → tulis ulang section relevan, bump version, present ulang.
+- **Supersede** → jangan hapus entry SRS; tandai feature dan requirement terkait `superseded`, isi `supersedes` dengan ID/version pengganti bila ada.
 
 ### Chain to To-Tasks
 
@@ -182,28 +191,42 @@ Setelah requirements approved, tanya:
 
 > requirements sudah approved. Lanjut breakdown ke task via `to-tasks`? (y/n)
 
-- **Tidak** → Project: beri tahu path requirements. Universal: beri tahu requirements hanya tersedia di context sesi. Keduanya menyarankan invoke `to-tasks` kapan saja.
-- **Ya** → **jangan auto-invoke `to-tasks`**. Jalankan manual di sesi yang sama dengan requirements sebagai input inline.
+- **Tidak** → Project: beri tahu path work card. Universal: beri tahu work card hanya tersedia di context sesi. Keduanya menyarankan invoke `to-tasks` kapan saja.
+- **Ya** → **jangan auto-invoke `to-tasks`**. Jalankan manual di sesi yang sama dengan requirement sebagai input inline.
   1. Baca `to-tasks/SKILL.md`.
   2. Jalankan proposal dan iterasi vertical slice.
-  3. Project: tulis `tasks.md` dan update tracker.
+  3. Project: tulis task ke section `## Tasks` pada work card dan update tracker.
   4. Universal: tampilkan checklist task di chat dan catat status breakdown di respons.
 
 Chain manual ini hanya untuk kontinuitas sesi. User bisa invoke `to-tasks` langsung kapan saja.
 
 ## Step 6 — Sync SRS (Project Mode)
 
-`to-requirements` adalah **single-writer** `.workspace/context/SRS.md` setelah seed awal dari `setup-workflow`. SRS tipis: hanya Global Requirements (NFR/cross-feature, format EARS) + Feature Index. Detail fitur TIDAK pernah masuk SRS — itu ranah requirements.
+`to-requirements` adalah **single-writer** `.workspace/context/SRS.md` setelah seed awal dari `setup-workflow`. SRS menjadi baseline SOT: Global Requirements, Feature Registry, dan Feature Requirements approved. Work card menyimpan detail draft/kerja dan boleh dihapus; requirement approved tidak boleh hilang dari SRS.
 
 Saat requirements approved:
+1. **Feature Registry**: tambah atau update baris `F-<id>` dengan judul, status `approved`, dan tanggal update. Jangan simpan path work card.
+2. **Feature Requirements**: sinkronkan scope, requirement `REQ-xx`, dan verification dari work card. `REQ-xx` scoped di dalam `F-xx`.
+3. **Global Requirements**: requirement lintas fitur/NFR baru → beri ID `GR-xx`, deduplikasi terhadap requirement existing, lalu tambahkan dalam format EARS. Requirement spesifik fitur tetap di blok fitur.
+4. **Revisi**: jika baseline berubah, update requirement terkait dan bump versi work card; status SRS kembali `draft` sampai approval ulang.
+5. **Supersede**: tandai entry/requirement lama `superseded`, jangan menghapusnya; referensikan ID pengganti jika ada.
+6. **Traceability**: setiap `AC-xx` work card harus dapat dipetakan ke `REQ-xx` atau `GR-xx` yang relevan.
 
-1. **Feature Index**: tambah/baris `<slug> | <judul> | approved | .scratch/<slug>/requirements.md`. Slug existing → update statusnya.
-2. **Global Requirements**: requirement lintas fitur / NFR baru yang muncul saat grill (security, perf, compliance) → tambahkan baris EARS. Requirement yang cuma spesifik satu fitur → tetap di requirements, jangan naik ke SRS.
-3. requirements revisi turun dari approved → status di index ikut diturunkan.
-
-Universal mode: tampilkan kontribusi SRS di chat (global requirement + entry index), jangan menulis file.
+Universal mode: tampilkan kontribusi SRS di chat (global requirement + Feature Registry + Feature Requirements), jangan menulis file.
 
 Jangan sentuh `.workspace/context/TRACKER.md` — index eksekusi itu ranah `to-tasks` (buat entry) dan `implement` (counter).
+
+## Output Contract
+
+Tutup workflow dengan:
+
+```text
+Changes: <work card dan/atau SRS yang dibuat/diubah; none jika Universal mode>
+Validation: <alignment, EARS, ID, traceability, dan approval yang dijalankan>
+Status: <complete | partial | blocked | cancelled>
+Risks/Limitations: <none atau daftar singkat>
+Next Step: <to-tasks, revisi, atau aksi lain; tanpa auto-apply>
+```
 
 ## Other Suggested Skills
 

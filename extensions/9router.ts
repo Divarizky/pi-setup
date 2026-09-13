@@ -1,4 +1,10 @@
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rename,
+  writeFile,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -23,7 +29,8 @@ import type {
  * Credentials are stored in ~/.pi/agent/auth.json.
  */
 
-const NINEROUTER_URL = process.env.NINEROUTER_URL ?? "http://localhost:20128";
+const NINEROUTER_URL =
+  process.env.NINEROUTER_URL ?? "http://localhost:20128";
 const PROVIDER_ID = "9router";
 const OPENCODE_AUTH_ID = "opencode-zen";
 const PROVIDER_NAME = "9Router";
@@ -99,9 +106,7 @@ function getDataDirCandidates(): string[] {
 
   const home = homedir();
   if (process.platform === "win32") {
-    return [
-      join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "9router"),
-    ];
+    return [join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "9router")];
   }
   if (process.platform === "darwin") {
     return [
@@ -119,31 +124,19 @@ function getBetterSqlite3Path(dataDir: string): string {
   const candidates = [
     join(dataDir, "runtime", "node_modules", "better-sqlite3"),
     join(dataDir, "node_modules", "better-sqlite3"),
-    join(
-      dataDir,
-      "resources",
-      "app.asar.unpacked",
-      "node_modules",
-      "better-sqlite3",
-    ),
+    join(dataDir, "resources", "app.asar.unpacked", "node_modules", "better-sqlite3"),
   ];
-  return (
-    candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!
-  );
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
 }
 
 function getLocalDatabasePaths(): LocalDatabasePaths {
   const candidates = getDataDirCandidates();
-  const dataDir =
-    candidates.find(
-      (candidate) =>
-        existsSync(join(candidate, "db", "data.sqlite")) &&
-        existsSync(getBetterSqlite3Path(candidate)),
-    ) ??
-    candidates.find((candidate) =>
-      existsSync(join(candidate, "db", "data.sqlite")),
-    ) ??
-    candidates[0]!;
+  const dataDir = candidates.find((candidate) =>
+    existsSync(join(candidate, "db", "data.sqlite")) &&
+    existsSync(getBetterSqlite3Path(candidate)),
+  ) ?? candidates.find((candidate) =>
+    existsSync(join(candidate, "db", "data.sqlite")),
+  ) ?? candidates[0]!;
 
   return {
     dataDir,
@@ -157,17 +150,12 @@ function getLocalActiveConnectionCount(): number | null {
 
   try {
     const require = createRequire(import.meta.url);
-    const Database = require(betterSqlite3Path) as new (
-      file: string,
-      options?: object,
-    ) => SqliteDatabase;
+    const Database = require(betterSqlite3Path) as new (file: string, options?: object) => SqliteDatabase;
     const database = new Database(databaseFile, { readonly: true });
     try {
-      return database
-        .prepare(
-          "SELECT COUNT(*) AS count FROM providerConnections WHERE isActive != 0",
-        )
-        .get().count;
+      return database.prepare(
+        "SELECT COUNT(*) AS count FROM providerConnections WHERE isActive != 0",
+      ).get().count;
     } finally {
       database.close();
     }
@@ -185,21 +173,13 @@ async function readAuthFile(): Promise<AuthFile> {
     const content = await readFile(AUTH_FILE, "utf8");
     if (!content.trim()) return {};
     const parsed: unknown = JSON.parse(content);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
       throw new Error("Pi auth.json does not contain a valid object.");
     }
     return parsed as AuthFile;
   } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    )
-      return {};
+    if (error instanceof Error && "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT") return {};
     throw error;
   }
 }
@@ -211,40 +191,23 @@ async function writeAuthFile(auth: AuthFile): Promise<void> {
     encoding: "utf8",
     mode: 0o600,
   });
-  try {
-    await chmod(tempFile, 0o600);
-  } catch {
-    /* Windows may ignore chmod. */
-  }
+  try { await chmod(tempFile, 0o600); } catch { /* Windows may ignore chmod. */ }
   await rename(tempFile, AUTH_FILE);
-  try {
-    await chmod(AUTH_FILE, 0o600);
-  } catch {
-    /* Windows may ignore chmod. */
-  }
+  try { await chmod(AUTH_FILE, 0o600); } catch { /* Windows may ignore chmod. */ }
 }
 
 async function getStoredApiKey(providerId: string): Promise<string | null> {
   const credential = (await readAuthFile())[providerId];
-  if (
-    typeof credential !== "object" ||
-    credential === null ||
-    Array.isArray(credential)
-  ) {
+  if (typeof credential !== "object" || credential === null || Array.isArray(credential)) {
     return null;
   }
   const entry = credential as Partial<AuthEntry>;
-  return entry.type === "api_key" &&
-    typeof entry.key === "string" &&
-    entry.key.trim()
+  return entry.type === "api_key" && typeof entry.key === "string" && entry.key.trim()
     ? entry.key.trim()
     : null;
 }
 
-async function saveStoredApiKey(
-  providerId: string,
-  key: string,
-): Promise<void> {
+async function saveStoredApiKey(providerId: string, key: string): Promise<void> {
   const auth = await readAuthFile();
   auth[providerId] = { type: "api_key", key: key.trim() } satisfies AuthEntry;
   await writeAuthFile(auth);
@@ -293,14 +256,9 @@ function providerName(provider: Provider): string {
 }
 
 function isConnected(provider: Provider): boolean {
-  return (
-    provider.isActive !== false &&
-    provider.testStatus !== "error" &&
-    provider.testStatus !== "untested" &&
-    provider.enabled !== false &&
-    provider.active !== false &&
-    provider.connected !== false
-  );
+  return provider.isActive !== false && provider.testStatus !== "error" &&
+    provider.testStatus !== "untested" && provider.enabled !== false &&
+    provider.active !== false && provider.connected !== false;
 }
 
 function getLocalAvailableModelIds(): Map<string, Set<string>> | null {
@@ -308,35 +266,27 @@ function getLocalAvailableModelIds(): Map<string, Set<string>> | null {
 
   try {
     const require = createRequire(import.meta.url);
-    const Database = require(betterSqlite3Path) as new (
-      file: string,
-      options?: object,
-    ) => SqliteDatabase;
+    const Database = require(betterSqlite3Path) as new (file: string, options?: object) => SqliteDatabase;
     const database = new Database(databaseFile, { readonly: true });
     try {
-      const nodes = database
-        .prepare("SELECT id, data FROM providerNodes")
-        .all();
+      const nodes = database.prepare(
+        "SELECT id, data FROM providerNodes",
+      ).all();
       const prefixByNodeId = new Map<string, string>();
       for (const node of nodes) {
         if (!node.id || !node.data) continue;
         try {
           const data: unknown = JSON.parse(node.data);
-          if (
-            typeof data === "object" &&
-            data !== null &&
-            typeof (data as { prefix?: unknown }).prefix === "string"
-          ) {
+          if (typeof data === "object" && data !== null &&
+            typeof (data as { prefix?: unknown }).prefix === "string") {
             prefixByNodeId.set(node.id, (data as { prefix: string }).prefix);
           }
-        } catch {
-          /* Ignore malformed local node records. */
-        }
+        } catch { /* Ignore malformed local node records. */ }
       }
 
-      const rows = database
-        .prepare("SELECT key FROM kv WHERE scope = 'customModels'")
-        .all();
+      const rows = database.prepare(
+        "SELECT key FROM kv WHERE scope = 'customModels'",
+      ).all();
       const modelsByProvider = new Map<string, Set<string>>();
       for (const row of rows) {
         if (!row.key) continue;
@@ -389,45 +339,34 @@ async function getModels(apiKey: string): Promise<RouterModel[]> {
   );
 
   // 9Router exposes richer metadata per model through this endpoint.
-  return Promise.all(
-    models.map(async (model) => {
-      try {
-        const info = await request<ModelInfo>(
-          `/v1/models/info?id=${encodeURIComponent(model.id)}`,
-          apiKey,
-        );
-        return { ...model, ...info };
-      } catch {
-        return model;
-      }
-    }),
-  );
+  return Promise.all(models.map(async (model) => {
+    try {
+      const info = await request<ModelInfo>(
+        `/v1/models/info?id=${encodeURIComponent(model.id)}`,
+        apiKey,
+      );
+      return { ...model, ...info };
+    } catch {
+      return model;
+    }
+  }));
 }
 
-async function getOpenCodeFreeModels(
-  apiKey: string,
-): Promise<RouterModel[] | null> {
+async function getOpenCodeFreeModels(apiKey: string): Promise<RouterModel[] | null> {
   try {
     const response = await fetch(OPENCODE_ZEN_MODELS_URL, {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
     });
     // null membedakan kegagalan refresh dari katalog valid yang kebetulan kosong.
     if (!response.ok) return null;
-    const json = (await response.json()) as ModelsResponse;
-    return (
-      (json.data ?? [])
-        // OpenCode memberi suffix -free pada model gratis. big-pickle adalah
-        // pengecualian yang gratis tanpa suffix, jadi tetap dipertahankan.
-        .filter(
-          (model) =>
-            model.id.endsWith("-free") ||
-            OPENCODE_ALWAYS_FREE_IDS.has(model.id),
-        )
-        .map((model) => ({ ...model, id: `oc/${model.id}` }))
-    );
+    const json = await response.json() as ModelsResponse;
+    return (json.data ?? [])
+      // OpenCode memberi suffix -free pada model gratis. big-pickle adalah
+      // pengecualian yang gratis tanpa suffix, jadi tetap dipertahankan.
+      .filter((model) =>
+        model.id.endsWith("-free") || OPENCODE_ALWAYS_FREE_IDS.has(model.id)
+      )
+      .map((model) => ({ ...model, id: `oc/${model.id}` }));
   } catch {
     return null;
   }
@@ -437,10 +376,8 @@ function mergeModels(...groups: RouterModel[][]): RouterModel[] {
   return [...new Map(groups.flat().map((model) => [model.id, model])).values()];
 }
 
-async function fetchMergedModels(
-  apiKey: string,
-): Promise<RouterModel[] | null> {
-  const openCodeApiKey = (await getOpenCodeApiKey()) ?? apiKey;
+async function fetchMergedModels(apiKey: string): Promise<RouterModel[] | null> {
+  const openCodeApiKey = await getOpenCodeApiKey() ?? apiKey;
   const [discoveredModels, officialFreeModels] = await Promise.all([
     getModels(apiKey),
     getOpenCodeFreeModels(openCodeApiKey),
@@ -457,8 +394,7 @@ async function fetchMergedModels(
 function toProviderModelDefs(models: RouterModel[]): ProviderModelConfig[] {
   return models.map((model): ProviderModelConfig => {
     const capabilities = model.capabilities ?? {};
-    const supportsVision =
-      capabilities.vision === true || capabilities.images === true;
+    const supportsVision = capabilities.vision === true || capabilities.images === true;
     const supportsReasoning = capabilities.reasoning !== false;
     return {
       id: model.id,
@@ -472,11 +408,7 @@ function toProviderModelDefs(models: RouterModel[]): ProviderModelConfig[] {
   });
 }
 
-function registerProvider(
-  pi: ExtensionAPI,
-  apiKey: string,
-  models: RouterModel[],
-): void {
+function registerProvider(pi: ExtensionAPI, apiKey: string, models: RouterModel[]): void {
   let lastModels: ProviderModelConfig[] | undefined;
   const config: ProviderConfig = {
     name: PROVIDER_NAME,
@@ -505,9 +437,7 @@ function registerProvider(
   pi.registerProvider(PROVIDER_ID, config);
 }
 
-function groupModelsByProvider(
-  models: RouterModel[],
-): Map<string, RouterModel[]> {
+function groupModelsByProvider(models: RouterModel[]): Map<string, RouterModel[]> {
   const groups = new Map<string, RouterModel[]>();
   for (const model of models) {
     const separator = model.id.indexOf("/");
@@ -520,18 +450,13 @@ function groupModelsByProvider(
 }
 
 function maskApiKey(key: string): string {
-  return key.length <= 8
-    ? "********"
-    : `${key.slice(0, 4)}********${key.slice(-4)}`;
+  return key.length <= 8 ? "********" : `${key.slice(0, 4)}********${key.slice(-4)}`;
 }
 
 const LOGIN_9ROUTER_OPTION = "Tambah/ubah API key 9Router";
 const LOGIN_OPENCODE_OPTION = "Tambah/ubah API key OpenCode Zen";
 
-async function login(
-  pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
-): Promise<void> {
+async function login(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
   ctx.ui.notify("Checking 9Router credentials...", "info");
 
   try {
@@ -572,12 +497,11 @@ async function login(
       }
       const openCodeApiKey = value.trim();
       const models = await getOpenCodeFreeModels(openCodeApiKey);
-      if (models === null)
-        throw new Error("OpenCode Zen API key is invalid or unavailable.");
+      if (models === null) throw new Error("OpenCode Zen API key is invalid or unavailable.");
       await saveStoredApiKey(OPENCODE_AUTH_ID, openCodeApiKey);
     }
 
-    const openCodeApiKey = (await getOpenCodeApiKey()) ?? apiKey;
+    const openCodeApiKey = await getOpenCodeApiKey() ?? apiKey;
     // API keys are documented for the OpenAI-compatible /v1/* endpoints.
     // /api/providers is a dashboard/session endpoint and can return 401.
     const [discoveredModels, officialFreeModels] = await Promise.all([
@@ -590,44 +514,35 @@ async function login(
       officialFreeModels ?? [],
     );
     registerProvider(pi, apiKey, models);
-    ctx.ui.notify(
-      `9Router connected. Providers: ${connectionCount ?? groupModelsByProvider(models).size} | Models: ${models.length}`,
-      "info",
-    );
+    ctx.ui.notify(`9Router connected. Providers: ${connectionCount ?? groupModelsByProvider(models).size} | Models: ${models.length}`, "info");
   } catch (error) {
-    ctx.ui.notify(
-      `9Router login failed: ${error instanceof Error ? error.message : String(error)}`,
-      "error",
-    );
+    ctx.ui.notify(`9Router login failed: ${error instanceof Error ? error.message : String(error)}`, "error");
   }
 }
 
-async function showStatus(
-  pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
-): Promise<void> {
+async function showStatus(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
   const apiKey = await getApiKey();
   if (!apiKey) {
-    const rawLines = ["Not Authenticated", "Run `/9router-login` to connect"];
+    const rawLines = [
+      "Not Authenticated",
+      "Run `/9router-login` to connect",
+    ];
     const maxContentWidth = Math.max(...rawLines.map((l) => l.length), 30);
     const innerWidth = maxContentWidth + 2;
     const title = " 9ROUTER STATUS ";
     const top = `╭──${title}${"─".repeat(Math.max(0, innerWidth - title.length - 2))}╮`;
     const bottom = `╰${"─".repeat(innerWidth)}╯`;
 
-    ctx.ui.notify(
-      [
-        top,
-        ...rawLines.map((l) => `│ ${l.padEnd(maxContentWidth)} │`),
-        bottom,
-      ].join("\n"),
-      "warning",
-    );
+    ctx.ui.notify([
+      top,
+      ...rawLines.map((l) => `│ ${l.padEnd(maxContentWidth)} │`),
+      bottom,
+    ].join("\n"), "warning");
     return;
   }
 
   try {
-    const openCodeApiKey = (await getOpenCodeApiKey()) ?? apiKey;
+    const openCodeApiKey = await getOpenCodeApiKey() ?? apiKey;
     const [discoveredModels, officialFreeModels] = await Promise.all([
       getModels(apiKey),
       getOpenCodeFreeModels(openCodeApiKey),
@@ -650,10 +565,7 @@ async function showStatus(
     ];
 
     // Tentukan lebar konten bersih
-    const maxContentWidth = Math.max(
-      ...rawHeaderLines.map((l) => l.length),
-      38,
-    );
+    const maxContentWidth = Math.max(...rawHeaderLines.map((l) => l.length), 38);
     const innerWidth = maxContentWidth + 2; // +2 untuk spasi padding kiri & kanan
     const title = " 9ROUTER STATUS ";
     const topBorder = `╭──${title}${"─".repeat(Math.max(0, innerWidth - title.length - 2))}╮`;
@@ -665,9 +577,7 @@ async function showStatus(
       bottomBorder,
       "",
       ...providers.flatMap(([provider, providerModels]) => {
-        const providerLines: string[] = [
-          ` ❯ ${provider} (${providerModels.length})`,
-        ];
+        const providerLines: string[] = [` ❯ ${provider} (${providerModels.length})`];
         providerModels.forEach((model, mIdx) => {
           const isLastModel = mIdx === providerModels.length - 1;
           const modelPrefix = isLastModel ? "   └─ " : "   ├─ ";
@@ -679,41 +589,32 @@ async function showStatus(
     ctx.ui.notify(lines.join("\n"), "info");
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    const rawErrLines = [`URL: ${NINEROUTER_URL} | ● FAILED`, `Error: ${msg}`];
+    const rawErrLines = [
+      `URL: ${NINEROUTER_URL} | ● FAILED`,
+      `Error: ${msg}`,
+    ];
     const maxContentWidth = Math.max(...rawErrLines.map((l) => l.length), 38);
     const innerWidth = maxContentWidth + 2;
     const title = " 9ROUTER STATUS ";
     const errTop = `╭──${title}${"─".repeat(Math.max(0, innerWidth - title.length - 2))}╮`;
     const errBottom = `╰${"─".repeat(innerWidth)}╯`;
 
-    ctx.ui.notify(
-      [
-        errTop,
-        ...rawErrLines.map((l) => `│ ${l.padEnd(maxContentWidth)} │`),
-        errBottom,
-      ].join("\n"),
-      "error",
-    );
+    ctx.ui.notify([
+      errTop,
+      ...rawErrLines.map((l) => `│ ${l.padEnd(maxContentWidth)} │`),
+      errBottom,
+    ].join("\n"), "error");
   }
 }
 
-async function logout(
-  pi: ExtensionAPI,
-  ctx: ExtensionCommandContext,
-): Promise<void> {
+async function logout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
   const hasRouterKey = Boolean(await getApiKey());
   const hasOpenCodeKey = Boolean(await getOpenCodeApiKey());
   if (!hasRouterKey && !hasOpenCodeKey) {
     ctx.ui.notify("9Router is not configured.", "info");
     return;
   }
-  if (
-    !(await ctx.ui.confirm(
-      "Logout 9Router?",
-      "Remove 9Router and OpenCode Zen credentials from Pi auth.json?",
-    ))
-  )
-    return;
+  if (!await ctx.ui.confirm("Logout 9Router?", "Remove 9Router and OpenCode Zen credentials from Pi auth.json?")) return;
   await removeStoredApiKey(PROVIDER_ID);
   await removeStoredApiKey(OPENCODE_AUTH_ID);
   pi.unregisterProvider(PROVIDER_ID);
@@ -723,18 +624,9 @@ async function logout(
 export default function (pi: ExtensionAPI): void {
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
-  pi.registerCommand("9router-login", {
-    description: "Login to 9Router and save API key",
-    handler: async (_args, ctx) => login(pi, ctx),
-  });
-  pi.registerCommand("9router-status", {
-    description: "Show 9Router connection and provider status",
-    handler: async (_args, ctx) => showStatus(pi, ctx),
-  });
-  pi.registerCommand("9router-logout", {
-    description: "Remove 9Router credentials",
-    handler: async (_args, ctx) => logout(pi, ctx),
-  });
+  pi.registerCommand("9router-login", { description: "Login to 9Router and save API key", handler: async (_args, ctx) => login(pi, ctx) });
+  pi.registerCommand("9router-status", { description: "Show 9Router connection and provider status", handler: async (_args, ctx) => showStatus(pi, ctx) });
+  pi.registerCommand("9router-logout", { description: "Remove 9Router credentials", handler: async (_args, ctx) => logout(pi, ctx) });
 
   // Jangan menunggu network/database saat factory extension dimuat.
   // session_start terjadi setelah workspace dan editor Pi siap dirender.
@@ -743,7 +635,7 @@ export default function (pi: ExtensionAPI): void {
       const apiKey = await getApiKey();
       if (!apiKey) return;
 
-      const openCodeApiKey = (await getOpenCodeApiKey()) ?? apiKey;
+      const openCodeApiKey = await getOpenCodeApiKey() ?? apiKey;
       const [discoveredModels, officialFreeModels] = await Promise.all([
         getModels(apiKey),
         getOpenCodeFreeModels(openCodeApiKey),
@@ -770,6 +662,7 @@ export default function (pi: ExtensionAPI): void {
           }
         })();
       }, REFRESH_INTERVAL_MS);
+
     } catch {
       // Katalog gagal dimuat; provider mempertahankan snapshot sebelumnya.
     }

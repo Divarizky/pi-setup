@@ -16,13 +16,13 @@ Branch `UI` menjawab satu pertanyaan tentang layout, hierarchy, interaction, den
 3. **Susun maksimal 3 opsi struktural** — bedakan layout/hierarchy/primary affordance, bukan sekadar warna.
 4. **Bandingkan trade-off** — catat apa yang mudah/sulit ditemukan, constraint breakpoint, focus order, dan risiko implementasi.
 5. **Pilih status** — `validated`, `inconclusive`, atau `rejected` berdasarkan criteria, bukan selera visual semata.
-6. **Capture decision** — Project mode menulis `.workspace/.scratch/<slug>/prototype-decision.md`; Universal mode menampilkan decision capture di chat tanpa membuat file.
+6. **Capture decision** — Project mode memperbarui section `## Prototype Decision` pada `.workspace/work/F-<id>.md`; Universal mode menampilkan decision capture di chat tanpa membuat file.
 
 Contoh tabel evaluasi:
 
-| Opsi    | Hierarchy | Discoverability | Accessibility     | Responsive risk | Decision |
-| ------- | --------- | --------------- | ----------------- | --------------- | -------- |
-| Sidebar | kuat      | baik            | focus order jelas | medium          | kandidat |
+| Opsi | Hierarchy | Discoverability | Accessibility | Responsive risk | Decision |
+|---|---|---|---|---|---|
+| Sidebar | kuat | baik | focus order jelas | medium | kandidat |
 
 ## Optional Executable Mode
 

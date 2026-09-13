@@ -47,7 +47,6 @@ Project mode tidak memiliki artifact diagnosis khusus. Jangan membuat atau mempe
 **Tight loop = skill ini.** Cari sinyal pass/fail cepat, deterministik, repeatable. Tanpa sinyal jelas → tidak ketemu akar masalah.
 
 **Opsi sinyal (prioritas):**
-
 1. Test di seam menjangkau bug (unit/integration/UI)
 2. API/HTTP repro (curl, script, replay request)
 3. Log/grep (logcat, console, crash trace)
@@ -84,7 +83,6 @@ Tampilkan ranking ke user agar bisa di-re-rank berdasarkan konteks domain. Setel
 Tiap probe harus memetakan prediksi spesifik Phase 3. Ubah satu variabel per waktu. Diagnosis-only memakai debugger/REPL atau observasi yang sudah tersedia; penambahan log, probe, atau file test memerlukan konfirmasi write scope.
 
 **Escape hatch:**
-
 - Maksimal **3 siklus** hypothesis → instrument → gagal per ronde.
 - Setelah 3 siklus gagal, stop dan tanya user:
   > "3 hipotesis diuji, akar belum ketemu. Pilih: (a) lanjut hipotesis baru, (b) minta bantuan/handoff, atau (c) batalkan."

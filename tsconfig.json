@@ -11,5 +11,10 @@
     "verbatimModuleSyntax": true
   },
   "include": ["extensions/**/*.ts"],
-  "exclude": ["**/*.test.ts"]
+  "exclude": [
+    "**/*.test.ts",
+    "extensions/**/test/**",
+    "extensions/**/tests/**",
+    "extensions/orca-*.ts"
+  ]
 }

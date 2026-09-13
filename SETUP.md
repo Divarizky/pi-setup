@@ -22,7 +22,7 @@ Script memasang repository langsung ke direktori global Pi:
 
 Script menjalankan `npm ci` di staging lalu hanya menempatkan resource runtime Pi (`AGENTS.md`, `extensions/`, `skills/`, `prompts/`, dan `node_modules/`) ke agent directory. Metadata Git, README, lockfile, `package.json`, TypeScript config, dan script installer tidak ikut dideploy.
 
-State pribadi seperti `auth.json`, `settings.json`, session, model store, `bin/`, dan `npm/` tidak ditimpa. Skill lokal yang tidak ada di repository juga di-merge kembali dari backup.
+State pribadi seperti `auth.json`, `settings.json`, session, model store, `bin/`, `npm/`, `run-summaries.config.json`, dan konfigurasi `.pi/subagents.*` tidak ditimpa. Skill lokal yang tidak ada di repository juga di-merge kembali dari backup. Skill eksternal yang dikelola melalui `.agents/skills` bukan bagian dari snapshot repo ini.
 
 ## Instal manual
 
@@ -39,10 +39,10 @@ Restart Pi setelah instalasi.
 Jika direktori agent sudah ada tetapi bukan repository Git, gunakan mode repair. Mode ini:
 
 1. Membuat backup bertimestamp di `../pi-agent-backups/`.
-2. Membackup state Pi dan file lokal seperti `auth.json`, `settings.json`, `sessions/`, `bin/`, dan `npm/`.
+2. Membackup state Pi dan file lokal seperti `auth.json`, `settings.json`, `run-summaries.config.json`, `.pi/`, `sessions/`, `bin/`, dan `npm/`.
 3. Menghapus metadata/file setup lama serta resource runtime yang akan diganti.
 4. Meng-clone repository ke staging, lalu hanya menyalin resource runtime Pi ke root agent.
-5. Menjalankan `npm ci` di staging dan memvalidasi `extensions/`, `skills/`, `prompts/`, serta `node_modules/`.
+5. Menjalankan `npm ci` di staging dan memvalidasi `extensions/`, `skills/`, `prompts/`, serta `node_modules/`. Validasi kompatibilitas runtime tetap perlu dilakukan setelah sinkronisasi.
 
 Windows PowerShell:
 
@@ -68,16 +68,23 @@ PI_CODING_AGENT_DIR="$HOME/.pi/agent" bash /tmp/pi-install.sh --repair
 
 - Credential provider tetap dikelola Pi melalui `/login` dan `auth.json` lokal.
 - Konfigurasi summary model dibuat dari command `/summary-model`; file private tidak masuk repository.
+- Konfigurasi subagents global berada di `~/.pi/agent/subagents.json` dan `~/.pi/agent/subagents.yaml`; file `.pi/subagents.*` bersifat project-local.
 - Tambahkan konfigurasi Pi pribadi ke `~/.pi/agent/settings.json` setelah instalasi.
+- MCP dan package Pi tambahan (`pi-web-access`, `pi-mcp-adapter`) dikelola oleh konfigurasi lokal, bukan oleh root repo.
+- Skill eksternal dari `.agents/skills` juga dikelola terpisah dan tidak disalin dari repo ini.
 
 ## Validasi
 
 ```bash
 npm run check
+npm run check:extensions
+npm run format:check
 npm run test:git-info
 npm run test:run-summaries
 npm run test:subagents
 npm run test:todos
 ```
+
+`extensions/subagents` memakai Biome dan test suite sendiri. Extension yang dikelola Orca (`extensions/orca-*.ts`) tidak dipaksa mengikuti formatter/typecheck root karena entrypoint-nya kompatibel dengan host Orca/Pi.
 
 Tidak semua extension wajib dijalankan pada setiap device; extension yang membutuhkan provider atau Orca dapat menampilkan status unavailable tanpa credential terkait.

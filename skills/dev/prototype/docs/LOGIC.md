@@ -16,13 +16,13 @@ Branch `LOGIC` menjawab satu pertanyaan tentang business logic, state transition
 3. **Enumerate scenarios** — happy path, failure, retry, cancellation, timeout, duplicate, restart, dan dependency edge case sesuai pertanyaan.
 4. **Compare options** — gunakan tabel transition/data shape dengan evidence dan trade-off.
 5. **Check success criteria** — pastikan observasi dapat membedakan hypothesis benar atau salah.
-6. **Capture decision** — Project mode menulis `.workspace/.scratch/<slug>/prototype-decision.md`; Universal mode menampilkan decision capture di chat tanpa membuat file.
+6. **Capture decision** — Project mode memperbarui section `## Prototype Decision` pada `.workspace/work/F-<id>.md`; Universal mode menampilkan decision capture di chat tanpa membuat file.
 
 Contoh tabel analisis:
 
-| Current state | Action/event | Expected next state | Invariant                | Open risk       |
-| ------------- | ------------ | ------------------- | ------------------------ | --------------- |
-| `running`     | `timeout`    | `needs-decision`    | partial output preserved | retry semantics |
+| Current state | Action/event | Expected next state | Invariant | Open risk |
+|---|---|---|---|---|
+| `running` | `timeout` | `needs-decision` | partial output preserved | retry semantics |
 
 ## Optional Executable Mode
 

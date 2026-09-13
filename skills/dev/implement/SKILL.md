@@ -6,11 +6,11 @@ disable-model-invocation: true
 
 # Implement
 
-Engine eksekusi. Input dari tasks.md (task existing) atau hasil grill/diskusi (fitur baru).
+Engine eksekusi. Input dari work card `.workspace/work/F-<id>.md` (task existing) atau hasil grill/diskusi (fitur baru).
 
 ## Invocation
 
-Dipanggil eksplisit atau melalui route `ask-me`: "kerjakan task X", "lanjut task berikutnya", "implement task dari tasks.md", "coding fitur ini", "mulai implementasi".
+Dipanggil eksplisit atau melalui route `ask-me`: "kerjakan task X", "lanjut task berikutnya", "implement task dari work card", "coding fitur ini", "mulai implementasi".
 
 ## Prerequisites
 
@@ -32,16 +32,16 @@ Sebelum mencari input atau mengubah state:
 ## Step 1 — Find Input (priority)
 
 1. **Konteks percakapan** — behavior jelas dari grill `ask-me` / diskusi → langsung Step 3 (TDD), skip Step 2.
-2. **Task persisted** — cari `tasks.md` di path yang sudah disepakati atau `.workspace/.scratch/<slug>/tasks.md` jika Project mode. Ambil task eligible di `## Queue` (Depends sudah `[x]` di `## Done`).
+2. **Task persisted** — cari work card di path yang sudah disepakati atau `.workspace/work/F-<id>.md` jika Project mode. Ambil task eligible di `## Tasks` → `### Queue` (Depends sudah `[x]` di `### Done`).
    - ≥2 task `Parallel: yes` → siapkan batch (maks 3) untuk Step 2b.
    - Lanjut Step 2.
 3. **Tidak ada keduanya** — tanya: "Mau langsung implement dari instruksi ini, atau breakdown dulu lewat `to-tasks`?" Dalam Universal mode, `to-tasks` menghasilkan checklist di chat dan status breakdown di respons.
 
 ## Step 2 — Update Status (only for persisted tasks)
 
-Jika task berasal dari `tasks.md`, cut dari `## Queue` → paste ke `## In Progress`. Batch `Parallel: yes` → cut semua sekaligus.
+Jika task berasal dari work card, cut dari `### Queue` → paste ke `### In Progress`. Batch `Parallel: yes` → cut semua sekaligus.
 
-Jika Universal mode memakai instruksi langsung atau checklist di chat, jangan membuat atau memperbarui `tasks.md` secara otomatis; cukup catat status di respons.
+Jika Universal mode memakai instruksi langsung atau checklist di chat, jangan membuat atau memperbarui work card secara otomatis; cukup catat status di respons.
 
 ## Step 2b — Run in Parallel (batch `Parallel: yes`)
 
@@ -49,7 +49,7 @@ Jalan kalau: batch eligible (≥2 task, semua `Parallel: yes` + dependency seles
 
 1. Ambil maks **3** task (urutan priority)
 2. Spawn subagent per task → jalankan **Step 3 (TDD) saja**. Brief: Detail + Done criteria, selalu baca aturan canonical `../shared/TDD.md`; baca vocabulary tambahan jika tersedia. Instruksi:
-   - **JANGAN** update `tasks.md` (single-writer: sesi utama)
+   - **JANGAN** update work card atau tracker (single-writer: sesi utama)
    - **JANGAN** commit
    - **JANGAN** review
    - Laporkan: path file, test pass/fail, done criteria terpenuhi/tidak
@@ -57,7 +57,7 @@ Jalan kalau: batch eligible (≥2 task, semua `Parallel: yes` + dependency seles
 
 ### Sub-Agent Error Handling
 
-Subagent gagal → jangan block batch. Lapor partial: "TASK-2: [error]". Task tetap `## In Progress`. Setelah batch selesai → task gagal dikerjakan ulang **sequential** (Step 3 normal). Info user.
+Subagent gagal → jangan block batch. Lapor partial: "TASK-2: [error]". Task tetap `### In Progress` pada work card. Setelah batch selesai → task gagal dikerjakan ulang **sequential** (Step 3 normal). Info user.
 
 ## Step 3 — Implement (TDD)
 
@@ -89,7 +89,7 @@ Implement tidak otomatis men-stage apa pun — file baru maupun edit tetap unsta
 
 ### Delegate to `code-review`
 
-Pass spec (tasks.md Detail+Done criteria atau grill behavior+terminologi) sebagai text inline. **Sertakan Done criteria**. Sumber diff: `staged` — `code-review` menjalankan pre-check kelengkapan staged sendiri di Step 1.
+Pass spec (work card `Detail` + `Ref` + `Done` criteria atau grill behavior+terminologi) sebagai text inline. **Sertakan Ref dan Done criteria**. Sumber diff: `staged` — `code-review` menjalankan pre-check kelengkapan staged sendiri di Step 1.
 
 `code-review` `disable-model-invocation: true` → **baca `code-review/SKILL.md`, jalankan Step 1-5 manual** di sesi yang sama.
 
@@ -100,17 +100,15 @@ Review **SETELAH semua task batch selesai** — sekali untuk seluruh diff batch.
 ## Step 5 — Complete
 
 **Review pass:**
-
-- Jika task berasal dari `tasks.md`: cut `## In Progress` → `## Done` (append bawah), `[ ]`→`[x]`, lalu update index.
+- Jika task berasal dari work card: cut `### In Progress` → `### Done` (append bawah), `[ ]`→`[x]`, lalu update tracker.
 - Jika Universal mode memakai instruksi langsung: jangan membuat tracking otomatis; laporkan perubahan dan validasi di respons.
 - Jika user sebelumnya memilih path checklist tertentu: update hanya artifact tersebut.
 - Inform user task selesai
 - Tanya: "Selesai. Mau commit dulu atau lanjut?" (no auto-commit)
-- Jika `tasks.md` tersedia: cek `## Queue` — task eligible (dependency `[x]`)? Tawarkan: "TASK-N eligible. Kerjakan? (y/n)". `y` → ulang Step 2.
-- Jika Project mode dan `task_done == task_count`: tanya apakah `.scratch/<slug>/` perlu diarsipkan.
+- Jika work card tersedia: cek `### Queue` — task eligible (dependency `[x]`)? Tawarkan: "TASK-N eligible. Kerjakan? (y/n)". `y` → ulang Step 2.
+- Jika Project mode dan `task_done == task_count`: tanya apakah work card `.workspace/work/F-<id>.md` perlu dihapus. Hapus hanya setelah requirement approved sudah tersalin ke SRS dan user mengonfirmasi.
 
 **Review ada temuan:**
-
 - Task tetap `## In Progress`
 - No commit suggestion
 - Balik Step 3, perbaiki, ulang Step 4. Maks **3 siklus review→fix** — masih ada temuan → [Escape Hatch](../shared/COMMON.md#escape-hatch): stop, tanya user lanjut perbaiki/handoff/batal
@@ -118,37 +116,37 @@ Review **SETELAH semua task batch selesai** — sekali untuk seluruh diff batch.
 
 ### Update Index (Project Mode)
 
-Jika task berasal dari `.workspace/.scratch/<slug>/tasks.md`, update `.workspace/context/TRACKER.md`: increment `task_done`, cek `task_done==task_count` → `status: done`, update `updated: <today>`. Universal mode tidak membuat index otomatis.
+Jika task berasal dari `.workspace/work/F-<id>.md`, update `.workspace/context/TRACKER.md`: increment `task_done`, cek `task_done==task_count` → `status: done`, update `updated: <today>`. Universal mode tidak membuat index otomatis.
 
 ### Minimal Tracking (optional)
 
-Hanya jalankan dalam Project mode. Universal mode tidak membuat tracking artifact; laporkan status implementasi, test, dan done criteria di respons. Dalam Project mode, tulis entry ke `.workspace/context/TRACKER.md` dan `.workspace/.scratch/<slug>/tasks.md`:
-
+Hanya jalankan dalam Project mode. Universal mode tidak membuat tracking artifact; laporkan status implementasi, test, dan done criteria di respons. Dalam Project mode, tulis entry ke `.workspace/context/TRACKER.md`; task tetap berada di work card:
 ```yaml
-# TRACKER.md — execution progress; see `.workspace/context/SRS.md` for requirement status
-- slug: <fitur>
-  status: done
-  source: ask-me
-  created: <today>
-  updated: <today>
-  task_count: 1
-  task_done: 1
+# TRACKER.md — execution progress; see `.workspace/context/SRS.md` for requirement lifecycle
+tracker: local
+features:
+  - id: F-<id>
+    status: done
+    source: ask-me
+    created: <today>
+    updated: <today>
+    task_count: 1
+    task_done: 1
 ```
-
 ```markdown
-# <Feature> — Tasks
-
-## Done
-
-- [x] TASK-1 | <judul> | Depends: none | Priority: medium
-      Detail: <behavior dari grill>
-      Done:
-  - [x] <criteria>
+# F-<id> — <Feature>
+## Tasks
+### Done
+- [x] TASK-1 | <judul> | Depends: none | Priority: medium | Parallel: no
+    Detail: <behavior dari grill>
+    Ref: AC-01
+    Done:
+    - [x] <criteria>
 ```
 
 ### Commit Rules
 
-- Task persisted: commit hanya setelah implementasi utuh masuk `## Done`, bukan tengah TDD.
+- Task persisted: commit hanya setelah implementasi utuh masuk `### Done` pada work card, bukan tengah TDD.
 - Universal mode/instruksi langsung: commit setelah implementasi dan review selesai, jika user meminta commit.
 - Prefactoring commit terpisah dari implementasi — jangan digabung.
 
@@ -175,6 +173,5 @@ Nemu arsitektur signifikan (tidak terkait task) → catat: path, deskripsi, sara
 ## Chain
 
 `to-requirements`→`to-tasks`→`implement`→`code-review`. Setelah `code-review`:
-
 - Pass → kembali Step 5 `implement`
 - Fail → kembali Step 3 `implement` (perbaiki, review ulang)

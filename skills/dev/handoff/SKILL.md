@@ -29,11 +29,11 @@ Isi berikut berlaku untuk dokumen Project maupun ringkasan chat Universal:
 - Keputusan yang sudah dibuat
 - Open question / next step
 - **Wajib**: "Suggested Skills" — skill mana dari kumpulan dev yang harus dipanggil sesi berikutnya (`ask-me`, `implement`, `bug-diagnosis`, `improve-architecture`, `project-migration`, `to-requirements`, `to-tasks`, `code-review`, `prototype`, `status`, `setup-workflow`, `handoff`)
-- **Kalau sesi tengah `implement` belum sampai review**: sertakan spec/task detail relevan (behavior, interface, edge case dari grill, atau Detail task) — ringkas ke handoff biar sesi baru tidak perlu buka file lain.
+- **Kalau sesi tengah `implement` belum sampai review**: sertakan spec/task detail relevan (behavior, interface, edge case dari grill, `Ref`, atau `Detail` task dari work card) — ringkas ke handoff biar sesi baru tidak perlu buka file lain.
 
 ## Reference-Only Rules
 
-Project: jangan duplikasi konten yang sudah ada di artifact lain (requirements, tasks.md, ADR, issue, commit, diff). Reference by path/URL — jangan copy isi.
+Project: jangan duplikasi konten yang sudah ada di artifact lain (work card, SRS, ADR, issue, commit, diff). Reference by path/URL — jangan copy isi.
 
 Universal: handoff lengkap disimpan di clipboard, bukan artifact file. Ringkasan chat cukup memuat progres, keputusan utama, open question, Suggested Skills, dan next step. Jika sumber hanya tersedia lewat path, sebutkan path tersebut tanpa menganggap file akan tersedia di sesi berikutnya.
 

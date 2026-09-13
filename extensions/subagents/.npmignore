@@ -1,0 +1,31 @@
+# Development files
+tsconfig.json
+.vscode/
+.git/
+.gitignore
+
+# Internal planning
+AGENTS.md
+tasks.md
+
+# Internal contributor/agent instructions — not for distribution
+CLAUDE.md
+
+# Build artifacts
+*.log
+npm-debug.log*
+.DS_Store
+
+# Tests (if any)
+test/
+tests/
+*.test.ts
+*.spec.ts
+vitest.config.ts
+
+.pi
+.claude
+.vscode
+.github/
+biome.json
+coverage/

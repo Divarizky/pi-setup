@@ -1,6 +1,6 @@
 ---
 name: status
-description: 'Jawab "gua lagi di mana?" — baca state workflow lokal (feature aktif, task berjalan, handoff terakhir), ringkas jadi snapshot + saran skill berikutnya. Read-only, tidak menulis apapun. User-invoked.'
+description: "Jawab \"gua lagi di mana?\" — baca state workflow lokal (feature aktif, task berjalan, handoff terakhir), ringkas jadi snapshot + saran skill berikutnya. Read-only, tidak menulis apapun. User-invoked."
 disable-model-invocation: true
 ---
 
@@ -15,39 +15,31 @@ Snapshot cepat state kerja saat ini. Pas buka sesi baru dan lupa lagi ngerjain a
 ## Step 1 — Read State (3 sources, skip missing/corrupt)
 
 ### Universal Mode
-
 Gunakan percakapan aktif, current directory, Git bila tersedia, dan file workflow yang user berikan. Jangan mengasumsikan tracker, tasks, atau handoff `.workspace` tersedia; jangan membuat file.
 
 ### Project Mode
-
 Gunakan Context Resolver dan baca sumber berikut hanya jika tersedia:
 
-### 1. Feature Index
-
-Baca `.workspace/context/TRACKER.md`:
-
+### 1. Feature Progress
+Baca `.workspace/context/TRACKER.md` (ID fitur/progres eksekusi; lifecycle requirement tetap di Feature Registry SRS):
 - Filter `status: open` dan `status: done`
 - Ambil `task_count` + `task_done` untuk progress bar Step 2
 - Tidak ada/format invalid → laporkan: ".workspace/context/TRACKER.md tidak terbaca. Tawarkan `setup-workflow` untuk memperbaiki persistence."
 
 ### 2. Active Tasks
-
-Untuk slug `open` di index:
-
-- Cek folder `.workspace/.scratch/<slug>/` ada? Tidak → laporkan: "Slug `<slug>`: folder `.scratch/<slug>/` hilang." Skip.
-- Baca `.workspace/.scratch/<slug>/tasks.md` (format: `## Queue`/`## In Progress`/`## Done`, checkbox `[ ]`/`[x]`)
+Untuk feature `id: F-<id>` dengan `status: open` di tracker:
+- Cek work card `.workspace/work/F-<id>.md` ada. Tidak ada → laporkan: "Work card F-<id> tidak ditemukan." Skip.
+- Baca section `## Tasks` dengan subheading `### Queue`/`### In Progress`/`### Done`, checkbox `[ ]`/`[x]`.
 
 Ekstrak:
+- **In Progress**: semua `[ ]` di bawah `### In Progress` → TASK-ID + nama
+- **Queue eligible**: di `### Queue`, `[ ]` yang `Depends:` sudah `[x]` di `### Done` → task teratas
+- **Queue count**: total `[ ]` di `### Queue`
 
-- **In Progress**: semua `[ ]` di bawah `## In Progress` → TASK-ID + nama
-- **Queue eligible**: di `## Queue`, `[ ]` yang `Depends:` sudah `[x]` di `## Done` → task teratas
-- **Queue count**: total `[ ]` di `## Queue`
-
-File tidak ada tapi index bilang `open` → laporkan: "Slug X: tasks.md tidak ditemukan."
-File ada tapi format tidak parse → laporkan: "Slug X: tasks.md format tidak dikenal."
+Work card tidak ada tapi tracker bilang `open` → laporkan: "F-<id>: work card tidak ditemukan."
+File ada tapi format tidak parse → laporkan: "F-<id>: work card format tidak dikenal."
 
 ### 3. Latest Handoff
-
 Project: cari file terbaru di `.workspace/handoffs/` — `ls -t .workspace/handoffs/*.md 2>/dev/null | head -1` (sort by mtime, bukan string filename).
 Universal: gunakan handoff yang ditempelkan atau dirujuk user.
 Ambil 1 baris ringkasan (biasanya baris pertama setelah judul). Jangan baca seluruh file.
@@ -59,36 +51,33 @@ Folder tidak ada/kosong → skip.
 ## Status
 
 **Feature aktif:**
-- <slug> (<task_done>/<task_count> task selesai) — <status>
+- <F-id> (<task_done>/<task_count> task selesai) — <status>
   (atau "tidak ada feature open")
 
 **Sedang dikerjakan:**
-- TASK-N | <nama task> | <slug>
+- TASK-N | <nama task> | <F-id>
   (atau "tidak ada")
 
 **Queue antrian:** <N> task — task teratas eligible:
-- TASK-M | <nama task> | <slug>
+- TASK-M | <nama task> | <F-id>
   (atau "-")
 
 **Handoff terakhir:** <path> — <1 baris ringkas>
   (atau "tidak ada")
 
-**Feature done:** <slug(s)> — atau "tidak ada"
+**Feature done:** <F-id(s)> — atau "tidak ada"
 ```
 
-Jangan dump seluruh isi tasks.md/handoff — cukup baris relevan. Reference by path kalau user mau detail.
+Jangan dump seluruh isi work card/handoff — cukup baris relevan. Reference by path kalau user mau detail.
 
 ### Stale Task Detection
-
 Cek task In Progress tanpa aktivitas:
-
 - Bukan git repo (`git rev-parse --git-dir 2>/dev/null` gagal) → "tidak bisa deteksi staleness (bukan git repo)"
 - Git repo: `git log --since="7 days ago" --all --oneline` — ada output = ada commit 7 hari terakhir. Atau `git log -1 --format="%ar" HEAD` → "3 hours ago", "2 weeks ago".
-- Tampilkan: "TASK-N — last commit: <N hari> lalu — <slug>."
+- Tampilkan: "TASK-N — last commit: <N hari> lalu — <F-id>."
 
 ### Stale Features
-
-Cek `.workspace/context/TRACKER.md` fitur `status: done` dengan `updated` >30 hari lalu → tampilkan: "<slug> — done sejak <tanggal>. Masih di `.scratch/`."
+Cek `.workspace/context/TRACKER.md` fitur `status: done` dengan `updated` >30 hari lalu → tampilkan: "<F-id> — done sejak <tanggal>. Work card mungkin masih tersedia di `.workspace/work/`."
 
 ## Step 3 — Suggest Next Skill
 

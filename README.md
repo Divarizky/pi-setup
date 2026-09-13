@@ -10,7 +10,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `copy-all` — Copy conversation to clipboard
 - `git-info` — Git branch, changes, PR status in footer
 - `run-summaries` — Auto-summarize agent runs
-- `subagents` — Background Pi subagents with orchestration
+- `subagents` — Background Pi subagents, workflows, worktrees, and Agent Control (v2)
 - `todos` — Todo tracking with overlay widget
 - `ui-customization` — Custom header/footer, theme tweaks
 - `usage-tracker` — Provider quota & session usage dashboard
@@ -23,30 +23,35 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `handoff` — Context handoff between sessions/agents
 - `implement` — TDD implementation with code-review chain
 - `improve-architecture` — Deepening scan + interview
-- `project-migration` — Legacy→new project migration
+- `project-migration` — Project migration workflow
 - `prototype` — Throwaway prototypes (LOGIC/UI)
 - `setup-workflow` — Initialize `.workspace/` for project-aware mode
 - `status` — Snapshot current workflow state
-- `to-issues` — Breakdown PRD/plan into vertical-slice tasks
-- `to-prd` — Synthesize conversation/grill into PRD
+- `to-requirements` — Synthesize approved requirements into SRS and feature work cards
+- `to-tasks` — Break approved feature work into vertical-slice tasks
 
 `dashboard-state` adalah modul internal yang dipakai bersama oleh `git-info`, `ui-customization`, dan `usage-tracker`; bukan extension user-facing terpisah.
+
+Setup aktif juga memakai skill eksternal dari `.agents/skills` (`computer-use`, `find-skills`, `orca-cli`, dan `orchestration`). Skill eksternal tersebut sengaja tidak divendor ke repo ini.
 
 ## Quick Start
 
 ### Windows PowerShell
 
 ```powershell
-irm https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.ps1 | iex
+$script = Join-Path $env:TEMP "pi-install.ps1"
+Invoke-WebRequest https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.ps1 -OutFile $script
+& $script
 ```
 
 ### macOS/Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.sh -o /tmp/pi-install.sh
+bash /tmp/pi-install.sh
 ```
 
-Installer menempatkan resource runtime Pi (`extensions/`, `skills/`, `prompts/`, dan `node_modules/`) ke root agent Pi, tanpa metadata Git atau file setup repository. State pribadi tetap dipertahankan. Untuk direktori lama, gunakan mode repair di [SETUP.md](SETUP.md).
+Installer menempatkan resource runtime Pi (`extensions/`, `skills/`, `prompts/`, dan `node_modules/`) ke root agent Pi, tanpa metadata Git atau file setup repository. State pribadi tetap dipertahankan. Skill eksternal dari `.agents/skills` dan package Pi tambahan dikelola terpisah. Untuk direktori lama, gunakan mode repair di [SETUP.md](SETUP.md).
 
 ### Instal manual
 
@@ -66,15 +71,16 @@ For persistence across sessions, run `setup-workflow` once per repo:
 /setup-workflow
 ```
 
-This creates `.workspace/` with:
-- `context/AGENT.md` — Quick references
-- `context/CONTEXT.md` — Full detail
-- `context/ADR.md` — Architecture decisions
-- `tracking/issue-tracker.md` — Feature index
-- `.scratch/<slug>/` — Per-feature PRD, tasks, prototypes
+This creates the current `.workspace/` structure:
+- `project-meta.md` — Setup and refresh metadata
+- `context/PROJECT.md` — Quick references
+- `context/CONTEXT.md` — Domain and technical detail
+- `context/SRS.md` — Approved requirements and feature registry
+- `context/TRACKER.md` — Feature execution progress
+- `work/F-<id>.md` — Per-feature work card
 
 Universal mode works without setup — context stays in chat.
 
 ## Extensions Development
 
-Each extension in `extensions/` is a standalone TypeScript module. See `extensions/<name>/` for structure.
+Each extension in `extensions/` is a standalone TypeScript module. See `extensions/<name>/` for structure. `subagents` saat ini versi `2.0.0`, memakai Biome dan test suite sendiri. Extension yang dikelola Orca berada di `extensions/orca-*.ts` dan membutuhkan host Orca/Pi yang sesuai.

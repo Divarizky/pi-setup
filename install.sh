@@ -54,7 +54,7 @@ CLEAN_ITEMS=(
 # These are local Pi state or locally installed tools. They are never replaced.
 STATE_ITEMS=(
   auth.json settings.json trust.json models.json models-store.json usage-tracker.json
-  mcp.json mcp-cache.json sessions bin npm
+  mcp.json mcp-cache.json run-summaries.config.json sessions bin npm .pi
 )
 
 if [[ -d "$AGENT_DIR/.git" && "$REPAIR" == false ]]; then

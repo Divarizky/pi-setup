@@ -34,10 +34,7 @@ function headerNumber(
   return Number.isFinite(value) ? value : undefined;
 }
 
-function parseResetDuration(
-  value: string | undefined,
-  now: Date,
-): Date | undefined {
+function parseResetDuration(value: string | undefined, now: Date): Date | undefined {
   if (!value) return undefined;
   const matches = [...value.matchAll(/(\d+(?:\.\d+)?)(ms|s|m|h|d)/gi)];
   if (matches.length === 0) return undefined;
@@ -45,21 +42,18 @@ function parseResetDuration(
   const milliseconds = matches.reduce((total, match) => {
     const amount = Number(match[1]);
     const unit = match[2]?.toLowerCase();
-    const multiplier =
-      unit === "ms"
-        ? 1
-        : unit === "s"
-          ? 1_000
-          : unit === "m"
-            ? 60_000
-            : unit === "h"
-              ? 3_600_000
-              : 86_400_000;
+    const multiplier = unit === "ms"
+      ? 1
+      : unit === "s"
+        ? 1_000
+        : unit === "m"
+          ? 60_000
+          : unit === "h"
+            ? 3_600_000
+            : 86_400_000;
     return total + amount * multiplier;
   }, 0);
-  return Number.isFinite(milliseconds)
-    ? new Date(now.getTime() + milliseconds)
-    : undefined;
+  return Number.isFinite(milliseconds) ? new Date(now.getTime() + milliseconds) : undefined;
 }
 
 /**
@@ -81,8 +75,7 @@ export function parseStandardQuotaHeaders(
     "x-ratelimit-remaining-tokens",
     "ratelimit-remaining-tokens",
   );
-  if (limit === undefined || limit <= 0 || remaining === undefined)
-    return undefined;
+  if (limit === undefined || limit <= 0 || remaining === undefined) return undefined;
 
   const boundedRemaining = Math.max(0, Math.min(limit, remaining));
   const usedPercent = ((limit - boundedRemaining) / limit) * 100;
@@ -90,11 +83,7 @@ export function parseStandardQuotaHeaders(
     label: "token window",
     usedPercent,
     resetsAt: parseResetDuration(
-      headerValue(
-        headers,
-        "x-ratelimit-reset-tokens",
-        "ratelimit-reset-tokens",
-      ),
+      headerValue(headers, "x-ratelimit-reset-tokens", "ratelimit-reset-tokens"),
       now,
     ),
   };
@@ -163,10 +152,7 @@ export function findMatchingLimit(
   // Substring match
   const subMatch = usage.limits.find((l) => {
     const normLimit = normalizeModelName(l.label);
-    return (
-      normLimit.length > 3 &&
-      (normBare.includes(normLimit) || normLimit.includes(normBare))
-    );
+    return normLimit.length > 3 && (normBare.includes(normLimit) || normLimit.includes(normBare));
   });
   if (subMatch) return subMatch;
 
@@ -180,9 +166,7 @@ export function findQuotaForModel(
 ): MatchedQuota | undefined {
   const provider = quotaProviderId(model);
   const candidates = usages.filter(
-    (usage) =>
-      usage.provider.toLowerCase() === provider.toLowerCase() &&
-      Boolean(usage.limits?.length),
+    (usage) => usage.provider.toLowerCase() === provider.toLowerCase() && Boolean(usage.limits?.length),
   );
 
   for (const candidate of candidates) {
@@ -222,6 +206,9 @@ function formatReset(resetAt: Date | undefined, now: Date): string | undefined {
 /**
  * Render a quota rail directly below Pi's editor separator, followed by a
  * closing rule that keeps the built-in footer visually separate.
+ *
+ * The top rule is intentionally omitted so it merges with the editor's own
+ * bottom separator while idle.
  */
 export function renderQuotaBar(
   _model: QuotaModelRef,
@@ -229,8 +216,7 @@ export function renderQuotaBar(
   width: number,
   theme: Theme,
   now = new Date(),
-  borderColor: (text: string) => string = (text) =>
-    theme.fg("borderMuted", text),
+  borderColor: (text: string) => string = (text) => theme.fg("borderMuted", text),
 ): string[] {
   const safeWidth = Math.max(1, width);
   // Use the provider returned by the quota source. For 9Router this is the
@@ -246,12 +232,11 @@ export function renderQuotaBar(
   const overhead = visibleWidth(providerLabel) + visibleWidth(suffix) + 6;
   const barWidth = Math.max(1, safeWidth - overhead);
   const usedWidth = Math.round((usedPercent / 100) * barWidth);
-  const bar =
-    usedWidth <= 0
-      ? "─".repeat(barWidth)
-      : usedWidth >= barWidth
-        ? "━".repeat(barWidth)
-        : `${"━".repeat(usedWidth - 1)}╸${"─".repeat(barWidth - usedWidth)}`;
+  const bar = usedWidth <= 0
+    ? "─".repeat(barWidth)
+    : usedWidth >= barWidth
+      ? "━".repeat(barWidth)
+      : `${"━".repeat(usedWidth - 1)}╸${"─".repeat(barWidth - usedWidth)}`;
 
   const content = [
     theme.fg("text", providerLabel),
@@ -267,5 +252,8 @@ export function renderQuotaBar(
 
   const rule = borderColor("─".repeat(safeWidth));
 
-  return [truncateToWidth(content, safeWidth), rule];
+  return [
+    truncateToWidth(content, safeWidth),
+    rule,
+  ];
 }

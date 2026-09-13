@@ -26,7 +26,7 @@ Mode otomatis jika `.workspace/project-meta.md` tersedia dan user tidak meminta 
 
 - Konteks: percakapan aktif ditambah `.workspace/context/PROJECT.md`, `CONTEXT.md`, `SRS.md`, dan `ADR.md` bila tersedia.
 - Persist state ke `.workspace/` sesuai ownership artifact.
-- Gunakan `tasks.md`, `requirements.md`, SRS, tracker, dan handoff untuk lintas sesi.
+- Gunakan work card `.workspace/work/F-<id>.md`, SRS, tracker, dan handoff untuk lintas sesi. Work card boleh dihapus setelah requirement approved tersimpan di SRS dan task selesai.
 - Artifact yang sudah ada dibaca sebelum membuat atau memperbaruinya.
 
 ### Mode Selection
@@ -79,22 +79,22 @@ Klasifikasi risiko dan detail confirmation gate mengikuti [shared/PROMPT-DESIGN.
 
 ## Routing
 
-| Sinyal                        | Route                  |
-| ----------------------------- | ---------------------- |
-| Intent umum atau ambigu       | `ask-me`               |
-| Fitur kecil, behavior jelas   | `implement`            |
-| requirements/spec             | `to-requirements`      |
-| Breakdown task                | `to-tasks`             |
-| Error/bug sulit               | `bug-diagnosis`        |
-| Desain belum pasti            | `prototype`            |
-| Refactor/arsitektur           | `improve-architecture` |
-| Migrasi project               | `project-migration`    |
-| Review diff                   | `code-review`          |
-| Commit perubahan              | `git-commit`           |
-| Resolve merge conflict        | `merge-conflict`       |
-| Cek progres                   | `status`               |
-| Pindah sesi                   | `handoff`              |
-| Butuh persistence lintas sesi | `setup-workflow`       |
+| Sinyal | Route |
+|---|---|
+| Intent umum atau ambigu | `ask-me` |
+| Fitur kecil, behavior jelas | `implement` |
+| requirements/spec | `to-requirements` |
+| Breakdown task | `to-tasks` |
+| Error/bug sulit | `bug-diagnosis` |
+| Desain belum pasti | `prototype` |
+| Refactor/arsitektur | `improve-architecture` |
+| Migrasi project | `project-migration` |
+| Review diff | `code-review` |
+| Commit perubahan | `git-commit` |
+| Resolve merge conflict | `merge-conflict` |
+| Cek progres | `status` |
+| Pindah sesi | `handoff` |
+| Butuh persistence lintas sesi | `setup-workflow` |
 
 Skill spesifik yang disebut user mengalahkan router `ask-me`.
 
@@ -102,24 +102,24 @@ Skill spesifik yang disebut user mengalahkan router `ask-me`.
 
 Universal mode tidak membuat atau memperbarui artifact workflow di file. Artifact dan statusnya hanya ditampilkan di chat.
 
-| Kebutuhan       | Project mode                                 | Universal mode                               |
-| --------------- | -------------------------------------------- | -------------------------------------------- |
-| Task            | `.workspace/.scratch/<slug>/tasks.md`        | checklist di chat + status respons           |
-| requirements    | `.workspace/.scratch/<slug>/requirements.md` | draft di chat + status draft/approved        |
-| SRS             | `.workspace/context/SRS.md`                  | global requirement + index di chat           |
-| Handoff         | `.workspace/handoffs/*.md`                   | ringkasan handoff di chat + Suggested Skills |
-| Status          | tracker + tasks + handoff                    | Git + file relevan + percakapan              |
-| Context         | `.workspace/context/*`                       | inspeksi langsung current directory          |
-| Migration state | `.workspace/.scratch/migration/*`            | tidak tersedia; setup wajib                  |
+| Kebutuhan | Project mode | Universal mode |
+|---|---|---|
+| Work card (requirements + task) | `.workspace/work/F-<id>.md` | draft/hasil ditampilkan di chat + status respons |
+| SRS | `.workspace/context/SRS.md` (Global Requirements + Feature Registry + Feature Requirements) | baseline dan kontribusi ditampilkan di chat |
+| Task | section `## Tasks` pada work card | checklist di chat + status respons |
+| Handoff | `.workspace/handoffs/*.md` | ringkasan handoff di chat + Suggested Skills |
+| Status | tracker + tasks + handoff | Git + file relevan + percakapan |
+| Context | `.workspace/context/*` | inspeksi langsung current directory |
+| Migration state | `.workspace/.scratch/migration/*` | tidak tersedia; setup wajib |
 
 Permintaan menulis artifact ke file membutuhkan Project mode; tawarkan `setup-workflow` jika user membutuhkan persistence.
 
 ## Artifact Ownership
 
 - `setup-workflow`: project metadata, context dasar, dan scaffold SRS (seed Global Requirements saat New Project).
-- `to-requirements`: requirements dan konten SRS — single-writer `.workspace/context/SRS.md` setelah seed.
-- `to-tasks`: tasks baru, index fitur saat breakdown, dan buat entry `.workspace/context/TRACKER.md`.
-- `implement`: perpindahan Queue/In Progress/Done; satu-satunya pengubah counter di `.workspace/context/TRACKER.md`.
+- `to-requirements`: work card dan konten requirement SRS — single-writer `.workspace/context/SRS.md` setelah seed.
+- `to-tasks`: section `## Tasks` pada work card dan entry fitur di `.workspace/context/TRACKER.md`.
+- `implement`: perpindahan task Queue/In Progress/Done pada work card; satu-satunya pengubah counter di `.workspace/context/TRACKER.md`.
 - `status`: read-only.
 - `handoff`: dokumen handoff.
 - `prototype`: keputusan prototype.

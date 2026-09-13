@@ -1,18 +1,6 @@
-import type {
-  KeybindingsManager,
-  Theme,
-} from "@earendil-works/pi-coding-agent";
-import {
-  truncateToWidth,
-  visibleWidth,
-  type TUI,
-} from "@earendil-works/pi-tui";
-import type {
-  ProviderId,
-  ProviderUsage,
-  UsageLimit,
-  UsageTotals,
-} from "./providers.ts";
+import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth, type TUI } from "@earendil-works/pi-tui";
+import type { ProviderId, ProviderUsage, UsageLimit, UsageTotals } from "./providers.ts";
 import { providerName } from "./providers.ts";
 
 export interface UsageTrackerViewData {
@@ -24,8 +12,7 @@ export interface UsageTrackerViewData {
 
 function formatTokens(value: number): string {
   if (value < 1_000) return String(Math.round(value));
-  if (value < 1_000_000)
-    return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K`;
+  if (value < 1_000_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K`;
   return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
 }
 
@@ -34,12 +21,7 @@ function pad(text: string, width: number): string {
   return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
 }
 
-function line(
-  theme: Theme,
-  left: string,
-  right: string,
-  width: number,
-): string {
+function line(theme: Theme, left: string, right: string, width: number): string {
   const gap = width - visibleWidth(left) - visibleWidth(right);
   if (gap >= 1) return `${left}${" ".repeat(gap)}${right}`;
   return truncateToWidth(`${left} ${right}`, width);
@@ -49,12 +31,11 @@ function progressBar(theme: Theme, usedPercent: number, width: number): string {
   const barWidth = Math.max(1, Math.min(40, width));
   const boundedPercent = Math.max(0, Math.min(100, usedPercent));
   const usedWidth = Math.round((boundedPercent / 100) * barWidth);
-  const rail =
-    usedWidth <= 0
-      ? "─".repeat(barWidth)
-      : usedWidth >= barWidth
-        ? "━".repeat(barWidth)
-        : `${"━".repeat(usedWidth - 1)}╸${"─".repeat(barWidth - usedWidth)}`;
+  const rail = usedWidth <= 0
+    ? "─".repeat(barWidth)
+    : usedWidth >= barWidth
+      ? "━".repeat(barWidth)
+      : `${"━".repeat(usedWidth - 1)}╸${"─".repeat(barWidth - usedWidth)}`;
   return theme.fg("text", rail);
 }
 
@@ -89,12 +70,11 @@ function resetInfo(limit: UsageLimit, now: Date): string {
   const days = Math.floor(totalMinutes / (60 * 24));
   const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
   const minutes = totalMinutes % 60;
-  const relative =
-    days > 0
-      ? `${days} hari ${hours} jam`
-      : hours > 0
-        ? `${hours} jam ${minutes} menit`
-        : `${minutes} menit`;
+  const relative = days > 0
+    ? `${days} hari ${hours} jam`
+    : hours > 0
+      ? `${hours} jam ${minutes} menit`
+      : `${minutes} menit`;
   const absolute = limit.resetsAt.toLocaleString("id-ID", {
     day: "2-digit",
     month: "2-digit",
@@ -132,31 +112,17 @@ function limitLines(
   const row = `${label}${" ".repeat(layout.leftSpace)}${bar}${" ".repeat(layout.rightSpace)}${right}`;
   return [
     truncateToWidth(row, width),
-    theme.fg(
-      "dim",
-      `${" ".repeat(layout.labelWidth + layout.leftSpace)}${resetInfo(limit, now)}`,
-    ),
+    theme.fg("dim", `${" ".repeat(layout.labelWidth + layout.leftSpace)}${resetInfo(limit, now)}`),
   ];
 }
 
-function quotaLineLayout(
-  limits: readonly UsageLimit[],
-  width: number,
-): QuotaLineLayout {
+function quotaLineLayout(limits: readonly UsageLimit[], width: number): QuotaLineLayout {
   const rightWidth = Math.max(
     1,
-    ...limits.map((limit) =>
-      visibleWidth(`${limit.usedPercent.toFixed(0)}% terpakai`),
-    ),
+    ...limits.map((limit) => visibleWidth(`${limit.usedPercent.toFixed(0)}% terpakai`)),
   );
-  const longestLabel = Math.max(
-    14,
-    ...limits.map((limit) => visibleWidth(limit.label)),
-  );
-  const labelWidth = Math.max(
-    1,
-    Math.min(longestLabel, width - rightWidth - 7),
-  );
+  const longestLabel = Math.max(14, ...limits.map((limit) => visibleWidth(limit.label)));
+  const labelWidth = Math.max(1, Math.min(longestLabel, width - rightWidth - 7));
   const available = Math.max(1, width - labelWidth - rightWidth);
   const barWidth = Math.max(1, Math.min(40, available - 2));
   const remainingSpace = Math.max(0, available - barWidth);
@@ -165,10 +131,7 @@ function quotaLineLayout(
   return { labelWidth, barWidth, leftSpace, rightSpace, rightWidth };
 }
 
-function providerStatus(usage: ProviderUsage): {
-  label: string;
-  color: "success" | "accent" | "warning";
-} {
+function providerStatus(usage: ProviderUsage): { label: string; color: "success" | "accent" | "warning" } {
   if (usage.source === "9Router lokal" && usage.status === "ok") {
     return { label: "Lokal", color: "accent" };
   }
@@ -176,81 +139,39 @@ function providerStatus(usage: ProviderUsage): {
     return { label: "N/A", color: "warning" };
   }
 
-  const highestUsage = Math.max(
-    ...usage.limits.map((limit) => limit.usedPercent),
-  );
+  const highestUsage = Math.max(...usage.limits.map((limit) => limit.usedPercent));
   if (highestUsage >= 100) return { label: "Habis", color: "warning" };
   if (highestUsage >= 90) return { label: "Kritis", color: "warning" };
   if (highestUsage >= 70) return { label: "Tinggi", color: "accent" };
   return { label: "Aman", color: "success" };
 }
 
-function providerRows(
-  theme: Theme,
-  usage: ProviderUsage,
-  width: number,
-  now: Date,
-): string[] {
+function providerRows(theme: Theme, usage: ProviderUsage, width: number, now: Date): string[] {
   const inner = Math.max(1, width);
   const providerStatusValue = providerStatus(usage);
-  const status = theme.fg(
-    providerStatusValue.color,
-    `● ${providerStatusValue.label}`,
-  );
+  const status = theme.fg(providerStatusValue.color, `● ${providerStatusValue.label}`);
   const titleText = usage.label ?? providerName(usage.provider);
-  const titleWidth = Math.max(
-    1,
-    inner - visibleWidth(`● ${providerStatusValue.label}`) - 1,
-  );
-  const title = theme.fg(
-    "accent",
-    theme.bold(truncateToWidth(titleText, titleWidth)),
-  );
+  const titleWidth = Math.max(1, inner - visibleWidth(`● ${providerStatusValue.label}`) - 1);
+  const title = theme.fg("accent", theme.bold(truncateToWidth(titleText, titleWidth)));
   const rows = [line(theme, title, status, inner)];
-  if (
-    usage.source === "9Router quota API" ||
-    usage.source === "9Router lokal"
-  ) {
-    rows.push(
-      ...wrapPlain(`Sumber: ${usage.source}`, inner).map((value) =>
-        theme.fg("dim", value),
-      ),
-    );
+  if (usage.source === "9Router quota API" || usage.source === "9Router lokal") {
+    rows.push(...wrapPlain(`Sumber: ${usage.source}`, inner).map((value) => theme.fg("dim", value)));
   }
   if (usage.limits?.length) {
     if (usage.quota) {
-      rows.push(
-        line(
-          theme,
-          theme.fg("muted", "Plan"),
-          theme.fg("text", usage.quota),
-          inner,
-        ),
-      );
+      rows.push(line(theme, theme.fg("muted", "Plan"), theme.fg("text", usage.quota), inner));
     }
     // Codex dan 9Router memakai kolom yang sama. Dengan layout bersama ini,
     // nama model, bar, dan persentase tetap sejajar untuk setiap limit.
     const layout = quotaLineLayout(usage.limits, inner);
-    rows.push(
-      ...usage.limits.flatMap((limit) =>
-        limitLines(theme, limit, inner, now, layout),
-      ),
-    );
+    rows.push(...usage.limits.flatMap((limit) => limitLines(theme, limit, inner, now, layout)));
     if (usage.message) rows.push(theme.fg("dim", usage.message));
   } else {
     rows.push(
       line(
         theme,
-        theme.fg(
-          "muted",
-          usage.source?.startsWith("9Router")
-            ? "Status koneksi"
-            : "Quota / saldo",
-        ),
-        theme.fg(
-          usage.quota || usage.balance ? "text" : "warning",
-          usage.quota ?? usage.balance ?? "data tidak tersedia",
-        ),
+        theme.fg("muted", usage.source?.startsWith("9Router") ? "Status koneksi" : "Quota / saldo"),
+        theme.fg(usage.quota || usage.balance ? "text" : "warning", usage.quota ?? usage.balance ?? "data tidak tersedia"),
         inner,
       ),
       ...(usage.message ? [theme.fg("dim", usage.message)] : []),
@@ -259,11 +180,7 @@ function providerRows(
   return rows.map((row) => pad(row, inner));
 }
 
-function sessionLine(
-  theme: Theme,
-  session: UsageTotals,
-  width: number,
-): string {
+function sessionLine(theme: Theme, session: UsageTotals, width: number): string {
   const left = theme.fg("accent", theme.bold("Session Pi"));
   const right = theme.fg(
     "text",
@@ -311,10 +228,7 @@ export class UsageTrackerDashboard {
     const isPageUp = key === "pageup";
     const isPageDown = key === "pagedown";
     if (isUp || isPageUp) {
-      this.scrollOffset = Math.max(
-        0,
-        this.scrollOffset - (isPageUp ? this.pageSize() : 1),
-      );
+      this.scrollOffset = Math.max(0, this.scrollOffset - (isPageUp ? this.pageSize() : 1));
       this.tui.requestRender();
     } else if (isDown || isPageDown) {
       this.scrollOffset += isPageDown ? this.pageSize() : 1;
@@ -329,36 +243,22 @@ export class UsageTrackerDashboard {
   render(width: number): string[] {
     const frameWidth = Math.max(4, width);
     const inner = Math.max(1, frameWidth - 4);
-    const headerLeft = this.theme.fg(
-      "accent",
-      this.theme.bold("Usage Tracker"),
-    );
+    const headerLeft = this.theme.fg("accent", this.theme.bold("Usage Tracker"));
     const headerRight = this.theme.fg("muted", "real-time");
     let content = [
       line(this.theme, headerLeft, headerRight, inner),
-      this.theme.fg(
-        "dim",
-        `${this.data.generatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
-      ),
+      this.theme.fg("dim", `${this.data.generatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`),
       "",
     ];
 
     if (this.data.providers.length === 0) {
       content.push(
-        this.theme.fg(
-          "warning",
-          this.data.emptyMessage ?? "Tidak ada provider yang bisa ditampilkan.",
-        ),
-        this.theme.fg(
-          "muted",
-          "Gunakan /login untuk OAuth atau konfigurasi API Key.",
-        ),
+        this.theme.fg("warning", this.data.emptyMessage ?? "Tidak ada provider yang bisa ditampilkan."),
+        this.theme.fg("muted", "Gunakan /login untuk OAuth atau konfigurasi API Key."),
       );
     } else {
       for (const [index, provider] of this.data.providers.entries()) {
-        content.push(
-          ...providerRows(this.theme, provider, inner, this.data.generatedAt),
-        );
+        content.push(...providerRows(this.theme, provider, inner, this.data.generatedAt));
         if (index < this.data.providers.length - 1) {
           content.push(this.theme.fg("border", "─".repeat(inner)));
         }
@@ -385,11 +285,7 @@ export class UsageTrackerDashboard {
     if (overflow) {
       const viewport = content.slice(offset, offset + visibleContentRows);
       if (offset > 0) viewport[0] = this.theme.fg("dim", "↑ Gulir ke atas");
-      if (offset < maxOffset)
-        viewport[viewport.length - 1] = this.theme.fg(
-          "dim",
-          "↓ Gulir ke bawah",
-        );
+      if (offset < maxOffset) viewport[viewport.length - 1] = this.theme.fg("dim", "↓ Gulir ke bawah");
       content = viewport;
     } else {
       while (content.length < visibleContentRows) content.push("");
@@ -398,14 +294,9 @@ export class UsageTrackerDashboard {
     const top = this.theme.fg("border", `╭${"─".repeat(frameWidth - 2)}╮`);
     const bottom = this.theme.fg("border", `╰${"─".repeat(frameWidth - 2)}╯`);
     const framed = content.map(
-      (value) =>
-        this.theme.fg("border", "│ ") +
-        pad(value, inner) +
-        this.theme.fg("border", " │"),
+      (value) => this.theme.fg("border", "│ ") + pad(value, inner) + this.theme.fg("border", " │"),
     );
-    return [top, ...framed, bottom].map((value) =>
-      truncateToWidth(value, frameWidth),
-    );
+    return [top, ...framed, bottom].map((value) => truncateToWidth(value, frameWidth));
   }
 
   invalidate(): void {
@@ -413,8 +304,6 @@ export class UsageTrackerDashboard {
   }
 }
 
-export function providerOrder(
-  providers: readonly ProviderUsage[],
-): readonly ProviderId[] {
+export function providerOrder(providers: readonly ProviderUsage[]): readonly ProviderId[] {
   return providers.map((provider) => provider.provider);
 }

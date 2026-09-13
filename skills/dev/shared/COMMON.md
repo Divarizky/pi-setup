@@ -105,7 +105,6 @@ Tampilkan ringkasan hanya jika context hilang, sumber konflik, user meminta, ata
 ### Detect Sub-Agent Capabilities (once per session)
 
 Cek apakah agent bisa spawn subagent (`subagent_spawn` tersedia, platform tidak batasi):
-
 - `subagent_supported = true` → task `Parallel: yes` bisa dieksekusi paralel
 - `false` → semua task sequential, `Parallel: yes` diabaikan
 - Cek SEKALI per sesi, jangan ulang tiap task.
@@ -119,7 +118,6 @@ Cek apakah agent bisa spawn subagent (`subagent_spawn` tersedia, platform tidak 
 ### Escape Hatch
 
 Setelah maks **3 siklus gagal** (hypothesis→instrument→gagal, atau RED→GREEN stuck):
-
 1. Stop loop
 2. Tanya user: "3 siklus gagal. Opsi: (a) lanjut coba baru, (b) minta bantuan, (c) batalkan/handoff"
 3. User pilih → reset counter (a), handoff (b), atau abort (c)
@@ -145,10 +143,10 @@ Pass context via inline text (spec, diff range, done criteria) — bukan file pa
 ```markdown
 ## Auto-Trigger Rules
 
-| Trigger frase            | Action              |
-| ------------------------ | ------------------- |
-| "keyword 1", "keyword 2" | Run skill           |
-| "other keyword"          | No trigger (reason) |
+| Trigger frase | Action |
+|---------------|--------|
+| "keyword 1", "keyword 2" | Run skill |
+| "other keyword" | No trigger (reason) |
 ```
 
 ---
@@ -159,7 +157,6 @@ Pass context via inline text (spec, diff range, done criteria) — bukan file pa
 ## Redaction Patterns
 
 Scan & redact sebelum tulis handoff:
-
 - `sk-...` (API key 30+ char)
 - `AKIA...` (AWS access key)
 - `ghp_...`, `gho_...`, `github_pat_...` (GitHub token)
