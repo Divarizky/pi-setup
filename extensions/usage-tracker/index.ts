@@ -95,7 +95,7 @@ async function loadUsage(ctx: ExtensionContext): Promise<UsageTrackerViewData> {
     if (routerEntry) {
       let localProviders: ProviderUsage[] = [];
       try {
-        localProviders = [...readNineRouterUsage()];
+        localProviders = [...(await readNineRouterUsage())];
       } catch {
         // Quota API tetap dicoba; DB dapat gagal dibaca secara terpisah.
       }
@@ -148,7 +148,7 @@ async function fetchActiveQuota(
 
   let localProviders: ProviderUsage[] = [];
   try {
-    localProviders = [...readNineRouterUsage()];
+    localProviders = [...(await readNineRouterUsage())];
   } catch {
     // Live quota tetap dapat dipakai tanpa agregat usage lokal.
   }

@@ -28,6 +28,18 @@ type SqliteDatabase = {
 };
 
 type SqliteConstructor = new (file: string, options?: object) => SqliteDatabase;
+type SqlJsResult = { columns: string[]; values: unknown[][] };
+type SqlJsDatabase = {
+  exec: (query: string) => SqlJsResult[];
+  close: () => void;
+};
+type SqlJsModule = {
+  Database: new (data?: Uint8Array) => SqlJsDatabase;
+};
+type SqlJsInitializer = () => Promise<SqlJsModule>;
+type SqliteDriver =
+  | { kind: "better-sqlite3"; path: string }
+  | { kind: "sql.js"; path: string };
 
 const NINEROUTER_PROVIDER = "9router";
 const DEFAULT_SOURCE = "9Router lokal";
@@ -176,13 +188,37 @@ function dataDirCandidates(): readonly string[] {
   return [join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "9router"), join(home, ".9router")];
 }
 
-function sqlitePath(dataDir: string): string | undefined {
-  const candidates = [
+function sqliteDriverPath(dataDir: string): SqliteDriver | undefined {
+  const betterSqlite3Candidates = [
     join(dataDir, "runtime", "node_modules", "better-sqlite3"),
     join(dataDir, "node_modules", "better-sqlite3"),
     join(dataDir, "resources", "app.asar.unpacked", "node_modules", "better-sqlite3"),
   ];
-  return candidates.find((candidate) => existsSync(candidate));
+  const betterSqlite3Path = betterSqlite3Candidates.find((candidate) => existsSync(candidate));
+  if (betterSqlite3Path) return { kind: "better-sqlite3", path: betterSqlite3Path };
+
+  const sqlJsCandidates = [
+    join(dataDir, "runtime", "node_modules", "sql.js"),
+    join(dataDir, "node_modules", "sql.js"),
+    join(dataDir, "resources", "app.asar.unpacked", "node_modules", "sql.js"),
+  ];
+  const sqlJsPath = sqlJsCandidates.find((candidate) => existsSync(candidate));
+  return sqlJsPath ? { kind: "sql.js", path: sqlJsPath } : undefined;
+}
+
+function wrapSqlJsDatabase(database: SqlJsDatabase): SqliteDatabase {
+  return {
+    prepare: (query) => ({
+      all: () => {
+        const result = database.exec(query)[0];
+        if (!result) return [];
+        return result.values.map((values) =>
+          Object.fromEntries(result.columns.map((column, index) => [column, values[index]])),
+        );
+      },
+    }),
+    close: () => database.close(),
+  };
 }
 
 function cliToken(dataDir: string): string {
@@ -195,20 +231,32 @@ function cliToken(dataDir: string): string {
     .substring(0, 16);
 }
 
-function openDatabase(): { database: SqliteDatabase; dataDir: string } {
+async function openDatabase(): Promise<{ database: SqliteDatabase; dataDir: string }> {
   const dataDir = dataDirCandidates().find((candidate) => existsSync(join(candidate, "db", "data.sqlite")));
   if (!dataDir) throw new Error("database 9Router tidak ditemukan");
-  const modulePath = sqlitePath(dataDir);
-  if (!modulePath) throw new Error("modul database 9Router tidak ditemukan");
-  const Database = createRequire(import.meta.url)(modulePath) as SqliteConstructor;
+  const driver = sqliteDriverPath(dataDir);
+  if (!driver) throw new Error("modul database 9Router tidak ditemukan");
+
+  const databaseFile = join(dataDir, "db", "data.sqlite");
+  const require = createRequire(import.meta.url);
+  if (driver.kind === "better-sqlite3") {
+    const Database = require(driver.path) as SqliteConstructor;
+    return {
+      database: new Database(databaseFile, { readonly: true }),
+      dataDir,
+    };
+  }
+
+  const initSqlJs = require(driver.path) as SqlJsInitializer;
+  const SQL = await initSqlJs();
   return {
-    database: new Database(join(dataDir, "db", "data.sqlite"), { readonly: true }),
+    database: wrapSqlJsDatabase(new SQL.Database(readFileSync(databaseFile))),
     dataDir,
   };
 }
 
-function readNineRouterConnections(): { rows: NineRouterConnectionRow[]; dataDir: string } {
-  const { database, dataDir } = openDatabase();
+async function readNineRouterConnections(): Promise<{ rows: NineRouterConnectionRow[]; dataDir: string }> {
+  const { database, dataDir } = await openDatabase();
   try {
     return {
       rows: database.prepare(
@@ -296,7 +344,7 @@ export async function fetchNineRouterQuotas(
   const fetchImpl = options.fetchImpl ?? fetch;
   let connectionInfo: { rows: NineRouterConnectionRow[]; dataDir: string };
   try {
-    connectionInfo = readNineRouterConnections();
+    connectionInfo = await readNineRouterConnections();
   } catch {
     return [];
   }
@@ -339,14 +387,8 @@ export async function fetchNineRouterQuotas(
     });
 }
 
-export function readNineRouterUsage(now = new Date()): readonly ProviderUsage[] {
-  const dataDir = dataDirCandidates().find((candidate) => existsSync(join(candidate, "db", "data.sqlite")));
-  if (!dataDir) throw new Error("database 9Router tidak ditemukan");
-  const modulePath = sqlitePath(dataDir);
-  if (!modulePath) throw new Error("modul database 9Router tidak ditemukan");
-
-  const Database = createRequire(import.meta.url)(modulePath) as SqliteConstructor;
-  const database = new Database(join(dataDir, "db", "data.sqlite"), { readonly: true });
+export async function readNineRouterUsage(now = new Date()): Promise<readonly ProviderUsage[]> {
+  const { database } = await openDatabase();
   try {
     const dailyRows = database.prepare("SELECT dateKey, data FROM usageDaily").all();
     const connectionRows = database.prepare(
