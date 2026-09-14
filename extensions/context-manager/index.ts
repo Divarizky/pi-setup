@@ -244,7 +244,7 @@ export default function (pi: ExtensionAPI) {
 
       let lastSent = "";
       const sendProgress = (elapsedMs: number) => {
-        const label = `execute · ${formatElapsed(elapsedMs)}`;
+        const label = `run · ${formatElapsed(elapsedMs)}`;
         if (label === lastSent) return;
         lastSent = label;
         try {
@@ -329,14 +329,14 @@ export default function (pi: ExtensionAPI) {
         const c0 = result.content[0];
         const label = c0?.type === "text" && String(c0.text).trim()
           ? String(c0.text).trim()
-          : "execute";
+          : "run";
         return renderToolLoading(label, cm?.elapsedMs ?? 0, theme);
       }
       const c0 = result.content[0];
       const raw = c0?.type === "text" ? String(c0.text) : "";
       if (expanded) return new Text(raw, 0, 0);
-      const oid = cm?.outputId ? ` · outputId: ${cm.outputId}` : "";
-      const line = `${failed ? "✗" : "✓"} ${status}${dur}${oid} · ctrl+o to expand`;
+      const saved = cm?.outputId ? " · tersimpan, ctrl+o untuk detail" : " · ctrl+o to expand";
+      const line = `${failed ? "✗" : "✓"} ${status}${dur}${saved}`;
       return new Text(theme.fg(failed ? "warning" : "success", line), 0, 0);
     },
   });
@@ -372,12 +372,12 @@ export default function (pi: ExtensionAPI) {
       if (expanded) return new Text(raw, 0, 0);
       if ((result as any).isError) return new Text(theme.fg("error", "✗ inspect gagal · ctrl+o to expand"), 0, 0);
       const details = result.details as { path?: string; outputId?: string; query?: string; snippets?: number } | undefined;
-      const target = details?.outputId ? `outputId ${details.outputId}` : details?.path ?? "hasil";
+      const target = details?.path ?? "hasil";
       const compactTarget = target.length > 48 ? `${target.slice(0, 47)}…` : target;
       const snippetInfo = details?.query
         ? ` · ${details.snippets ?? 0} snippet`
         : " · summary siap";
-      return new Text(theme.fg("success", `✓ inspect · ${compactTarget}${snippetInfo} · ctrl+o to expand`), 0, 0);
+      return new Text(theme.fg("success", `✓ excerpt · ${compactTarget}${snippetInfo} · tersimpan, ctrl+o untuk detail`), 0, 0);
     },
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
