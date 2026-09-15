@@ -335,7 +335,7 @@ export default function (pi: ExtensionAPI) {
       const c0 = result.content[0];
       const raw = c0?.type === "text" ? String(c0.text) : "";
       if (expanded) return new Text(raw, 0, 0);
-      const saved = cm?.outputId ? " · tersimpan, ctrl+o untuk detail" : " · ctrl+o to expand";
+      const saved = cm?.outputId ? " · tersimpan · ctrl+o to expand" : " · ctrl+o to expand";
       const line = `${failed ? "✗" : "✓"} ${status}${dur}${saved}`;
       return new Text(theme.fg(failed ? "warning" : "success", line), 0, 0);
     },
@@ -377,7 +377,7 @@ export default function (pi: ExtensionAPI) {
       const snippetInfo = details?.query
         ? ` · ${details.snippets ?? 0} snippet`
         : " · summary siap";
-      return new Text(theme.fg("success", `✓ excerpt · ${compactTarget}${snippetInfo} · tersimpan, ctrl+o untuk detail`), 0, 0);
+      return new Text(theme.fg("success", `✓ excerpt · ${compactTarget}${snippetInfo} · tersimpan · ctrl+o to expand`), 0, 0);
     },
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
