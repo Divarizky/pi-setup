@@ -79,7 +79,7 @@ Message Chains vs Middle Man adalah trade-off, bukan dua aturan mutlak: hide del
 
 ## Step 4 — Run in Parallel
 
-Satu pesan, dua sub-agent (general-purpose), tanpa saling lihat konteks:
+Satu pesan, dua sub-agent bertipe `explore` (read-only), tanpa saling lihat konteks:
 
 **Sub-agent Standards** dapat: full diff + commit list (kosong kalau `none`), standards file, smell baseline.
 Brief: laporkan per file/hunk langgar standard terdokumentasi (kutip sumber+rule) + smell baseline terdeteksi. Bedakan hard violation vs judgement call. Skip yang sudah dihandle tooling. **<400 kata**.

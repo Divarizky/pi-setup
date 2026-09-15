@@ -50,7 +50,7 @@ describe("Agent Control task view wiring", () => {
     const booted = makePi();
     booted.pi.exec = vi.fn(async () => ({ stdout: commonDir, stderr: "", code: 0, killed: false }));
     subagentsExtension(booted.pi);
-    const command = booted.commands.get("agents");
+    const command = booted.commands.get("subagents");
     const confirm = vi.fn(async () => true);
     let agentsMenuRound = 0;
     const commandContext = ctx({

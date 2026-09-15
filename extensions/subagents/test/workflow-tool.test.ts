@@ -1339,7 +1339,7 @@ describe("collisions with another extension", () => {
         input: vi.fn(async () => undefined),
       },
     });
-    await booted.commands.get("agents").handler("", context);
+    await booted.commands.get("subagents").handler("", context);
     return context;
   }
 

@@ -3942,7 +3942,6 @@ Write the file using the write tool. Only write the file, nothing else.`;
     handler: async (_args: string, ctx: ExtensionCommandContext) => { await showAgentsMenu(ctx); },
   };
   pi.registerCommand("subagents", agentsCommand);
-  pi.registerCommand("agents", { ...agentsCommand, description: "Manage agents (alias)" });
 
   /**
    * What `/agents → Workflows` and the fleet list's `workflow` rows need from

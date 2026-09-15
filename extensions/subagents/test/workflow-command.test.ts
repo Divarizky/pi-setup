@@ -16,14 +16,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import subagentsExtension from "../src/index.js";
 import { ctx, type Hermetic, hermeticDir, makePi } from "./helpers/boot-extension.js";
 
-/** Boot the real extension and hand back its `/agents` command. */
+/** Boot the real extension and hand back its `/subagents` command. */
 function bootCommand() {
   const booted = makePi();
   subagentsExtension(booted.pi);
-  const command = booted.commands.get("agents");
-  if (!command) throw new Error("the extension did not register /agents");
-  expect(booted.commands.has("subagents")).toBe(true);
-  expect(booted.commands.get("subagents").handler).toBe(command.handler);
+  const command = booted.commands.get("subagents");
+  if (!command) throw new Error("the extension did not register /subagents");
+  expect(booted.commands.has("agents")).toBe(false);
   return { ...booted, command };
 }
 
