@@ -117,9 +117,16 @@ function generateVaultIndex(): void {
   lines.push("");
   lines.push("## Projects");
   try {
-    for (const slug of readdirSync(join(VAULT, "projects")).sort()) {
+    for (const slug of readdirSync(join(VAULT, "projects"))
+      .filter((slug) => {
+        try {
+          return statSync(join(VAULT, "projects", slug)).isDirectory();
+        } catch {
+          return false;
+        }
+      })
+      .sort()) {
       const dir = join(VAULT, "projects", slug);
-      if (!existsSync(dir)) continue;
       const files = readdirSync(dir)
         .filter((f) => f.endsWith(".md"))
         .sort();

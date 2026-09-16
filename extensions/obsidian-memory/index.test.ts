@@ -1,4 +1,13 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import obsidianMemoryExtension from "./index.ts";
@@ -66,4 +75,44 @@ test("registers session_start, before_agent_start, tool_result handlers and vaul
   await handlers["session_shutdown"]({ reason: "reload" }, {});
   assert.equal(recapListeners.size, 0);
   assert.equal(recapUnsubscribeCalls, 1);
+});
+
+test("includes project directories when projects has sibling files", () => {
+  const root = mkdtempSync(join(tmpdir(), "obsidian-memory-index-"));
+  const vault = join(root, "vault");
+  const project = join(vault, "projects", "project-alpha");
+  mkdirSync(project, { recursive: true });
+  writeFileSync(join(vault, "projects", "README.md"), "# Projects\n");
+  writeFileSync(join(project, "overview.md"), "# Project Alpha\n");
+
+  const configPath = join(root, "obsidian-memory.json");
+  writeFileSync(configPath, JSON.stringify({ vault, projectMap: {} }));
+
+  const extensionUrl = new URL("./index.ts", import.meta.url).href;
+  const script = `
+    const handlers = new Map();
+    const pi = {
+      on(name, handler) { handlers.set(name, handler); },
+      registerCommand() {},
+      registerTool() {},
+      events: { on() { return () => {}; }, emit() {} },
+    };
+    const extension = (await import(${JSON.stringify(extensionUrl)})).default;
+    extension(pi);
+    await handlers.get("session_start")({}, { hasUI: false });
+  `;
+
+  execFileSync(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", script],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, PI_OBSIDIAN_MEMORY_CONFIG: configPath },
+      stdio: "pipe",
+    },
+  );
+
+  const graph = readFileSync(join(vault, "vault-graph.md"), "utf8");
+  assert.match(graph, /### project-alpha/);
+  assert.ok(graph.includes("- [[projects/project-alpha/overview]]"));
 });
