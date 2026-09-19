@@ -64,6 +64,7 @@ describe("agent type registry", () => {
       const config = getAgentConfig("explore");
       expect(config?.name).toBe("explore");
       expect(config?.model).toBe("openai-codex/gpt-5.6-luna");
+      expect(config?.thinking).toBe("xhigh");
     });
 
     it("resolveType returns canonical key or undefined", () => {
@@ -91,6 +92,7 @@ describe("agent type registry", () => {
     it("Explore has luna model in config", () => {
       const cfg = getAgentConfig("explore");
       expect(cfg?.model).toBe("openai-codex/gpt-5.6-luna");
+      expect(cfg?.thinking).toBe("xhigh");
     });
 
     it("default agents are marked isDefault", () => {

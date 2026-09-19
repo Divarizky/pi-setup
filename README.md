@@ -4,13 +4,12 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 
 ## What's Included
 
-**Extensions (11)**
+**Extensions (10)**
 - `9router` — 9Router provider integration (login, status, model sync)
 - `ask-user` — Multiple choice questions for the model
 - `context-manager` — Session context tracking, security, approval gate
 - `copy-all` — Copy conversation to clipboard
 - `git-info` — Git branch, changes, PR status in footer
-- `obsidian-memory` — Vault memory injection, inbox, backlink audit
 - `run-summaries` — Auto-summarize agent runs
 - `subagents` — Background Pi subagents, workflows, worktrees, and Agent Control (v2)
 - `todos` — Todo tracking with overlay widget

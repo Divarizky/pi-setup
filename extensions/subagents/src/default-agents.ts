@@ -37,6 +37,7 @@ export const DEFAULT_AGENTS: Map<string, AgentConfig> = new Map([
       skills: true,
       taskPolicy: "scout",
       model: "openai-codex/gpt-5.6-luna",
+      thinking: "xhigh",
       systemPrompt: `# CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS
 You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
 Your role is EXCLUSIVELY to search and analyze existing code. You do NOT have access to file editing tools.
