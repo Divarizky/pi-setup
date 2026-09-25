@@ -12,10 +12,10 @@ export default defineConfig({
   // subagent session the extension spawns. dedupe alone is insufficient (it only
   // affects modules Vite resolves; without inline the runtime stays externalized).
   test: {
-    // This suite creates Git repos/worktrees and real Pi sessions. Vitest's
-    // CPU-based default oversubscribes Windows and causes child-process and VM
-    // contention that surfaces as flaky timeouts in the full suite.
-    maxWorkers: 2,
+    // This suite creates Git repos/worktrees and real Pi sessions. Even two
+    // concurrent files contend for Windows CPU and child processes, causing VM
+    // evaluation and filesystem timeouts in the full suite.
+    maxWorkers: 1,
     server: { deps: { inline: [/@earendil-works\/pi-/] } },
     // Local reporting only — deliberately no `thresholds`, and not wired into
     // CI. src/index.ts is mostly the /agents wizard, which is TUI flow with

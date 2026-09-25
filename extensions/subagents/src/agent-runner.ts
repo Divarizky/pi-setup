@@ -393,8 +393,10 @@ export interface ToolActivity {
 export interface RunOptions {
   /** ExtensionAPI instance — used for pi.exec() instead of execSync. */
   pi: ExtensionAPI;
-  /** Manager-assigned id; suffixes session name to disambiguate parallel spawns (e.g. `explore#a1b2c3d4`). */
+  /** Manager-assigned id for tracking this agent instance. */
   agentId?: string;
+  /** Short task label shown after the agent type in its session name. */
+  description?: string;
   model?: Model<any>;
   maxTurns?: number;
   signal?: AbortSignal;
@@ -1008,10 +1010,11 @@ export async function runAgent(
 
   const { session } = await runInChildSessionContext(() => createAgentSession(sessionOpts));
 
-  const baseSessionName = agentConfig?.name ?? type;
-  session.setSessionName(
-    options.agentId ? `${baseSessionName}#${options.agentId.slice(0, 8)}` : baseSessionName,
-  );
+  const taskLabel = options.description?.trim().replace(/\s+/g, " ");
+  const sessionName = taskLabel
+    ? `${type}: ${taskLabel}`
+    : agentConfig?.name ?? type;
+  session.setSessionName(sessionName.slice(0, 160));
 
   // Bind extensions so that session_start fires and extensions can initialize
   // (e.g. loading credentials, setting up state). Tool gating already happened

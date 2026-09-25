@@ -19,8 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Grandchild-level fan-out is capped at two active children per parent.** Additional launches are ignored until an existing child finishes; the parent continues normally.
 - **Invalid agent types now fail closed.** Unknown, disabled, and case-ambiguous names are rejected instead of silently falling back to `general`; the dormant `fallbackSubagent` policy was removed.
 - **Removed test-only default-agent controls.** Built-in defaults remain always available and distinguishable from custom agents through `isDefault`.
+- **Named persisted Pi sessions by agent type and task description.** Session names are capped at 160 characters and no longer include a generated ID suffix.
 
 ### Fixed
+- **Stabilized the full test suite on Windows.** Vitest now runs one worker to avoid VM and filesystem timeouts caused by contention.
 - **The workflow stand-down now recognises a lowercase `workflow` tool.** Exact matching is preserved so unrelated tools such as `list_workflows` do not disable this extension.
 
 ## Historical releases

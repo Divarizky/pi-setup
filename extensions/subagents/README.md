@@ -142,6 +142,7 @@ Settings are project-local in `.pi/subagents.json`; global defaults are read fro
 - `@explore`, `@build`, and `@general` can start or address an agent.
 - `/subagents` opens the management menu.
 - `/agents` is an alias for existing scripts and muscle memory.
+- Persisted Pi session names use `<type>: <description>`, capped at 160 characters.
 - Fleet view is rendered below the editor and the widget is rendered above it.
 - UI code is guarded by `ctx.hasUI`; print and RPC modes remain headless-safe.
 

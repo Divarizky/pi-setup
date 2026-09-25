@@ -353,25 +353,29 @@ describe("agent-runner final output capture", () => {
     expect(result.failure).toBeUndefined();
   });
 
-  it("sets the agent name as session name before binding extensions", async () => {
+  it("sets the agent type and task description as session name before binding extensions", async () => {
     const { session } = createSession("NAMED");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "explore", "go", { pi });
+    await runAgent(ctx, "explore", "go", { pi, description: "  Audit   Firecrawl  " });
 
-    expect(session.setSessionName).toHaveBeenCalledWith("explore");
+    expect(session.setSessionName).toHaveBeenCalledWith("explore: Audit Firecrawl");
     const setOrder = session.setSessionName.mock.invocationCallOrder[0];
     const bindOrder = session.bindExtensions.mock.invocationCallOrder[0];
     expect(setOrder).toBeLessThan(bindOrder);
   });
 
-  it("suffixes the session name with a short agentId so parallel spawns are distinguishable", async () => {
+  it("caps the session name at 160 characters without adding an agentId suffix", async () => {
     const { session } = createSession("NAMED");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "explore", "go", { pi, agentId: "a1b2c3d4e5f6" });
+    await runAgent(ctx, "explore", "go", {
+      pi,
+      agentId: "a1b2c3d4e5f6",
+      description: "x".repeat(200),
+    });
 
-    expect(session.setSessionName).toHaveBeenCalledWith("explore#a1b2c3d4");
+    expect(session.setSessionName).toHaveBeenCalledWith("explore: " + "x".repeat(151));
   });
 });
 
