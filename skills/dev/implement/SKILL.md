@@ -33,27 +33,29 @@ Sebelum mencari input atau mengubah state:
 
 1. **Konteks percakapan** — behavior jelas dari grill `ask-me` / diskusi → langsung Step 3 (TDD), skip Step 2.
 2. **Task persisted** — cari work card di path yang sudah disepakati atau `.workspace/work/F-<id>.md` jika Project mode. Ambil task eligible di `## Tasks` → `### Queue` (Depends sudah `[x]` di `### Done`).
-   - ≥2 task `Parallel: yes` → siapkan batch (maks 3) untuk Step 2b.
-   - Lanjut Step 2.
+   - ≥2 task bertanda `Parallel: yes` → jadikan kandidat batch (maks 3), lalu lakukan preflight Step 2b **sebelum** memindahkan status di Step 2. Penanda lama bukan keputusan final.
+   - Jika tidak ada batch yang lolos preflight, lanjut Step 2 untuk satu task eligible dan jalankan Step 3 sequential.
 3. **Tidak ada keduanya** — tanya: "Mau langsung implement dari instruksi ini, atau breakdown dulu lewat `to-tasks`?" Dalam Universal mode, `to-tasks` menghasilkan checklist di chat dan status breakdown di respons.
 
 ## Step 2 — Update Status (only for persisted tasks)
 
-Jika task berasal dari work card, cut dari `### Queue` → paste ke `### In Progress`. Batch `Parallel: yes` → cut semua sekaligus.
+Setelah preflight Step 2b menentukan batch final (atau memilih satu task sequential), jika task berasal dari work card, cut task terpilih dari `### Queue` → paste ke `### In Progress`. Batch yang lolos → cut semua task terpilih sekaligus. Jangan pindahkan task yang gagal preflight ke `### In Progress` sebagai bagian batch.
 
 Jika Universal mode memakai instruksi langsung atau checklist di chat, jangan membuat atau memperbarui work card secara otomatis; cukup catat status di respons.
 
-## Step 2b — Run in Parallel (batch `Parallel: yes`)
+## Step 2b — Preflight and Run in Parallel (batch `Parallel: yes`)
 
-Jalan kalau: batch eligible (≥2 task, semua `Parallel: yes` + dependency selesai) DAN `subagent_supported == true`.
+**Preflight sebelum Step 2, ulang pada setiap batch** termasuk batch berikutnya setelah task selesai; keputusan saat `to-tasks` dibuat tidak menjamin keadaan kode saat ini.
 
-1. Ambil maks **3** task (urutan priority)
-2. Spawn subagent per task → jalankan **Step 3 (TDD) saja**. Brief: Detail + Done criteria, selalu baca aturan canonical `../shared/TDD.md`; baca vocabulary tambahan jika tersedia. Instruksi:
+1. Ambil kandidat dari `### Queue` (maks **3**, urutan priority). Periksa ulang semua `Depends` sudah berada di `### Done` dengan `[x]`, `Parallel: yes`, `subagent_supported == true`, sekurangnya dua kandidat, serta batas concurrency tool/platform. Jika kondisi gagal, jalankan satu task eligible secara sequential. Jangan menaikkan `Parallel: no` menjadi `yes` diam-diam; jika penanda sudah basi, usulkan revisi task kepada user.
+2. Untuk **setiap** kandidat, inspeksi kode secukupnya dan perkirakan `write_scope`: path relatif file/direktori yang kemungkinan berubah, termasuk test, konfigurasi, migrasi, generated files, dan shared entry points. Bandingkan setiap pasang scope, beserta efek bersama seperti schema/API yang dipakai task lain. Jika estimasi belum bisa dipersempit atau ada overlap/ketergantungan baru, keluarkan kandidat yang konflik; jika tersisa <2, jalankan sequential. Laporkan alasan perubahan keputusan. Jangan menganggap `write_scope` yang kosong atau tidak diketahui berarti tidak overlap.
+3. Periksa apakah tool yang terdeteksi mendukung coding, isolasi kerja yang diperlukan, dan pengambilan hasil. Jika mendukung `write_scope`/padanan, teruskan scope eksplisit per agent; jika tidak, tulis batasnya di brief. Jangan menganggap parameter scope saja menegakkan isolasi. Jika worktree/candidate perlu diintegrasikan, rencanakan verifikasi dan integrasi hasil sebelum review; jangan anggap perubahan agent otomatis muncul di checkout utama. Bila prasyarat isolasi atau integrasi tidak terpenuhi, jalankan sequential. Jika tool mensyaratkan Git bersih untuk spawn/integrasi dan pemindahan status di Step 2 akan mengotori checkout, jangan lanjutkan batch: pilih sequential atau minta user menyepakati alur integrasi yang menjaga checkout bersih. Jangan mengubah work card/tracker untuk mengejar preflight.
+4. Setelah batch final lolos preflight, jalankan Step 2 lalu spawn subagent per task → jalankan **Step 3 (TDD) saja**. Brief: Detail + Done criteria + `write_scope`, selalu baca aturan canonical `../shared/TDD.md`; baca vocabulary tambahan jika tersedia. Instruksi:
    - **JANGAN** update work card atau tracker (single-writer: sesi utama)
    - **JANGAN** commit
    - **JANGAN** review
-   - Laporkan: path file, test pass/fail, done criteria terpenuhi/tidak
-3. **Fallback sequential**: `subagent_supported == false` → kerjakan batch satu per satu (Step 3 normal). `Parallel: yes` diabaikan.
+   - Laporkan: path file yang benar-benar berubah, test pass/fail, done criteria terpenuhi/tidak
+5. Sesi utama cek hasil dan file yang benar-benar berubah terhadap `write_scope`; bila ada perubahan di luar scope, konflik, atau hasil belum terintegrasi, jangan stage/review/nyatakan Done. Selesaikan dengan user atau kerjakan sequential sesuai scope yang disepakati.
 
 ### Sub-Agent Error Handling
 

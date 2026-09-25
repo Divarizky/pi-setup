@@ -20,6 +20,8 @@ import {
   recordSummary,
 } from "./src/context-stats.ts";
 import { OutputCache } from "./src/output-cache.ts";
+import { collectOutputPreview, formatOutputPreview } from "./src/output-preview.ts";
+import type { OutputPreview } from "./src/output-preview.ts";
 import { formatContextPercent, selectCompressionMode } from "./src/context-policy.ts";
 import {
   applyBudgetEnvironmentOverride,
@@ -38,7 +40,10 @@ import {
   formatElapsed,
   isPotentiallyMutating,
   runScript,
+  sanitizeTerminalOutput,
+  ScriptCancelledError,
   type RunnerRuntime,
+  type RunScriptResult,
 } from "./src/command-runner.ts";
 
 const MAX_INSPECT_FILE_BYTES = 10 * 1024 * 1024;
@@ -64,6 +69,41 @@ function currentContextManagerConfig(): ContextManagerConfig {
 function invalidateConfigCache(): void {
   cachedConfig = null;
   cachedConfigAt = 0;
+}
+
+interface ExecuteToolDetails {
+  contextManager: {
+    outputId?: string;
+    runtime: RunnerRuntime;
+    exitCode?: number | null;
+    signal?: string | null;
+    timedOut?: boolean;
+    cancelled?: boolean;
+    durationMs?: number;
+    displayOutputPreview?: OutputPreview;
+  };
+}
+
+class ExecuteToolError extends Error {
+  readonly details: ExecuteToolDetails;
+
+  constructor(message: string, details: ExecuteToolDetails) {
+    super(message);
+    this.name = "ExecuteToolError";
+    this.details = details;
+  }
+}
+
+function createCancelledExecuteError(runtime: RunnerRuntime, durationMs: number): ExecuteToolError {
+  return new ExecuteToolError("Eksekusi dibatalkan.", {
+    contextManager: { runtime, cancelled: true, durationMs },
+  });
+}
+
+function formatCommandPreview(script: unknown): string {
+  const firstLine = String(script ?? "").split(/\r\n|\r|\n/, 1)[0]?.trim() ?? "";
+  const sanitized = sanitizeTerminalOutput(firstLine);
+  return sanitized.length > 100 ? `${sanitized.slice(0, 99)}…` : sanitized;
 }
 
 function formatConfig(config: ContextManagerConfig): string {
@@ -137,12 +177,16 @@ let lastPrunePrefixDirty = false;
 const PI_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 // Partial render pakai Text(0,0) seperti renderCall agar sejajar dengan baris
-// perintah. Loader Pi render di dalam Box(1,1) sehingga indent 2 spasi.
-// Frame spinner dipilih dari elapsed (tick onUpdate 100ms) — animasi kasar
-// tanpa interval sendiri, tanpa rantai requestRender → invalidate sinkron.
-function renderToolLoading(label: string, elapsedMs: number, theme: any): Text {
+// perintah. Satu baris kosong di awal memberi jarak dari judul tool.
+// Loader Pi render di dalam Box(1,1) sehingga indent 2 spasi. Frame spinner
+// dipilih dari elapsed tanpa interval render tambahan.
+function renderToolLoading(label: string, elapsedMs: number, theme: any, outputPreview?: string): Text {
   const frame = PI_SPINNER_FRAMES[Math.floor(elapsedMs / 100) % PI_SPINNER_FRAMES.length];
-  return new Text(theme.fg("accent", frame) + " " + theme.fg("muted", label), 0, 0);
+  const lines = [theme.fg("accent", frame) + " " + theme.fg("muted", label)];
+  if (outputPreview) {
+    lines.push(...outputPreview.split("\n").map((line) => `  ${theme.fg("dim", line)}`));
+  }
+  return new Text(`\n${lines.join("\n")}`, 0, 0);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -150,6 +194,7 @@ export default function (pi: ExtensionAPI) {
   const reminderState = { level: "unknown" as ReminderLevel };
   const outputCache = new OutputCache();
   const cachedToolResults = new Map<string, { outputId: string; text: string; priority: number }>();
+  const pendingExecuteErrorDetails = new Map<string, ExecuteToolDetails>();
   const prunedToolResults = new Set<string>();
 
   pi.on("session_start", async (_event, ctx) => {
@@ -193,12 +238,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "execute",
     label: "Execute Context-Safe Script",
-    description: "Run a general non-interactive shell or script in the project and return a compact result. Raw output is cached for later inspection. All scripts run without confirmation.",
+    description: "Run a general non-interactive shell or script in the project and return a compact result. Raw output is cached for later inspection. The tool does not ask for confirmation; callers must get user approval before destructive or hard-to-reverse actions.",
     promptSnippet: "Run a project-local script and return only a compact, cached result",
     promptGuidelines: [
       "Prefer execute for tests, lint, builds, git inspection, and processing large outputs.",
       "Use runtime shell, javascript, typescript, or python; keep the script non-interactive.",
-      "All scripts run without confirmation, including potentially mutating ones.",
+      "The tool itself does not ask for confirmation. Before running a script that may mutate project state or perform destructive or hard-to-reverse actions, get explicit user approval.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -214,13 +259,21 @@ export default function (pi: ExtensionAPI) {
       maxOutputChars: Type.Optional(Type.Integer({ minimum: 1_000, maximum: MAX_EXECUTION_OUTPUT_CHARS })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      signal?.throwIfAborted();
+      const executeStartedAt = Date.now();
       const runtime = (params.runtime ?? "shell") as RunnerRuntime;
+      const throwIfCancelled = () => {
+        if (!signal?.aborted) return;
+        const error = createCancelledExecuteError(runtime, Date.now() - executeStartedAt);
+        pendingExecuteErrorDetails.set(toolCallId, error.details);
+        throw error;
+      };
+      throwIfCancelled();
       const requestedCwd = resolve(ctx.cwd, params.cwd ?? ".");
       const [realRequestedCwd, realProjectCwd] = await Promise.all([
         realpath(requestedCwd).catch(() => requestedCwd),
         realpath(ctx.cwd).catch(() => ctx.cwd),
       ]);
+      throwIfCancelled();
       if (!isInsideProject(realProjectCwd, realRequestedCwd)) {
         throw new Error("execute hanya boleh bekerja di dalam current project.");
       }
@@ -235,6 +288,7 @@ export default function (pi: ExtensionAPI) {
         realpath(requestedCwd).catch(() => requestedCwd),
         realpath(ctx.cwd).catch(() => ctx.cwd),
       ]);
+      throwIfCancelled();
       if (
         verifiedCwd !== realRequestedCwd ||
         !isInsideProject(verifiedProjectCwd, verifiedCwd)
@@ -242,44 +296,61 @@ export default function (pi: ExtensionAPI) {
         throw new Error("current project berubah setelah validasi; execute dibatalkan.");
       }
 
+      const uiUpdate = ctx.hasUI ? onUpdate : undefined;
       let lastSent = "";
-      const sendProgress = (elapsedMs: number) => {
-        const label = `run · ${formatElapsed(elapsedMs)}`;
-        if (label === lastSent) return;
-        lastSent = label;
+      const sendProgress = (elapsedMs: number, outputPreview = "") => {
+        const label = `Running · ${formatElapsed(elapsedMs)}`;
+        const updateKey = `${label}\n${outputPreview}`;
+        if (updateKey === lastSent) return;
+        lastSent = updateKey;
         try {
-          onUpdate?.({
+          uiUpdate?.({
             content: [{ type: "text", text: label }],
-            details: { contextManager: { elapsedMs, running: true } },
+            details: { contextManager: { elapsedMs, running: true, outputPreview } },
           });
         } catch { /* onUpdate opsional; abaikan */ }
       };
-      const result = await runScript({
-        runtime,
-        script: params.script,
-        cwd: verifiedCwd,
-        timeoutMs: params.timeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
-        maxRawOutputChars: MAX_EXECUTION_OUTPUT_BYTES,
-        signal,
-        onProgress: onUpdate ? sendProgress : undefined,
-      });
+      let result: RunScriptResult;
+      let cancelled = false;
+      try {
+        result = await runScript({
+          runtime,
+          script: params.script,
+          cwd: verifiedCwd,
+          timeoutMs: params.timeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
+          maxRawOutputChars: MAX_EXECUTION_OUTPUT_BYTES,
+          signal,
+          onProgress: uiUpdate ? sendProgress : undefined,
+          onOutput: uiUpdate ? sendProgress : undefined,
+        });
+      } catch (error) {
+        if (!(error instanceof ScriptCancelledError)) throw error;
+        result = error.result;
+        cancelled = true;
+      }
       const raw = result.output || "[no output]";
       const outputId = await outputCache.save(raw);
+      const displayOutputDetails = ctx.hasUI
+        ? { displayOutputPreview: collectOutputPreview(raw) }
+        : {};
       const config = currentContextManagerConfig();
       if (raw.length >= config.outputCharThreshold || raw.split(/\r?\n/).length >= config.outputLineThreshold) {
         notify(ctx, "[Context Manager] output besar dari execute diringkas.");
       }
-      const status = result.timedOut
-        ? "timeout"
-        : result.exitCode === 0
-          ? "success"
-          : `failed (exit ${result.exitCode ?? "unknown"})`;
+      const status = cancelled
+        ? "cancelled"
+        : result.timedOut
+          ? "timeout"
+          : result.exitCode === 0
+            ? "success"
+            : `failed (exit ${result.exitCode ?? "unknown"})`;
       const summary = formatSummary(
         summarizeOutput(raw, 2),
         `dari execute (${runtime})`,
         `Gunakan inspect dengan outputId "${outputId}" dan query untuk mengambil raw output yang relevan.`,
       );
-      const header = `[context-manager] Status: ${status}; durasi: ${formatElapsed(result.durationMs)}. | outputId: "${outputId}" | inspect: { outputId: "${outputId}", query: "<kata>" }`;
+      const signalInfo = result.signal ? `; signal: ${sanitizeTerminalOutput(result.signal)}` : "";
+      const header = `[context-manager] Status: ${status}; durasi: ${formatElapsed(result.durationMs)}${signalInfo}. | outputId: "${outputId}" | inspect: { outputId: "${outputId}", query: "<kata>" }`;
       const maxOutputChars = Math.max(
         1_000,
         Math.min(params.maxOutputChars ?? DEFAULT_EXECUTION_OUTPUT_CHARS, MAX_EXECUTION_OUTPUT_CHARS),
@@ -295,49 +366,115 @@ export default function (pi: ExtensionAPI) {
       cachedToolResults.set(toolCallId, {
         outputId,
         text: boundedOutput,
-        priority: result.exitCode === 0 && !result.timedOut ? 1 : 2,
+        priority: result.exitCode === 0 && !result.timedOut && !cancelled ? 1 : 2,
       });
       // Kontrak Pi: error = throw, bukan isError pada return sukses (wrapper mengeset isError=false untuk return).
-      if (result.timedOut || result.exitCode !== 0) {
-        const err: any = new Error(boundedOutput);
-        (err as any).details = { contextManager: { outputId, runtime, exitCode: result.exitCode, timedOut: result.timedOut, durationMs: result.durationMs } };
-        // Pi membaca thrown error message sebagai content + isError=true; tetap pertahankan outputId lewan details merge di afterToolCall
-        throw err;
+      if (cancelled || result.timedOut || result.exitCode !== 0) {
+        const errorDetails: ExecuteToolDetails = {
+          contextManager: {
+            outputId,
+            runtime,
+            exitCode: result.exitCode,
+            signal: result.signal,
+            timedOut: result.timedOut,
+            cancelled,
+            durationMs: result.durationMs,
+            ...displayOutputDetails,
+          },
+        };
+        pendingExecuteErrorDetails.set(toolCallId, errorDetails);
+        // Pi membuang details dari error yang dilempar; pulihkan saat event tool_result.
+        throw new ExecuteToolError(boundedOutput, errorDetails);
       }
       return {
         content: [{ type: "text", text: boundedOutput }],
         details: {
-          contextManager: { outputId, runtime, exitCode: result.exitCode, timedOut: result.timedOut, durationMs: result.durationMs },
+          contextManager: { outputId, runtime, exitCode: result.exitCode, signal: result.signal, timedOut: result.timedOut, cancelled: false, durationMs: result.durationMs, ...displayOutputDetails },
         },
       };
     },
-    renderCall(args, theme, _context) {
-      const arrow = theme.fg("toolTitle", "▶ ");
-      const one = String(args.script ?? "").trim().split(String.fromCharCode(10))[0]?.split(String.fromCharCode(13))[0] ?? "";
-      const preview = one.length > 72 ? one.slice(0, 71) + "…" : one;
-      const rt = String(args.runtime ?? "shell");
-      let line = arrow + theme.fg("toolTitle", theme.bold("execute")) + " " + theme.fg("muted", rt + " · ") + theme.fg("dim", preview || "(no script)");
+    renderCall(args, theme, context) {
+      const preview = formatCommandPreview(args.script);
+      const runtime = String(args.runtime ?? "shell");
+      const started = context.executionStarted;
+      const running = started && context.isPartial;
+      if (started && !running) return new Text("", 0, 0);
+      const label = !started ? "execute" : "Running";
+      const marker = !started
+        ? theme.fg("toolTitle", "▶ ")
+        : theme.fg("accent", "▶ ");
+      const line = marker
+        + theme.fg("toolTitle", theme.bold(label))
+        + " " + theme.fg("muted", runtime + " · ")
+        + theme.fg("dim", preview || "(no script)");
       return new Text(line, 0, 0);
     },
-    renderResult(result, { expanded, isPartial }, theme, _context) {
-      const d = result.details as { contextManager?: { outputId?: string; runtime?: string; exitCode?: number | null; timedOut?: boolean; durationMs?: number; elapsedMs?: number } } | undefined;
+    renderResult(result, { expanded, isPartial }, theme, context) {
+      const d = result.details as { contextManager?: {
+        outputId?: string;
+        runtime?: string;
+        exitCode?: number | null;
+        signal?: string | null;
+        timedOut?: boolean;
+        cancelled?: boolean;
+        durationMs?: number;
+        elapsedMs?: number;
+        outputPreview?: string;
+        displayOutputPreview?: OutputPreview;
+      } } | undefined;
       const cm = d?.contextManager;
-      const failed = Boolean((result as any).isError) || cm?.timedOut === true || (cm?.exitCode != null && cm.exitCode !== 0);
-      const status = cm?.timedOut ? "timeout" : cm?.exitCode != null && cm.exitCode !== 0 ? "failed (exit " + cm.exitCode + ")" : failed ? "failed" : "success";
+      const c0 = result.content[0];
+      const raw = c0?.type === "text" ? String(c0.text) : "";
+      const statusMatch = raw.match(/Status:\s*(cancelled|timeout|failed \(exit ([^)]+)\))/i);
+      const cancelled = cm?.cancelled === true || ((result as any).isError && (/Status:\s*cancelled/i.test(raw) || raw.trim() === "Eksekusi dibatalkan."));
+      const timedOut = cm?.timedOut === true || /Status:\s*timeout/i.test(raw);
+      const exitLabel = cm?.exitCode != null
+        ? String(cm.exitCode)
+        : statusMatch?.[2];
+      const nonzeroExit = exitLabel !== undefined && exitLabel !== "0";
+      const signalValue = cm?.signal ?? raw.match(/signal:\s*([^\s|.]+)/i)?.[1];
+      const signal = signalValue ? sanitizeTerminalOutput(signalValue) : "";
+      const signalSuffix = signal ? ` · signal ${signal}` : "";
+      const exitSuffix = nonzeroExit ? ` (exit ${exitLabel})` : "";
+      const failed = Boolean((result as any).isError) || cancelled || timedOut || nonzeroExit;
+      const status = cancelled
+        ? `cancelled${exitSuffix}${signalSuffix}`
+        : timedOut
+          ? `timeout${exitSuffix}${signalSuffix}`
+          : nonzeroExit
+            ? `failed${exitSuffix}${signalSuffix}`
+            : failed
+              ? `failed${signalSuffix}`
+              : "success";
       const dur = cm?.durationMs != null ? ` · ${formatElapsed(cm.durationMs)}` : "";
       if (isPartial) {
-        const c0 = result.content[0];
         const label = c0?.type === "text" && String(c0.text).trim()
           ? String(c0.text).trim()
           : "run";
-        return renderToolLoading(label, cm?.elapsedMs ?? 0, theme);
+        return renderToolLoading(label, cm?.elapsedMs ?? 0, theme, cm?.outputPreview);
       }
-      const c0 = result.content[0];
-      const raw = c0?.type === "text" ? String(c0.text) : "";
-      if (expanded) return new Text(raw, 0, 0);
-      const saved = cm?.outputId ? " · tersimpan · ctrl+o to expand" : " · ctrl+o to expand";
-      const line = `${failed ? "✗" : "✓"} ${status}${dur}${saved}`;
-      return new Text(theme.fg(failed ? "warning" : "success", line), 0, 0);
+
+      const preview = cm?.displayOutputPreview ?? collectOutputPreview(raw);
+      const previewLines = formatOutputPreview(preview, expanded ? 40 : 8);
+      const saved = cm?.outputId
+        ? expanded ? " · output tersimpan" : " · tersimpan · ctrl+o to expand"
+        : expanded ? "" : " · ctrl+o to expand";
+      const args = context.args as { runtime?: unknown; script?: unknown } | undefined;
+      const command = formatCommandPreview(args?.script);
+      const runtime = cm?.runtime ?? String(args?.runtime ?? "shell");
+      const statusLine = `${failed ? "✗" : "✓"} Ran ${runtime} · ${command || "(no script)"} · ${status}${dur}${saved}`;
+      const outputLines = previewLines.map((line, index) =>
+        theme.fg("toolOutput", `${index === 0 ? "  └ " : "    "}${line}`),
+      );
+      const fullOutputHint = cm?.outputId
+        ? `  Full output: inspect { outputId: "${cm.outputId}", query: "<kata>" }`
+        : "  Full output tidak tersedia di cache.";
+      const rendered = [
+        theme.fg(failed ? "warning" : "success", statusLine),
+        ...outputLines,
+        ...(expanded ? [theme.fg("muted", fullOutputHint)] : []),
+      ].join("\n");
+      return new Text(rendered, 0, 0);
     },
   });
 
@@ -486,6 +623,25 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_result", async (event, ctx) => {
+    if (event.toolName === "execute" && event.isError) {
+      const pendingDetails = pendingExecuteErrorDetails.get(event.toolCallId);
+      if (!pendingDetails) return;
+      pendingExecuteErrorDetails.delete(event.toolCallId);
+      const previous = (event as any).details;
+      const previousDetails: Record<string, unknown> = previous !== null && typeof previous === "object" && !Array.isArray(previous)
+        ? previous as Record<string, unknown>
+        : previous === undefined ? {} : { originalDetails: previous };
+      const previousContext = previousDetails.contextManager !== null && typeof previousDetails.contextManager === "object" && !Array.isArray(previousDetails.contextManager)
+        ? previousDetails.contextManager as Record<string, unknown>
+        : {};
+      return {
+        content: event.content,
+        details: {
+          ...previousDetails,
+          contextManager: { ...previousContext, ...pendingDetails.contextManager },
+        },
+      };
+    }
     if (!LARGE_OUTPUT_TOOL_NAMES.has(event.toolName)) return;
     // ponytail: tetap proses isError agar output besar yang error juga bisa diambil via inspect; jangan drop berdasarkan isError.
     // Untuk menjaga kompatibilitas, tetap ringkas error besar tapi biarkan flag error asli tetap dipertahankan oleh caller.

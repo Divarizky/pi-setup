@@ -104,10 +104,13 @@ Tampilkan ringkasan hanya jika context hilang, sumber konflik, user meminta, ata
 ```markdown
 ### Detect Sub-Agent Capabilities (once per session)
 
-Cek apakah agent bisa spawn subagent (`subagent_spawn` tersedia, platform tidak batasi):
-- `subagent_supported = true` → task `Parallel: yes` bisa dieksekusi paralel
-- `false` → semua task sequential, `Parallel: yes` diabaikan
-- Cek SEKALI per sesi, jangan ulang tiap task.
+Periksa tool/capability yang **benar-benar tersedia di sesi ini**: `Agent` (jika tersedia), atau tool subagent lain milik platform/user. Jangan mengasumsikan nama `subagent_spawn`, instalasi extension tertentu, atau keberadaan file konfigurasi berarti tool aktif. Gunakan deskripsi/schema tool yang tersedia untuk memastikan ia dapat menjalankan **beberapa agent coding independen secara bersamaan**; tool yang hanya membaca, menjalankan satu agent, atau tidak dapat menulis kode tidak cukup.
+
+- `subagent_supported = true` hanya jika pemanggilan paralel memang didukung dan tidak dibatasi platform/kebijakan sesi. Catat nama tool, opsi isolasi, batas concurrency, dan cara menerima hasilnya.
+- Jika tidak tersedia atau tidak jelas, `subagent_supported = false`; eksekusi task secara sequential. Jangan melakukan spawn percobaan hanya untuk deteksi.
+- Deteksi capability cukup **sekali per sesi**. Sebelum setiap batch, periksa ulang kesiapan runtime (dependency, scope, isolasi, batas concurrency); jangan menyamakan penanda `Parallel: yes` dengan izin eksekusi tanpa preflight.
+
+Untuk tool yang mendukung `write_scope`/padanan, isi dari estimasi file/direktori yang akan diubah saat preflight batch; jika tool tidak mendukungnya, sertakan batas file/area dalam brief. Scope eksplisit bukan bukti isolasi atau jaminan tidak ada konflik. Jika area tulis tidak dapat dipisahkan dengan yakin, jalankan sequential.
 ```
 
 ---

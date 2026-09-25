@@ -10,7 +10,8 @@ export interface RunScriptOptions {
   timeoutMs: number;
   maxRawOutputChars: number;
   signal?: AbortSignal;
-  onProgress?: (elapsedMs: number) => void;
+  onProgress?: (elapsedMs: number, outputPreview?: string) => void;
+  onOutput?: (elapsedMs: number, outputPreview: string) => void;
 }
 
 export interface RunScriptResult {
@@ -20,6 +21,16 @@ export interface RunScriptResult {
   timedOut: boolean;
   truncated: boolean;
   durationMs: number;
+}
+
+export class ScriptCancelledError extends Error {
+  readonly result: RunScriptResult;
+
+  constructor(result: RunScriptResult) {
+    super("Eksekusi dibatalkan.");
+    this.name = "ScriptCancelledError";
+    this.result = result;
+  }
 }
 
 const PI_BINARY_PATTERN = /^pi(?:\.exe)?$/i;
@@ -171,33 +182,163 @@ function appendOutput(parts: string[], chunk: Buffer, maxChars: number): boolean
   return false;
 }
 
-function killProcessTree(child: ChildProcess): void {
+function processGroupExists(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function waitForProcessGroupExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!processGroupExists(pid)) return true;
+    await new Promise<void>((resolveWait) => setTimeout(resolveWait, 20));
+  }
+  return !processGroupExists(pid);
+}
+
+async function killProcessTree(child: ChildProcess): Promise<void> {
   const pid = child.pid;
   if (!pid) {
     try { child.kill(); } catch { /* already exited */ }
     return;
   }
-  try {
-    if (process.platform === "win32") {
-      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
-      killer.unref?.();
-      setTimeout(() => { try { child.kill(); } catch {} }, 500);
-    } else {
-      try { process.kill(-pid, "SIGTERM"); } catch { try { child.kill("SIGTERM"); } catch {} }
-      setTimeout(() => {
-        try { process.kill(-pid, "SIGKILL"); } catch {}
-        try { child.kill("SIGKILL"); } catch {}
-      }, 300);
+  if (process.platform === "win32") {
+    await new Promise<void>((resolveKill) => {
+      let settled = false;
+      let fallback: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (fallback) clearTimeout(fallback);
+        resolveKill();
+      };
+      try {
+        const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+        fallback = setTimeout(() => {
+          try { child.kill(); } catch {}
+          finish();
+        }, 1_000);
+        killer.once("close", (exitCode) => {
+          if (exitCode !== 0) {
+            try { child.kill(); } catch {}
+          }
+          finish();
+        });
+        killer.once("error", () => {
+          try { child.kill(); } catch {}
+          finish();
+        });
+      } catch {
+        try { child.kill(); } catch {}
+        finish();
+      }
+    });
+    return;
+  }
+
+  try { process.kill(-pid, "SIGTERM"); } catch { try { child.kill("SIGTERM"); } catch {} }
+  if (await waitForProcessGroupExit(pid, 300)) return;
+  try { process.kill(-pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch {} }
+  await waitForProcessGroupExit(pid, 500);
+}
+
+const LIVE_OUTPUT_MAX_LINES = 8;
+const LIVE_OUTPUT_MAX_LINE_CHARS = 500;
+const LIVE_OUTPUT_UPDATE_INTERVAL_MS = 100;
+
+export function sanitizeTerminalOutput(text: string): string {
+  return text
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\x5c)/g, "")
+    .replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+}
+
+export class LiveOutputBuffer {
+  private readonly completedLines: string[] = [];
+  private readonly currentLineChars: string[] = [];
+  private currentLineStart = 0;
+  private currentLineTruncated = false;
+  private pendingCarriageReturn = false;
+  private omittedLines = 0;
+
+  append(text: string): void {
+    for (const char of text) {
+      if (this.pendingCarriageReturn) {
+        this.pendingCarriageReturn = false;
+        if (char === "\n") {
+          this.commitLine();
+          continue;
+        }
+        this.resetCurrentLine();
+      }
+
+      if (char === "\r") {
+        this.pendingCarriageReturn = true;
+      } else if (char === "\n") {
+        this.commitLine();
+      } else if (this.currentLineChars.length < LIVE_OUTPUT_MAX_LINE_CHARS) {
+        this.currentLineChars.push(char);
+      } else {
+        this.currentLineChars[this.currentLineStart] = char;
+        this.currentLineStart = (this.currentLineStart + 1) % LIVE_OUTPUT_MAX_LINE_CHARS;
+        this.currentLineTruncated = true;
+      }
     }
-  } catch {
-    try { child.kill(); } catch {}
+  }
+
+  snapshot(): string {
+    const lines = [...this.completedLines];
+    const currentLine = this.getCurrentLine();
+    if (currentLine || lines.length === 0) {
+      lines.push(this.currentLineTruncated ? `…${currentLine}` : currentLine);
+    }
+    if (this.omittedLines > 0) {
+      lines.unshift(`… ${this.omittedLines} earlier lines omitted`);
+    }
+    return sanitizeTerminalOutput(lines.join("\n"));
+  }
+
+  private getCurrentLine(): string {
+    if (this.currentLineStart === 0) return this.currentLineChars.join("");
+    return [
+      ...this.currentLineChars.slice(this.currentLineStart),
+      ...this.currentLineChars.slice(0, this.currentLineStart),
+    ].join("");
+  }
+
+  private resetCurrentLine(): void {
+    this.currentLineChars.length = 0;
+    this.currentLineStart = 0;
+    this.currentLineTruncated = false;
+  }
+
+  private commitLine(): void {
+    const currentLine = this.getCurrentLine();
+    this.completedLines.push(this.currentLineTruncated ? `…${currentLine}` : currentLine);
+    if (this.completedLines.length > LIVE_OUTPUT_MAX_LINES) {
+      this.completedLines.shift();
+      this.omittedLines++;
+    }
+    this.resetCurrentLine();
   }
 }
 
-function killChild(child: ChildProcess): void { killProcessTree(child); }
-
 export async function runScript(options: RunScriptOptions): Promise<RunScriptResult> {
   if (!options.script.trim()) throw new Error("Script tidak boleh kosong.");
+  if (options.signal?.aborted) {
+    throw new ScriptCancelledError({
+      output: "",
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      truncated: false,
+      durationMs: 0,
+    });
+  }
   const timeoutMs = Math.max(1_000, Math.min(options.timeoutMs, 300_000));
   const maxRawOutputChars = Math.max(1_000, Math.min(options.maxRawOutputChars, 10 * 1024 * 1024));
   const startedAt = Date.now();
@@ -209,52 +350,123 @@ export async function runScript(options: RunScriptOptions): Promise<RunScriptRes
     windowsHide: true,
     detached: process.platform !== "win32",
   });
+  let processTreeKill: Promise<void> | undefined;
+  const requestProcessTreeKill = () => {
+    processTreeKill ??= killProcessTree(child);
+    return processTreeKill;
+  };
   const parts: string[] = [];
+  const liveOutput = new LiveOutputBuffer();
   let truncated = false;
   let timedOut = false;
   let settled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let progressTimer: ReturnType<typeof setInterval> | undefined;
+  let outputUpdateTimer: ReturnType<typeof setTimeout> | undefined;
+  let stopUpdates = false;
+  let lastOutputUpdateAt = 0;
+  let hasOutputPreview = false;
+  const stopLiveUpdates = () => {
+    stopUpdates = true;
+    if (progressTimer) clearInterval(progressTimer);
+    progressTimer = undefined;
+    if (outputUpdateTimer) clearTimeout(outputUpdateTimer);
+    outputUpdateTimer = undefined;
+  };
+  const emitOutputUpdate = () => {
+    if (!options.onOutput || stopUpdates) return;
+    lastOutputUpdateAt = Date.now();
+    try {
+      options.onOutput(lastOutputUpdateAt - startedAt, liveOutput.snapshot());
+    } catch {
+      // Progress rendering is best-effort and must not interrupt process cleanup.
+    }
+  };
+  const scheduleOutputUpdate = () => {
+    if (!options.onOutput || stopUpdates) return;
+    if (!hasOutputPreview) {
+      hasOutputPreview = true;
+      emitOutputUpdate();
+      return;
+    }
+    const delay = LIVE_OUTPUT_UPDATE_INTERVAL_MS - (Date.now() - lastOutputUpdateAt);
+    if (delay <= 0) {
+      if (outputUpdateTimer) clearTimeout(outputUpdateTimer);
+      outputUpdateTimer = undefined;
+      emitOutputUpdate();
+    } else if (!outputUpdateTimer) {
+      outputUpdateTimer = setTimeout(() => {
+        outputUpdateTimer = undefined;
+        emitOutputUpdate();
+      }, delay);
+    }
+  };
   if (options.onProgress) {
-    const tick = () => options.onProgress!(Date.now() - startedAt);
+    const tick = () => {
+      if (stopUpdates) return;
+      try {
+        options.onProgress!(Date.now() - startedAt, liveOutput.snapshot());
+      } catch {
+        // Progress rendering is best-effort and must not interrupt process cleanup.
+      }
+    };
     tick();
-    progressTimer = setInterval(tick, 100);
+    progressTimer = setInterval(tick, LIVE_OUTPUT_UPDATE_INTERVAL_MS);
   }
 
   const abort = () => {
-    if (!settled) killProcessTree(child);
+    if (!settled && !stopUpdates) {
+      stopLiveUpdates();
+      void requestProcessTreeKill();
+    }
   };
   options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) abort();
 
   const result = await new Promise<{ exitCode: number | null; signal: string | null }>((resolveResult, reject) => {
     timer = setTimeout(() => {
       timedOut = true;
-      killProcessTree(child);
+      stopLiveUpdates();
+      void requestProcessTreeKill();
     }, timeoutMs);
-    child.stdout?.on("data", (chunk: Buffer) => {
+    const handleOutput = (chunk: Buffer) => {
       if (appendOutput(parts, chunk, maxRawOutputChars)) {
         truncated = true;
-        killProcessTree(child);
+        void requestProcessTreeKill();
       }
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      if (appendOutput(parts, chunk, maxRawOutputChars)) {
-        truncated = true;
-        killProcessTree(child);
+      if (options.onProgress || options.onOutput) {
+        liveOutput.append(chunk.toString("utf8"));
+        scheduleOutputUpdate();
       }
+    };
+    child.stdout?.on("data", handleOutput);
+    child.stderr?.on("data", handleOutput);
+    let processError: Error | undefined;
+    child.once("error", (error) => {
+      processError = error;
+      stopLiveUpdates();
+      void requestProcessTreeKill();
     });
-    child.once("error", reject);
-    child.once("close", (exitCode, signal) => resolveResult({ exitCode, signal }));
-  }).finally(() => {
+    child.once("close", (exitCode, signal) => {
+      if (outputUpdateTimer && !stopUpdates) {
+        clearTimeout(outputUpdateTimer);
+        outputUpdateTimer = undefined;
+        emitOutputUpdate();
+      }
+      stopLiveUpdates();
+      if (processError && !options.signal?.aborted) reject(processError);
+      else resolveResult({ exitCode, signal });
+    });
+  }).finally(async () => {
     settled = true;
     if (timer) clearTimeout(timer);
-    if (progressTimer) clearInterval(progressTimer);
+    stopLiveUpdates();
     options.signal?.removeEventListener("abort", abort);
+    if (processTreeKill) await processTreeKill;
   });
 
-  if (options.signal?.aborted) throw new Error("Eksekusi dibatalkan.");
   if (truncated) parts.push("\n[context-manager] Raw output dipotong setelah batas cache tercapai.");
-  return {
+  const runResult: RunScriptResult = {
     output: parts.join(""),
     exitCode: result.exitCode,
     signal: result.signal,
@@ -262,4 +474,6 @@ export async function runScript(options: RunScriptOptions): Promise<RunScriptRes
     truncated,
     durationMs: Date.now() - startedAt,
   };
+  if (options.signal?.aborted) throw new ScriptCancelledError(runResult);
+  return runResult;
 }

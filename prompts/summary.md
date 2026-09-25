@@ -1,10 +1,10 @@
 ---
-description: Summarize the latest result concisely.
+description: Summarize the latest agent output concisely.
 argument-hint: "[focus]"
 ---
 
-Summarize the latest result from this conversation in Indonesia.
-- Use up to 5 bullets.
-- Keep key decisions, changes, tests, blockers, and next steps.
-- Do not invent details.
-- Focus on: ${@:-none}
+Ringkas output agent terakhir dalam bahasa Indonesia.
+- Tulis satu paragraf pendek; sesuaikan panjangnya dengan kerumitan isi.
+- Utamakan inti dan keputusan; sebut ketidakpastian, blocker, atau hal yang belum selesai jika penting.
+- Jangan menambahkan informasi yang tidak ada dalam output.
+- Fokus pada: ${@:-none}

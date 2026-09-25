@@ -7,7 +7,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 **Extensions (10)**
 - `9router` — 9Router provider integration (login, status, model sync)
 - `ask-user` — Multiple choice questions for the model
-- `context-manager` — Session context tracking, security, approval gate
+- `context-manager` — Session context tracking, large-output caching/pruning, and execute/inspect tools (no confirmation prompt)
 - `copy-all` — Copy conversation to clipboard
 - `git-info` — Git branch, changes, PR status in footer
 - `run-summaries` — Auto-summarize agent runs
@@ -16,12 +16,13 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `ui-customization` — Custom header/footer, theme tweaks, memory status
 - `usage-tracker` — Provider quota & session usage dashboard
 
-**Skills (13)**
+**Skills (14)**
 - `ask-me` — Grill + router (main entry for ambiguous requests)
 - `bug-diagnosis` — 6-phase disciplined bug diagnosis
 - `code-review` — Dual-axis review (Standards + Spec)
 - `git-commit` — Conventional commits with review gate
 - `handoff` — Context handoff between sessions/agents
+- `humanize` — Manual-only prose rewrites that preserve meaning
 - `implement` — TDD implementation with code-review chain
 - `improve-architecture` — Deepening scan + interview
 - `project-migration` — Project migration workflow
@@ -32,8 +33,8 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `to-tasks` — Break approved feature work into vertical-slice tasks
 
 **Themes (3)**
-- `catppuccin-mocha` — tema aktif saat ini (lihat `settings.json`)
-- `github-dark-default` — varian gelap GitHub
+- `catppuccin-mocha` — tema Mocha
+- `github-dark-default` — tema aktif saat ini (lihat `settings.json`)
 - `urple` — varian ungu gelap
 
 `dashboard-state` adalah modul internal yang dipakai bersama oleh `git-info`, `ui-customization`, dan `usage-tracker`; bukan extension user-facing terpisah.

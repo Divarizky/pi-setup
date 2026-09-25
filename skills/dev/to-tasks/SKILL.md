@@ -152,7 +152,7 @@ Urutan `### Queue`: priority critical→high→medium→low. Sama level: unblock
 ### Format Rules
 - **Depends**: koma + spasi (`TASK-1, TASK-2`). Tidak ada dependency: `none`
 - **Priority**: huruf kecil semua — `critical|high|medium|low` (konsisten dengan proposal)
-- **Parallel**: `yes|no` (default `no`). `yes` HANYA kalau SEMUA: `subagent_supported` true, `Depends: none` (atau semua dependency `[x]` di Done), scope/layers tidak overlap task eligible lain, bukan `Uncertainty: High`/`Complexity: High`. Agent tanpa subagent → wajib `no`. `Parallel` cuma penanda eksekusi paralel di `implement` — bukan pengganti dependency.
+- **Parallel**: `yes|no` (default `no`). `yes` HANYA kalau SEMUA: `subagent_supported` true menurut [deteksi bersama](../shared/COMMON.md#sub-agent-detection), `Depends: none` (atau semua dependency `[x]` di Done), scope/layers tidak overlap task eligible lain, bukan `Uncertainty: High`/`Complexity: High`. Tanpa subagent coding paralel → wajib `no`. `Parallel` hanya kandidat eksekusi di `implement` — bukan pengganti dependency; `implement` wajib mengevaluasi ulang dependency, overlap, dan `write_scope` sebelum setiap batch. Jika kondisi berubah, jangan ubah `no` menjadi `yes` tanpa persetujuan user.
 - **Nomor TASK**: sequential, lanjut dari nomor tertinggi existing; jika tidak ada task sebelumnya, mulai dari `TASK-1`
 - **Detail**: 2-5 kalimat. Fokus behavior — apa yang harus muncul, bukan gimana implementasinya
 - **Ref**: setiap task wajib memiliki field `Ref:`. Isi dengan ID AC/user story yang dicakup (mis. `Ref: AC-01, AC-03`); gunakan `Ref: none` untuk split task atau percakapan tanpa AC. Field ini dipertahankan saat task berpindah Queue → In Progress → Done dan dipakai `code-review` axis Spec untuk mengecek coverage.

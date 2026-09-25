@@ -1,72 +1,84 @@
 # UI Prototype
 
-Branch `UI` menjawab satu pertanyaan tentang layout, hierarchy, interaction, density, accessibility, atau responsive behavior. **Default-nya decision-first:** bandingkan opsi dan susun decision capture (file di Project mode, pesan chat di Universal mode); jangan membuat screen/route/variant code tanpa permintaan eksplisit.
+Branch `UI` menjawab satu pertanyaan tampilan dengan **varian runnable mandiri** yang bisa dibandingkan langsung. Artifact UI selalu dibuat di `.workspace/prototypes/<slug>/`; jangan mengubah source atau route aplikasi. Hasil utamanya adalah pengalaman mencoba opsi dan feedback user; decision capture merangkum pilihan serta alasannya.
 
-## When This Is the Right Shape
+## Kapan Dipakai
 
 - “Layout mana yang membuat action utama lebih mudah ditemukan?”
 - “Dashboard ini lebih baik memakai sidebar atau command surface?”
 - “Bagaimana hierarchy informasi pada settings screen?”
-- “Trade-off responsive dan accessibility dari beberapa struktur UI apa?”
+- “Saya ingin mencoba beberapa struktur UI sebelum memilih.”
 
-## Decision-First Process
+## Alur UI
 
-1. **Set host context** — identifikasi screen/route existing, data, auth, navigation, dan design system.
-2. **Tetapkan evaluation criteria** — hierarchy, discoverability, keyboard/focus, contrast, accessibility, responsive behavior, dan density.
-3. **Susun maksimal 3 opsi struktural** — bedakan layout/hierarchy/primary affordance, bukan sekadar warna.
-4. **Bandingkan trade-off** — catat apa yang mudah/sulit ditemukan, constraint breakpoint, focus order, dan risiko implementasi.
-5. **Pilih status** — `validated`, `inconclusive`, atau `rejected` berdasarkan criteria, bukan selera visual semata.
-6. **Capture decision** — Project mode memperbarui section `## Prototype Decision` pada `.workspace/work/F-<id>.md`; Universal mode menampilkan decision capture di chat tanpa membuat file.
+### 1. Brief dan approval
 
-Contoh tabel evaluasi:
+Ikuti brief dan approval gate di `../SKILL.md`. Tanyakan satu design question dengan success criteria yang bisa diamati. Setelah brief disetujui, persetujuan itu sudah mengizinkan pembuatan varian runnable; jangan meminta approval runnable tambahan.
 
-| Opsi | Hierarchy | Discoverability | Accessibility | Responsive risk | Decision |
-|---|---|---|---|---|---|
-| Sidebar | kuat | baik | focus order jelas | medium | kandidat |
+### 2. Siapkan prototype mandiri
 
-## Optional Executable Mode
+1. Tentukan work root mengikuti aturan di `../SKILL.md`, lalu buat subfolder unik `.workspace/prototypes/<slug>/`.
+2. Baca screen/route, data shape, design system, typography, dan responsive behavior yang relevan **sebagai referensi saja**.
+3. Buat `index.html` mandiri dengan HTML/CSS/JavaScript inline. Gunakan mock/sample data yang realistis; jangan memakai auth, fetch, atau mutation aplikasi.
+4. Jika butuh asset tambahan, simpan di subfolder prototype yang sama. Jangan import source/component dari luar subfolder dan jangan mengubah route/source aplikasi.
+5. Jika rancangan tidak bisa diuji secara bermakna tanpa wiring ke aplikasi, jelaskan batasannya lalu minta approval untuk mengubah scope; jangan mengintegrasikan diam-diam.
 
-Hanya gunakan jika user meminta variant UI runnable secara eksplisit. Setelah disetujui:
+### 3. Buat varian struktural
 
-- default maksimal 3 varian yang berbeda secara struktural;
-- lebih baik mount pada existing screen/route;
-- gunakan switcher berbasis state, bukan URL;
-- switcher punya mouse dan keyboard navigation;
-- hidden dari production/debug gate;
-- data fetching dan auth tetap memakai host context;
-- varian read-only, throwaway, tanpa backend mutation;
-- setelah user review, Project mode menulis decision Markdown; Universal mode menampilkannya di chat; lalu hapus/isolasi shell throwaway.
+- Default **3 varian**, maksimal 3 dalam satu pertanyaan.
+- Setiap varian harus berbeda pada layout, information hierarchy, atau primary affordance. Perbedaan warna/copy saja bukan varian desain.
+- Tampilkan data dan konten yang sebanding di tiap varian agar feedback fokus pada desain.
+- Gunakan gaya visual project sebagai referensi, tetapi prototype harus tetap dapat berjalan sendiri.
 
-## Output yang Diharapkan
+### 4. Tambahkan switcher sementara
 
-Decision capture (file di Project mode, pesan chat di Universal mode) harus memuat:
+Buat switcher yang terlihat jelas bukan bagian dari desain yang dievaluasi:
 
-- question, hypothesis, dan host context;
-- evaluation criteria;
-- opsi dan trade-off struktural;
-- evidence dari review/user feedback;
-- decision dan rejected alternatives;
-- design requirements untuk real code;
-- open risks;
-- suggested next skill.
+- tombol kiri/kanan untuk berpindah varian dan wrap-around;
+- label varian, misalnya `B (Sidebar layout)`;
+- keyboard navigation (`←`/`→`); jangan ambil alih tombol panah saat input, textarea, atau `[contenteditable]` sedang fokus;
+- bila prototype dijalankan melalui local server, dukung `?variant=<key>` agar pilihan bisa dibuka langsung. Switcher tetap harus bekerja tanpa mengubah aplikasi host.
 
-## Phase Exit
+### 5. Jalankan dan minta feedback
 
-Setelah decision capture selesai, sarankan:
+Berikan path `.workspace/prototypes/<slug>/index.html` dan instruksi menjalankan (default: buka file langsung; jika perlu server, berikan satu command). Tanyakan varian yang dipilih, apa yang mudah/sulit ditemukan, komponen apa yang ingin digabung, serta kekurangan yang terlihat. Jangan menganggap preferensi yang belum ditinjau sebagai feedback.
 
-- `implement` jika layout tervalidasi;
-- `to-tasks` jika perlu dipecah;
-- `improve-architecture` jika perubahan menyentuh struktur UI/data;
-- `prototype` jika hasil inconclusive;
-- `ask-me` jika requirement atau host context ambigu;
-- `none` jika tidak ada tindakan lanjutan.
+### 6. Evaluasi desain
 
-Jangan menjalankan skill berikutnya otomatis.
+Feedback langsung user adalah bukti utama; gunakan criteria singkat dari brief untuk membantu membandingkannya. Jangan memberi skor numerik kecuali memang diminta. Tinjau aspek yang relevan:
+
+- hierarchy dan discoverability;
+- tujuan tiap varian dan kecocokan dengan data;
+- keyboard/focus dan accessibility;
+- responsive behavior dan density;
+- risiko implementasi atau constraint design system.
+
+Catat varian yang dipilih (atau kombinasi antarvarian), alasan/feedback, evidence yang teramati, serta criteria yang belum terjawab. Gunakan status `validated`, `inconclusive`, atau `rejected` sesuai evidence—bukan selera visual asisten.
+
+### 7. Capture dan cleanup
+
+Decision capture mengikuti `Capture Format` dan mode di `../SKILL.md`. Catat design requirements yang dapat dibawa ke implementasi; jangan mempromosikan komponen prototype langsung ke production.
+
+Setelah decision capture selesai, bersihkan hanya subfolder `.workspace/prototypes/<slug>/` yang dibuat untuk eksperimen ini. Tampilkan path sebelum cleanup; jangan menghapus parent `.workspace/prototypes/` atau prototype lain. Jika target berisi file existing atau batas kepemilikan tidak jelas, berhenti dan minta konfirmasi.
+
+## Bentuk Decision Capture
+
+Capture minimal memuat:
+
+- question, hypothesis, host context, dan success criteria;
+- path prototype dan varian struktural yang dicoba;
+- feedback pilihan user, termasuk kombinasi elemen jika ada;
+- evidence dan trade-off yang relevan;
+- keputusan/status, requirements untuk implementasi, serta open risks.
 
 ## Anti-Patterns
 
-- Langsung membuat tiga varian code sebelum brief disetujui.
-- Varian hanya berbeda warna atau spacing.
-- Membuat route kosong padahal ada existing screen yang bisa menjadi host.
-- Menghubungkan prototype ke mutation/backend nyata.
-- Mempromosikan varian ke production tanpa decision capture dan user approval.
+- Coding sebelum brief disetujui atau meminta izin runnable kedua setelah disetujui.
+- Menulis artifact UI prototype di luar `.workspace/prototypes/<slug>/`.
+- Mengubah source/route aplikasi untuk menjalankan prototype.
+- Membuat satu mockup statis ketika pertanyaannya perlu membandingkan beberapa opsi.
+- Varian yang hanya berbeda warna atau spacing.
+- Menghubungkan prototype ke auth, fetch, mutation, atau backend nyata.
+- Membiarkan prototype switcher atau varian eksperimen masuk production.
+- Mengklaim layout tervalidasi tanpa feedback/evidence yang mendukung.
+- Menghapus source aplikasi atau prototype lain saat cleanup.
