@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -120,6 +120,26 @@ test("OutputCache GC membersihkan referensi session yang file-nya terhapus", asy
 
     await cache.cleanup();
     assert.equal(await cache.get(outputId), null);
+  } finally {
+    await rm(storage, { recursive: true, force: true });
+  }
+});
+
+test("OutputCache mengambil alih lock index yang sudah stale", async () => {
+  const storage = await mkdtemp(join(tmpdir(), "cm-cache-stale-lock-"));
+  try {
+    const project = "C:/project-stale-lock";
+    const cache = new OutputCache();
+    cache.setProjectDir(project, storage);
+    cache.setSessionId("session-stale-lock");
+    await cache.save("seed");
+    const directory = join(storage, projectHashForDir(resolve(project)));
+    const lockPath = join(directory, "references.json.lock");
+    await mkdir(lockPath);
+    await utimes(lockPath, new Date(0), new Date(0));
+
+    await cache.cleanup();
+    await assert.rejects(stat(lockPath), { code: "ENOENT" });
   } finally {
     await rm(storage, { recursive: true, force: true });
   }

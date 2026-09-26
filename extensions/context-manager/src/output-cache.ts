@@ -5,8 +5,9 @@ import { tmpdir } from "node:os";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const LOCK_WAIT_MS = 25;
-const LOCK_TIMEOUT_MS = 10_000;
 const STALE_LOCK_MS = 60_000;
+// Tunggu lebih lama dari batas lock stale agar waiter bisa mengambil alih lock yatim.
+const LOCK_TIMEOUT_MS = STALE_LOCK_MS + 10_000;
 
 export const OUTPUT_ID_RE = /^output-[a-f0-9]{8}$/;
 

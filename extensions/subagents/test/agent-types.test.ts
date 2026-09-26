@@ -63,7 +63,7 @@ describe("agent type registry", () => {
     it("case-insensitive lookup works for getAgentConfig", () => {
       const config = getAgentConfig("explore");
       expect(config?.name).toBe("explore");
-      expect(config?.model).toBe("openai-codex/gpt-5.6-luna");
+      expect(config?.model).toBeUndefined();
       expect(config?.thinking).toBe("xhigh");
     });
 
@@ -89,9 +89,9 @@ describe("agent type registry", () => {
       expect(config.builtinToolNames).not.toContain("write");
     });
 
-    it("Explore has luna model in config", () => {
+    it("Explore inherits model (no hardcoded model in config)", () => {
       const cfg = getAgentConfig("explore");
-      expect(cfg?.model).toBe("openai-codex/gpt-5.6-luna");
+      expect(cfg?.model).toBeUndefined();
       expect(cfg?.thinking).toBe("xhigh");
     });
 
