@@ -5,7 +5,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 ## What's Included
 
 **Extensions (10)**
-- `9router` — 9Router provider integration (login, status, model sync)
+- `provider-gateway` — Unified provider gateway (9Router, OpenCode Zen, Claude Pro/Max CLI, Antigravity, OpenAI Codex)
 - `ask-user` — Multiple choice questions for the model
 - `context-manager` — Session context tracking, large-output caching/pruning, and execute/inspect tools (no confirmation prompt)
 - `copy-all` — Copy conversation to clipboard
@@ -39,7 +39,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 
 `dashboard-state` adalah modul internal yang dipakai bersama oleh `git-info`, `ui-customization`, dan `usage-tracker`; bukan extension user-facing terpisah.
 
-Setup aktif juga memakai skill eksternal dari `.agents/skills` (`computer-use`, `find-skills`, `orca-cli`, dan `orchestration`). Skill eksternal tersebut sengaja tidak divendor ke repo ini.
+Setup aktif juga memakai extension dan skill eksternal dari Orca (`extensions/orca-*.ts` serta skill seperti `computer-use`, `find-skills`, `orca-cli`, dan `orchestration`). Sumber daya eksternal tersebut dikelola oleh host Orca dan sengaja tidak diikutkan ke repo ini.
 
 ## Quick Start
 
@@ -90,4 +90,4 @@ Universal mode works without setup — context stays in chat.
 
 ## Extensions Development
 
-Each extension in `extensions/` is a standalone TypeScript module. See `extensions/<name>/` for structure. `subagents` saat ini versi `2.0.0`, memakai Biome dan test suite sendiri. Extension yang dikelola Orca berada di `extensions/orca-*.ts` dan membutuhkan host Orca/Pi yang sesuai.
+Each extension in `extensions/` is a standalone TypeScript module. See `extensions/<name>/` for structure. `subagents` saat ini versi `2.0.0`, memakai Biome dan test suite sendiri. Extension yang dikelola Orca (`extensions/orca-*.ts`) dihasilkan oleh host Orca secara dinamis dan diabaikan dari repo ini.

@@ -160,8 +160,8 @@ describe("dialog glyph mapping", () => {
     expect(dialogRowGlyph("failed", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "✘", color: "error" });
     expect(dialogRowGlyph("skipped", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "✘", color: "dim" });
     expect(dialogRowGlyph("blocked", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "✘", color: "warning" });
-    expect(dialogRowGlyph("queued", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "◌", color: "dim" });
-    expect(dialogRowGlyph("interrupted", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "◌", color: "dim" });
+    expect(dialogRowGlyph("queued", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "◻", color: "dim" });
+    expect(dialogRowGlyph("interrupted", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "◻", color: "dim" });
     expect(dialogRowGlyph("running", UNICODE_DIALOG_GLYPHS, 3)).toEqual({ text: SPINNER[3], color: "dim" });
   });
 
@@ -172,8 +172,8 @@ describe("dialog glyph mapping", () => {
     expect(rows[2]).toContain("✘ skipped");
     expect(rows[3]).toContain("✘ blocked");
     // All four above are `state: "done" | "error"` inline; only the dialog
-    // splits the last three apart, and only it can draw ◌ for the queued row.
-    expect(rows[4]).toContain("◌ queued");
+    // splits the last three apart, and only it can draw ◻ for the queued row.
+    expect(rows[4]).toContain("◻ queued");
     expect(rows[5]).toContain(`${SPINNER[0]} running`);
   });
 
@@ -185,24 +185,24 @@ describe("dialog glyph mapping", () => {
     expect(lines.find(l => l.includes(">done"))).toContain("<success>✔</success>");
   });
 
-  it("does not use the card's ⟳ for a running row — it spins, and queues draw ◌", () => {
+  it("does not use the card's ⟳ for a running row — it spins, and queues draw ◻", () => {
     const joined = dialog({ progress: live }).join("\n");
     expect(joined).not.toContain("⟳");
-    expect(joined).toContain("◌");
+    expect(joined).toContain("◻");
     // And the spinner really advances, which a static glyph could not do.
     const later = dialog({ progress: live, spinnerFrame: 4 }).join("\n");
     expect(later).toContain(`${SPINNER[4]} running`);
     expect(later).not.toContain(`${SPINNER[0]} running`);
   });
 
-  it("draws ◌ for an agent still live when the run stopped", () => {
+  it("draws ◻ for an agent still live when the run stopped", () => {
     const rows = rightRows(
       dialog({
         progress: [agentEntry({ index: 0, label: "cutoff", state: "progress", startedAt: START })],
         task: { status: "killed", startTime: START },
       }),
     );
-    expect(rows[0]).toContain("◌ cutoff");
+    expect(rows[0]).toContain("◻ cutoff");
   });
 
   it("keeps an ASCII tier one column wide for every glyph", () => {
@@ -210,7 +210,7 @@ describe("dialog glyph mapping", () => {
       expect(visibleWidth(ASCII_DIALOG_GLYPHS[key]), key).toBe(1);
     }
     const joined = dialog({ progress: live, ascii: true }).join("\n");
-    expect(joined).not.toMatch(/[✔✘◌❯▸]/);
+    expect(joined).not.toMatch(/[✔✘◻❯▸]/);
     expect(joined).toContain("√ done");
     expect(joined).toContain("o queued");
   });
@@ -390,7 +390,7 @@ describe("sub-status annotations", () => {
     // The agent type and the tool-call count are the detail pane's, not the
     // row's — the row carries why it looks the way it does, then the model and
     // the token count, and nothing that would push those off a narrow pane.
-    expect(rows[0].trim()).toBe("❯ ◌ retry-me · throttled · attempt 2 · waiting 8s");
+    expect(rows[0].trim()).toBe("❯ ◻ retry-me · throttled · attempt 2 · waiting 8s");
   });
 });
 

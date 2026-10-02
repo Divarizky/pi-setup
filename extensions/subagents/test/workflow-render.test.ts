@@ -68,7 +68,7 @@ describe("inline glyph mapping", () => {
     const lines = card({
       progress: [agentEntry({ index: 0, label: "waiting", state: "start", queuedAt: START })],
     });
-    expect(lines.join("\n")).not.toContain("◌");
+    expect(lines.join("\n")).not.toContain("◻");
     expect(treeRows(lines)[1]).toContain("⟳ waiting");
   });
 

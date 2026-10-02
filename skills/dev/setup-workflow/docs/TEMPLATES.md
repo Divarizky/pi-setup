@@ -32,7 +32,7 @@ Precedence: instruksi user saat ini > file ini > CONTEXT.md > asumsi.
 - <pola/status yang sering dicek>
 
 ## Advanced Details
-Domain/pattern/gotcha → `CONTEXT.md` · Requirement baseline → `SRS.md` · Work aktif → `work/F-<id>.md` · Progres → `TRACKER.md` · Keputusan final → `ADR.md`
+Domain/pattern/gotcha → `CONTEXT.md` · Security → `SECURITY.md` · Style → `CODE_STYLE.md` · Data → `DATABASE.md` · Endpoints → `API.md` · Requirement baseline → `SRS.md` · Work aktif → `work/F-<id>.md` · Progres → `TRACKER.md` · Keputusan final → `ADR.md`
 ```
 
 ---
@@ -269,4 +269,137 @@ Path: `.workspace/context/ARCHITECTURE.md`. Conditional — hanya untuk project 
 
 ## Dependency Direction <!-- auto -->
 - <A> → <B>: <kontrak/alasan arah dependency>
+```
+
+---
+
+## SECURITY.md
+
+Path: `.workspace/context/SECURITY.md`. Conditional — dibuat jika project memiliki auth, secrets, atau operasi sensitif.
+
+```markdown
+# SECURITY — <name>
+
+Aturan proteksi sistem, user, kredensial, dan data. Berlaku untuk semua developer dan agent.
+Requirement terukur lintas fitur masuk SRS (`GR-xx`); keputusan arsitektur final masuk ADR.
+
+## Auth & Authorization <!-- auto -->
+- Provider: <Clerk / Supabase Auth / NextAuth / custom> — Source: <file/config>
+- Protected route wajib verifikasi sesi di server; jangan percaya user ID atau role dari client.
+- Terapkan permission check / RBAC sebelum membaca atau mengubah data terlindungi.
+
+## Secrets & Environment <!-- auto -->
+- Kredensial dan API keys wajib via environment variable; dilarang hardcode secret di source code.
+- Dilarang commit `.env*` berisi credential; sediakan `.env.example` berisi nama variabel saja.
+- Pisahkan kredensial development, staging, dan production.
+
+## Input Validation & API Safety <!-- auto -->
+- Validasi semua input di server meskipun client sudah memvalidasi (misal: Zod / schema validator).
+- Terapkan rate limit pada endpoint rawan abuse (auth, reset password, generate AI, public form).
+- Error user-facing dilarang membocorkan credential, API key, stack trace, atau path internal.
+
+## Data Protection <!-- auto -->
+- Simpan hanya data yang benar-benar dibutuhkan; dilarang log password, token, atau PII.
+- Gunakan parameterized query atau ORM; batasi privilege database ke minimum yang diperlukan.
+
+## Agent Rules
+- Dilarang mematikan auth atau membypass otorisasi demi membuat fitur berfungsi.
+- Dilarang mengekspos secret ke client-side code atau memasukkan credential asli ke file `.md`.
+- Jika instruksi bertentangan dengan file ini, berhenti dan minta konfirmasi user.
+```
+
+---
+
+## CODE_STYLE.md
+
+Path: `.workspace/context/CODE_STYLE.md`. Conditional — dibuat dari stack dan konvensi aktual repo.
+
+```markdown
+# CODE_STYLE — <name>
+
+Konvensi kode agar hasil generate terbaca, konsisten, dan mudah dipelihara.
+Ikuti pola existing; jangan memaksa gaya baru jika codebase sudah punya konvensi.
+
+## Stack & Tools <!-- auto -->
+- Bahasa & Framework: <TypeScript / React / Next.js / etc.> — Source: <package.json/config>
+- Linter & Formatter: <ESLint / Prettier / Biome / etc.> — Source: <config>
+
+## Naming & Structure <!-- auto -->
+- Komponen: PascalCase (<UserCard.tsx>). Fungsi/variabel: camelCase (<getUserData>). Konstanta: UPPER_SNAKE_CASE (<MAX_RETRY_COUNT>).
+- Boolean: prefiks terbaca jelas (<isLoading>, <hasAccess>, <canEdit>).
+- Komponen fungsional: pisahkan UI, business logic, dan data fetching bila praktis.
+- Tipe/props eksplisit; handle loading, error, dan empty state.
+
+## Comments & Cleanliness <!-- auto -->
+- Komentar hanya untuk menjelaskan WHY, bukan WHAT yang sudah jelas dari kode.
+- Bersihkan unused import, variabel mati, dan console log debug sebelum selesai.
+
+## Verification Checklist <!-- auto -->
+- Jalankan lint, type-check, dan test relevan sebelum menyatakan implementasi selesai.
+```
+
+---
+
+## DATABASE.md
+
+Path: `.workspace/context/DATABASE.md`. Conditional — dibuat jika project menggunakan database atau ORM.
+
+```markdown
+# DATABASE — <name>
+
+Struktur data, relasi, dan aturan perubahan skema yang aman.
+Model yang masih kandidat disimpan di work card `F-<id>.md`; model approved dicatat di sini.
+
+## Stack & Connection <!-- auto -->
+- Database & Provider: <PostgreSQL / SQLite / Supabase / Neon / etc.> — Source: <config>
+- ORM / Query Builder: <Prisma / Drizzle / TypeORM / raw SQL> — Source: <package.json/schema>
+- Connection string wajib dari env var; dilarang hardcode URL database production.
+
+## Core Models <!-- auto -->
+### <ModelName>
+- Deskripsi: <peran model dalam domain bahasa sederhana>
+- Fields: <id, field kunci, created/updated timestamps>
+- Relations: <One User can have many Projects, etc.>
+- Constraints & Index: <foreign keys, unique constraints, index penting>
+
+## Migrations & Schema Changes <!-- auto -->
+- Alur: ubah skema definisi → generate migration → review file migrasi → test lokal/staging → deploy via pipeline.
+- Dilarang mengubah skema production manual untuk melewati migrasi; dilarang reset database production.
+- Gunakan transaksi untuk operasi yang harus sukses atau gagal bersamaan.
+
+## Seed Data <!-- auto -->
+- Script seed hanya untuk development/test; dilarang memasukkan data user asli atau secret production.
+```
+
+---
+
+## API.md
+
+Path: `.workspace/context/API.md`. Conditional — dibuat jika project mengekspos atau mengonsumsi API / endpoint.
+
+```markdown
+# API — <name>
+
+Konvensi komunikasi frontend-backend dan integrasi service pihak ketiga.
+Detail endpoint per fitur yang belum final disimpan di work card; endpoint approved dicatat di sini.
+
+## Base Configuration <!-- auto -->
+- Dev URL: <http://localhost:3000/api> — Prod URL: <https://domain.com/api> — Source: <config>
+- Format: JSON. Versioning: </api/v1> bila ada.
+
+## Authentication & Headers <!-- auto -->
+- Endpoint terlindungi wajib menyertakan token/session (`Authorization: Bearer <token>`).
+- Kredensial server-only dilarang dikirim ke browser.
+
+## Conventions & Errors <!-- auto -->
+- Gunakan noun untuk resource: GET/POST/PATCH/DELETE `/api/v1/<resource>`.
+- Format response & error seragam; dilarang mengembalikan internal stack trace ke user.
+- Status code standar: 200 (OK), 201 (Created), 400 (Bad Request), 401 (Unauthorized), 403 (Forbidden), 404 (Not Found), 409 (Conflict), 429 (Rate Limited), 500 (Server Error).
+
+## Third-Party Integrations <!-- auto -->
+### <ProviderName>
+- Tujuan: <payment / auth / storage / AI / etc.>
+- Server env vars: <PROVIDER_SECRET_KEY> (server-only)
+- Webhooks / Endpoints: <path webhook, verifikasi signature>
+- Failure behavior: <retry strategy / fallback behavior>
 ```

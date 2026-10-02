@@ -6,7 +6,7 @@
  *  Review changed files across dimensions              3/7 agents · 1m12s
  *
  *  ╭ Phases ──────────┬ Verify · 1 agent ──────────────────────────────╮
- *  │ ❯ ✔ Review   3/3 │ ❯ ◌ verify:auth.ts · attempt 2 · waiting 8s    │
+ *  │ ❯ ✔ Review   3/3 │ ❯ ◻ verify:auth.ts · attempt 2 · waiting 8s    │
  *  │   2 Verify   1/2 │                                                │
  *  │   3 Report       │                                                │
  *  ╰──────────────────┴────────────────────────────────────────────────╯
@@ -23,9 +23,9 @@
  * **The glyphs are not the card's glyphs.** `workflow-card.ts` keys off the raw
  * entry `state`; this file keys off the *derived* `displayState(entry, active)`
  * and splits cases the card cannot see — skipped, blocked, queued and
- * interrupted all render as a plain ✘ or ⟳ inline but are distinct here. `◌`
- * (U+25CC) appears only in this file, and a running row animates a spinner where
- * the card draws a static `⟳`.
+ * interrupted all render as a plain ✘ or ⟳ inline but are distinct here. `◻`
+ * (U+25FB, the same square the todos overlay uses) marks them, and a running
+ * row animates a spinner where the card draws a static `⟳`.
  *
  * **The phases pane is stranger still**: a phase that has not finished shows
  * *its number*, not a glyph. That is deliberate, recovered behaviour.
@@ -112,7 +112,7 @@ export const WORKFLOW_DIALOG_SPINNER_MS = 80;
 export interface WorkflowDialogGlyphs {
   tick: string;
   cross: string;
-  /** `◌` — queued or interrupted. The card has no row that draws this. */
+  /** `◻` — queued or interrupted. The card has no row that draws this. */
   queued: string;
   /** `figures.pointer` — the selected row in either pane. */
   pointer: string;
@@ -141,7 +141,7 @@ export interface WorkflowDialogGlyphs {
 export const UNICODE_DIALOG_GLYPHS: WorkflowDialogGlyphs = {
   tick: UNICODE_GLYPHS.tick,
   cross: UNICODE_GLYPHS.cross,
-  queued: "◌",
+  queued: "◻",
   pointer: "❯",
   focus: UNICODE_GLYPHS.pointer,
   spinner: SPINNER,

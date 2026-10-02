@@ -435,7 +435,7 @@ export class AgentWidget {
     const truncate = (line: string) =>
       line.length === 0 ? line : truncateToWidth(`${pad}${line}${pad}`, w, "…");
     const headingColor = hasActive ? "accent" : "dim";
-    const headingIcon = hasActive ? "●" : "○";
+    const headingIcon = hasActive ? "◼" : "◻";
     const frame = SPINNER[this.widgetFrame % SPINNER.length];
 
     // Build sections separately for overflow-aware assembly.

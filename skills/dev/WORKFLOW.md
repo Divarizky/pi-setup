@@ -45,10 +45,11 @@ Aturan operasional ada di [shared/COMMON.md#context-resolver](shared/COMMON.md#c
 1. Instruksi dan keputusan dari percakapan aktif.
 2. File project yang relevan di current directory.
 3. Git status, diff, dan history bila tersedia.
-4. `.workspace/context/PROJECT.md`, `CONTEXT.md`, dan `ADR.md`.
-5. Artifact workflow lain yang relevan.
+4. `.workspace/context/PROJECT.md`, `CONTEXT.md`, `ADR.md`, dan `.workspace/context/SRS.md`.
+5. Stack docs conditional (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`) bila relevan dengan scope pekerjaan.
+6. Artifact workflow lain yang relevan (work card, handoff, migration meta).
 
-Jangan mengarang isi context yang tidak tersedia. Nyatakan keterbatasannya.
+Jangan mengarang isi context yang tidak tersedia. Nyatakan keterbatasannya bila ada stack docs yang belum aktif (`has_*: false`).
 
 ## Main Flow
 
@@ -110,16 +111,16 @@ Universal mode tidak membuat atau memperbarui artifact workflow di file. Artifac
 | Handoff | `.workspace/handoffs/*.md` | ringkasan handoff di chat + Suggested Skills |
 | Status | tracker + tasks + handoff | Git + file relevan + percakapan |
 | Context | `.workspace/context/*` | inspeksi langsung current directory |
-| Migration state | `.workspace/.scratch/migration/*` | tidak tersedia; setup wajib |
+| Migration state | `.workspace/migration/*` | tidak tersedia; setup wajib |
 
 Permintaan menulis artifact ke file membutuhkan Project mode; tawarkan `setup-workflow` jika user membutuhkan persistence.
 
 ## Artifact Ownership
 
-- `setup-workflow`: project metadata, context dasar, dan scaffold SRS (seed Global Requirements saat New Project).
-- `to-requirements`: work card dan konten requirement SRS — single-writer `.workspace/context/SRS.md` setelah seed.
+- `setup-workflow`: project metadata, context dasar, scaffold SRS (seed Global Requirements saat New Project), dan stack docs awal yang terdeteksi saat scan.
+- `to-requirements`: work card dan konten requirement SRS — single-writer `.workspace/context/SRS.md` setelah seed; creator pertama stack docs conditional yang lahir lazy saat approval fitur.
 - `to-tasks`: section `## Tasks` pada work card dan entry fitur di `.workspace/context/TRACKER.md`.
-- `implement`: perpindahan task Queue/In Progress/Done pada work card; satu-satunya pengubah counter di `.workspace/context/TRACKER.md`.
+- `implement`: perpindahan task Queue/In Progress/Done pada work card; satu-satunya pengubah counter di `.workspace/context/TRACKER.md`; sinkronisasi section `<!-- auto -->` pada stack docs dengan kode nyata setelah review pass.
 - `status`: read-only.
 - `handoff`: dokumen handoff.
 - `prototype`: keputusan prototype.

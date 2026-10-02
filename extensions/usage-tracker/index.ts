@@ -1,5 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ProviderUsage, UsageTotals } from "./src/providers.ts";
 import {
   fetchProviderUsage,
@@ -59,6 +62,15 @@ function sessionUsage(ctx: ExtensionContext): UsageTotals {
 function discoverProviderIds(ctx: ExtensionContext): readonly ProviderId[] {
   const ids = new Set<string>(ctx.modelRegistry.getAll().map((model) => model.provider));
   for (const provider of ctx.modelRegistry.getRegisteredProviderIds()) ids.add(provider);
+  try {
+    const authPath = join(homedir(), ".pi", "agent", "auth.json");
+    if (existsSync(authPath)) {
+      const auth = JSON.parse(readFileSync(authPath, "utf8")) as Record<string, unknown>;
+      for (const key of Object.keys(auth)) ids.add(key);
+    }
+  } catch {
+    // abaikan jika file auth.json tidak ada / tidak bisa dibaca
+  }
   return [...ids];
 }
 
@@ -76,7 +88,9 @@ async function loadUsage(ctx: ExtensionContext): Promise<UsageTrackerViewData> {
       }),
     );
     const configured = connected.filter((entry) => entry.auth !== undefined);
-    const supported = configured.filter(({ provider }) => provider === "openai-codex");
+    const supported = configured.filter(({ provider }) =>
+      provider === "openai-codex" || provider === "antigravity" || provider === "anthropic" || provider === "claude",
+    );
     const fetched = await Promise.all(
       supported.map(({ provider, auth }) =>
         fetchProviderUsage(
@@ -133,7 +147,7 @@ async function fetchActiveQuota(
   model: QuotaModelRef,
   signal: AbortSignal,
 ): Promise<MatchedQuota | undefined> {
-  if (model.provider === "openai-codex") {
+  if (model.provider === "openai-codex" || model.provider === "anthropic" || model.provider === "claude") {
     const usage = await fetchProviderUsage(
       model.provider,
       () => ctx.modelRegistry.getProviderAuth(model.provider),
@@ -142,6 +156,16 @@ async function fetchActiveQuota(
     if (!usage.limits?.length) return undefined;
     const limit = primaryQuotaLimit(usage);
     return limit ? { usage, limit } : undefined;
+  }
+
+  if (model.provider === "antigravity") {
+    const usage = await fetchProviderUsage(
+      model.provider,
+      () => ctx.modelRegistry.getProviderAuth(model.provider),
+      { signal },
+    );
+    if (!usage.limits?.length) return undefined;
+    return findQuotaForModel(model, [usage]);
   }
 
   if (model.provider !== "9router") return undefined;
@@ -252,11 +276,18 @@ function createQuotaBarRuntime(
     }
   };
 
+  const isManagedProvider = (providerId: string): boolean =>
+    providerId === "openai-codex" ||
+    providerId === "9router" ||
+    providerId === "antigravity" ||
+    providerId === "anthropic" ||
+    providerId === "claude";
+
   const select = (model: QuotaModelRef, ctx: ExtensionContext): void => {
     latestCtx = ctx;
     activeModel = model;
     activeModelKey = modelKey(model);
-    activeMatched = model.provider === "openai-codex" || model.provider === "9router"
+    activeMatched = isManagedProvider(model.provider)
       ? undefined
       : standardQuotas.get(model.provider);
     lastRefreshAt = 0;
@@ -278,7 +309,7 @@ function createQuotaBarRuntime(
   ): void => {
     latestCtx = ctx;
     // Provider-specific endpoints remain authoritative for these integrations.
-    if (model.provider === "openai-codex" || model.provider === "9router") return;
+    if (isManagedProvider(model.provider)) return;
     const matched = parseStandardQuotaHeaders(model.provider, headers);
     if (!matched) return;
     standardQuotas.set(model.provider, matched);

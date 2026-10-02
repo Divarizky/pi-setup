@@ -248,11 +248,11 @@ describe("FleetList navigation", () => {
     ]);
     h.press(DOWN);          // activate → selection on main (idx 0)
     h.press(DOWN_RELEASE);  // release half of the SAME tap — must be a no-op
-    expect(h.render().find(l => l.includes("main"))).toContain("●");
+    expect(h.render().find(l => l.includes("main"))).toContain("◼");
     h.press(DOWN);          // a real second tap → first agent
     h.press(DOWN_RELEASE);
-    expect(h.render().find(l => l.includes("one"))).toContain("●");
-    expect(h.render().find(l => l.includes("two"))).toContain("○");
+    expect(h.render().find(l => l.includes("one"))).toContain("◼");
+    expect(h.render().find(l => l.includes("two"))).toContain("◻");
   });
 
   it("renders the whole selected row in the theme's primary text color (#230)", () => {
@@ -264,14 +264,14 @@ describe("FleetList navigation", () => {
     h.press(DOWN); // → a1
     const selected = h.render().find(l => l.includes("one"))!;
     // Selection marker keeps accent color; row content uses primary text color.
-    expect(selected).toContain("<accent>●</accent>");
+    expect(selected).toContain("<accent>◼</accent>");
     expect(selected).toContain("<text>one</text>");
     expect(selected).toMatch(/<text>\d+s · ↓ [\d.]+k? tokens<\/text>/);
     // Agent display name rendered with the text token too (this type has no badge).
     expect(selected).toContain(`<text>${getDisplayName("general")}</text>`);
     // Inactive rows keep the muted/dim treatment.
     const unselected = h.render().find(l => l.includes("two"))!;
-    expect(unselected).toContain("<dim>○</dim>");
+    expect(unselected).toContain("<dim>◻</dim>");
     expect(unselected).toMatch(/<dim>\d+s · ↓ [\d.]+k? tokens<\/dim>/);
     expect(unselected).not.toContain("<text>");
   });
@@ -309,11 +309,11 @@ describe("FleetList navigation", () => {
     const h = harness(agents);
     h.press(DOWN); // activate → index 0 (main)
     h.press(DOWN); // → 1 (a1)
-    expect(h.render().find(l => l.includes("one"))).toContain("●");
+    expect(h.render().find(l => l.includes("one"))).toContain("◼");
     h.press(DOWN); // → 2 (a2)
     h.press(DOWN); // clamp at 2
-    expect(h.render().find(l => l.includes("two"))).toContain("●");
-    expect(h.render().find(l => l.includes("one"))).toContain("○");
+    expect(h.render().find(l => l.includes("two"))).toContain("◼");
+    expect(h.render().find(l => l.includes("one"))).toContain("◻");
   });
 
   it("↑ above 'main' deactivates (returns to the prompt)", () => {
@@ -428,9 +428,9 @@ describe("FleetList rendering", () => {
     const lines = h.render(120);
     // hint + blank + main + one agent
     expect(lines[0]).toContain("← for agents");
-    expect(lines.find(l => l.includes("main"))).toContain("●"); // main selected by default
+    expect(lines.find(l => l.includes("main"))).toContain("◼"); // main selected by default
     const agentLine = lines.find(l => l.includes("Sleep then report 1"))!;
-    expect(agentLine).toContain("○");
+    expect(agentLine).toContain("◻");
     expect(agentLine).toContain(getDisplayName("general"));
     expect(agentLine).toContain("↓ 13.1k tokens");
     expect(agentLine).toMatch(/\d+s · ↓/); // "<seconds>s · ↓ ..." (timing-agnostic)
@@ -486,7 +486,7 @@ describe("FleetList rendering", () => {
     // step down to the last agent (8 agents → roster index 8)
     for (let i = 0; i < 8; i++) h.press(DOWN);
     const lines = h.render(120);
-    expect(lines.find(l => l.includes("report 7"))).toContain("●");
+    expect(lines.find(l => l.includes("report 7"))).toContain("◼");
     expect(lines.some(l => l.includes("↑"))).toBe(true); // hidden-above indicator
   });
 });
@@ -516,8 +516,8 @@ describe("FleetList overlay lifecycle", () => {
     agents.splice(0, 1);
     await h.closeOverlay();
     // Selection follows a2 ("two") to its new position, not whatever is at idx 2 now.
-    expect(h.render().find(l => l.includes("two"))).toContain("●");
-    expect(h.render().find(l => l.includes("three"))).toContain("○");
+    expect(h.render().find(l => l.includes("two"))).toContain("◼");
+    expect(h.render().find(l => l.includes("three"))).toContain("◻");
   });
 
   it("wires the viewer's steer composer to manager.steer with the agent id", () => {
@@ -781,8 +781,8 @@ describe("FleetList workflow rows", () => {
     ]);
     await h.closeWorkflowDialog();
 
-    expect(h.render().find(l => l.includes("review-changes"))).toContain("●");
-    expect(h.render().find(l => l.includes("started-meanwhile"))).not.toContain("●");
+    expect(h.render().find(l => l.includes("review-changes"))).toContain("◼");
+    expect(h.render().find(l => l.includes("started-meanwhile"))).not.toContain("◼");
   });
 
   it("still opens an agent's viewer when the selection is past the runs", () => {

@@ -1,4 +1,7 @@
 import type { AuthResult } from "@earendil-works/pi-ai";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export type ProviderId = string;
 export type UsageStatus = "ok" | "unavailable";
@@ -54,7 +57,10 @@ type JsonRecord = Record<string, unknown>;
 
 const PROVIDER_NAMES: Record<ProviderId, string> = {
   openai: "OpenAI",
+  "openai-codex": "OpenAI Codex",
   anthropic: "Anthropic",
+  claude: "Claude Pro/Max",
+  antigravity: "Google Antigravity",
   google: "Google Gemini",
 };
 
@@ -338,6 +344,318 @@ async function fetchCodex(
   return { limits, quota: typeof planType === "string" ? planType : undefined };
 }
 
+function extractBearerToken(auth: AuthResult): string | undefined {
+  if (auth.auth.apiKey) {
+    try {
+      const parsed = JSON.parse(auth.auth.apiKey) as Record<string, unknown>;
+      if (typeof parsed?.token === "string" && parsed.token) return parsed.token;
+    } catch {
+      // bukan JSON
+    }
+    return auth.auth.apiKey;
+  }
+  const authHeader = auth.auth.headers?.authorization || auth.auth.headers?.Authorization;
+  if (typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")) {
+    return authHeader.slice(7).trim();
+  }
+  return undefined;
+}
+
+function extractAntigravityToken(auth: AuthResult): { token: string; projectId?: string } | undefined {
+  if (auth.auth.apiKey) {
+    try {
+      const parsed = JSON.parse(auth.auth.apiKey) as Record<string, unknown>;
+      if (typeof parsed?.token === "string" && parsed.token) {
+        return {
+          token: parsed.token,
+          projectId: typeof parsed.projectId === "string" ? parsed.projectId : undefined,
+        };
+      }
+    } catch {
+      return { token: auth.auth.apiKey };
+    }
+  }
+  const bearer = extractBearerToken(auth);
+  if (bearer) return { token: bearer };
+  return undefined;
+}
+
+function claudeCliAuth(): AuthResult | undefined {
+  try {
+    const file = join(homedir(), ".claude", ".credentials.json");
+    if (!existsSync(file)) return undefined;
+    const oauth = asRecord(asRecord(JSON.parse(readFileSync(file, "utf8")))?.claudeAiOauth);
+    const token = oauth?.accessToken;
+    if (typeof token !== "string" || !token) return undefined;
+    return {
+      auth: { apiKey: token, headers: { authorization: `Bearer ${token}` } },
+      source: "claude CLI (oauth)",
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function fallbackAuth(provider: ProviderId): AuthResult | undefined {
+  if (provider === "claude") return claudeCliAuth();
+  try {
+    const authFile = join(homedir(), ".pi", "agent", "auth.json");
+    if (!existsSync(authFile)) return undefined;
+    const authData = JSON.parse(readFileSync(authFile, "utf8")) as Record<string, unknown>;
+    const entry = asRecord(authData[provider]);
+    if (!entry) return undefined;
+
+    if (provider === "antigravity" && typeof entry.access === "string") {
+      return {
+        auth: {
+          apiKey: JSON.stringify({
+            token: entry.access,
+            projectId: entry.projectId,
+          }),
+        },
+        source: "auth.json (oauth)",
+      };
+    }
+
+    if (provider === "anthropic" && typeof entry.access === "string") {
+      return {
+        auth: {
+          apiKey: entry.access,
+          headers: {
+            authorization: `Bearer ${entry.access}`,
+          },
+        },
+        source: "auth.json (oauth)",
+      };
+    }
+  } catch {
+    // abaikan jika file tidak terbaca
+  }
+  return undefined;
+}
+
+async function fetchAntigravity(
+  auth: AuthResult,
+  fetchImpl: typeof fetch,
+  signal?: AbortSignal,
+): Promise<{ limits: readonly UsageLimit[]; quota?: string }> {
+  const creds = extractAntigravityToken(auth);
+  if (!creds?.token) throw new Error("Kredensial Antigravity tidak tersedia");
+
+  const headers = {
+    Authorization: `Bearer ${creds.token}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "User-Agent":
+      "antigravity/cli/1.2.4 (aidev_client; os_type=linux; arch=amd64; cl=982146307; auth_method=consumer)",
+  };
+
+  const limits: UsageLimit[] = [];
+  let planName: string | undefined;
+
+  // 1. Ambil quota summary pools (Gemini & Claude/GPT)
+  try {
+    const summaryRes = await fetchImpl(
+      "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+        signal,
+      },
+    );
+    if (summaryRes.ok) {
+      const summaryData = asRecord(await summaryRes.json());
+      const groups = Array.isArray(summaryData?.groups) ? summaryData.groups : [];
+      for (const group of groups) {
+        const groupRecord = asRecord(group);
+        if (!groupRecord) continue;
+        const groupName = String(groupRecord.displayName || "Quota");
+        const buckets = Array.isArray(groupRecord.buckets) ? groupRecord.buckets : [];
+        for (const bucket of buckets) {
+          const b = asRecord(bucket);
+          if (!b) continue;
+          const remainingFraction = finiteNumber(b.remainingFraction);
+          if (remainingFraction === undefined) continue;
+          const usedPercent = Math.max(0, Math.min(100, Math.round((1 - remainingFraction) * 100)));
+          const resetTime = typeof b.resetTime === "string" ? new Date(b.resetTime) : undefined;
+          const window = typeof b.window === "string" ? b.window : "";
+          const bucketName = String(b.displayName || "");
+
+          let label = "";
+          const isGemini = groupName.toLowerCase().includes("gemini");
+          const prefix = isGemini ? "Gemini" : "Claude/GPT";
+          if (window === "5h" || bucketName.toLowerCase().includes("five hour")) {
+            label = `${prefix} 5h`;
+          } else if (window === "weekly" || bucketName.toLowerCase().includes("weekly")) {
+            label = `${prefix} weekly`;
+          } else {
+            label = `${prefix} ${bucketName || window}`;
+          }
+
+          limits.push({
+            label,
+            usedPercent,
+            resetsAt: resetTime && Number.isFinite(resetTime.getTime()) ? resetTime : undefined,
+          });
+        }
+      }
+    }
+  } catch {
+    // lanjut ke fallback berikutnya
+  }
+
+  // 2. Ambil tier/plan dari loadCodeAssist
+  try {
+    const assistRes = await fetchImpl(
+      "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          metadata: { ideType: "ANTIGRAVITY", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" },
+        }),
+        signal,
+      },
+    );
+    if (assistRes.ok) {
+      const assistData = asRecord(await assistRes.json());
+      const paidTier = asRecord(assistData?.paidTier);
+      const currentTier = asRecord(assistData?.currentTier);
+      planName = (typeof paidTier?.name === "string" && paidTier.name)
+        ? paidTier.name
+        : (typeof currentTier?.name === "string" && currentTier.name)
+          ? currentTier.name
+          : undefined;
+    }
+  } catch {
+    // abaikan jika gagal
+  }
+
+  // 3. Fallback: jika retrieveUserQuotaSummary tidak ada, coba fetchAvailableModels
+  if (limits.length === 0 && creds.projectId) {
+    try {
+      const modelsRes = await fetchImpl(
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ project: creds.projectId }),
+          signal,
+        },
+      );
+      if (modelsRes.ok) {
+        const modelsData = asRecord(await modelsRes.json());
+        const models = asRecord(modelsData?.models) || {};
+        for (const [modelId, info] of Object.entries(models)) {
+          const m = asRecord(info);
+          if (!m || m.isInternal || modelId.startsWith("chat_") || modelId.startsWith("tab_")) continue;
+          const qi = asRecord(m.quotaInfo);
+          if (!qi) continue;
+          const remainingFraction = finiteNumber(qi.remainingFraction);
+          if (remainingFraction === undefined) continue;
+          const usedPercent = Math.max(0, Math.min(100, Math.round((1 - remainingFraction) * 100)));
+          const resetTime = typeof qi.resetTime === "string" ? new Date(qi.resetTime) : undefined;
+          limits.push({
+            label: typeof m.displayName === "string" ? m.displayName : modelId,
+            usedPercent,
+            resetsAt: resetTime && Number.isFinite(resetTime.getTime()) ? resetTime : undefined,
+          });
+        }
+      }
+    } catch {
+      // abaikan jika gagal
+    }
+  }
+
+  if (limits.length === 0) {
+    throw new Error("Antigravity usage window tidak tersedia");
+  }
+
+  return { limits, quota: planName ?? "Google Antigravity" };
+}
+
+async function fetchAnthropicOAuth(
+  token: string,
+  fetchImpl: typeof fetch,
+  signal?: AbortSignal,
+): Promise<{ limits: readonly UsageLimit[]; quota?: string }> {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "anthropic-version": "2023-06-01",
+    Accept: "application/json",
+  };
+  const payload = await getJson(
+    "https://api.anthropic.com/api/oauth/usage",
+    headers,
+    fetchImpl,
+    signal,
+  );
+  const data = asRecord(payload);
+  if (!data) throw new Error("Format respons Anthropic OAuth tidak valid");
+
+  const limits: UsageLimit[] = [];
+  const fiveHour = asRecord(data.five_hour);
+  const sevenDay = asRecord(data.seven_day);
+  const rawLimits = Array.isArray(data.limits) ? data.limits : [];
+
+  const parsePercent = (utilization: unknown, fallbackPercent?: unknown): number => {
+    if (typeof fallbackPercent === "number" && Number.isFinite(fallbackPercent)) {
+      return Math.max(0, Math.min(100, fallbackPercent));
+    }
+    if (typeof utilization === "number" && Number.isFinite(utilization)) {
+      const pct = utilization <= 1 ? utilization * 100 : utilization;
+      return Math.max(0, Math.min(100, Math.round(pct * 10) / 10));
+    }
+    return 0;
+  };
+
+  const parseReset = (val: unknown): Date | undefined => {
+    if (typeof val === "string" && val.trim()) {
+      const d = new Date(val);
+      if (Number.isFinite(d.getTime())) return d;
+    }
+    return undefined;
+  };
+
+  const sessionRaw = rawLimits.find((l) => asRecord(l)?.group === "session" || asRecord(l)?.kind === "session");
+  const weeklyRaw = rawLimits.find((l) => asRecord(l)?.group === "weekly" || asRecord(l)?.kind?.toString().startsWith("weekly"));
+
+  if (fiveHour || sessionRaw) {
+    const usedPercent = parsePercent(fiveHour?.utilization, asRecord(sessionRaw)?.percent);
+    const resetsAt = parseReset(fiveHour?.resets_at) ?? parseReset(asRecord(sessionRaw)?.resets_at);
+    limits.push({
+      label: "5h session",
+      usedPercent,
+      limitWindowSeconds: 5 * 3600,
+      resetsAt,
+    });
+  }
+
+  if (sevenDay || weeklyRaw) {
+    const usedPercent = parsePercent(sevenDay?.utilization, asRecord(weeklyRaw)?.percent);
+    const resetsAt = parseReset(sevenDay?.resets_at) ?? parseReset(asRecord(weeklyRaw)?.resets_at);
+    limits.push({
+      label: "7d weekly",
+      usedPercent,
+      limitWindowSeconds: 7 * 24 * 3600,
+      resetsAt,
+    });
+  }
+
+  const extraUsage = asRecord(data.extra_usage);
+  const extraEnabled = extraUsage?.is_enabled === true;
+  if (extraEnabled && typeof extraUsage?.utilization === "number") {
+    limits.push({
+      label: "Extra Usage",
+      usedPercent: parsePercent(extraUsage.utilization),
+    });
+  }
+
+  const planType = extraEnabled ? "Claude Pro / Team (Extra Usage aktif)" : "Claude Pro / Team";
+  return { limits, quota: planType };
+}
+
 export async function fetchProviderUsage(
   provider: ProviderId,
   getAuth: () => Promise<AuthResult | undefined>,
@@ -351,10 +669,15 @@ export async function fetchProviderUsage(
   });
 
   let auth: AuthResult | undefined;
+  // Provider "claude" (provider-gateway) memakai placeholder apiKey; token asli ada di CLI.
+  if (provider === "claude") auth = claudeCliAuth();
   try {
-    auth = await getAuth();
+    auth ??= await getAuth();
   } catch {
     auth = undefined;
+  }
+  if (!auth) {
+    auth = fallbackAuth(provider);
   }
   if (!auth) {
     return {
@@ -391,7 +714,64 @@ export async function fetchProviderUsage(
     }
   }
 
-  if (provider !== "openai" && provider !== "anthropic") {
+  if (provider === "anthropic" || provider === "claude") {
+    const bearer = extractBearerToken(auth);
+    if (bearer && (auth.source?.toLowerCase().includes("oauth") || auth.auth.headers?.authorization || !auth.auth.apiKey?.startsWith("sk-ant-"))) {
+      try {
+        const anthropic = await fetchAnthropicOAuth(bearer, fetchImpl, options.signal);
+        return {
+          provider,
+          source: auth.source ?? "OAuth",
+          status: "ok",
+          today: unavailablePeriod(periods[0], "session usage"),
+          billing: unavailablePeriod(periods[1], "session usage"),
+          limits: anthropic.limits,
+          quota: anthropic.quota,
+        };
+      } catch {
+        // Fallback ke report API key di bawah jika OAuth gagal
+      }
+    }
+
+    const [today, billing] = await Promise.all(
+      periods.map((period) => fetchAnthropic(auth!, period, fetchImpl, options.signal).catch(() => unavailablePeriod(period, "data tidak tersedia"))),
+    );
+    return {
+      provider,
+      source: auth.source,
+      status: today.status === "ok" || billing.status === "ok" ? "ok" : "unavailable",
+      today,
+      billing,
+      message: today.status === "ok" || billing.status === "ok" ? undefined : "data tidak tersedia",
+    };
+  }
+
+  if (provider === "antigravity") {
+    try {
+      const antigravity = await fetchAntigravity(auth, fetchImpl, options.signal);
+      return {
+        provider,
+        source: auth.source ?? "OAuth",
+        status: "ok",
+        today: unavailablePeriod(periods[0], "session usage"),
+        billing: unavailablePeriod(periods[1], "session usage"),
+        limits: antigravity.limits,
+        quota: antigravity.quota,
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "data tidak tersedia";
+      return {
+        provider,
+        source: auth.source,
+        status: "unavailable",
+        today: unavailablePeriod(periods[0], msg),
+        billing: unavailablePeriod(periods[1], msg),
+        message: msg,
+      };
+    }
+  }
+
+  if (provider !== "openai") {
     return {
       provider,
       source: auth.source,
@@ -402,9 +782,8 @@ export async function fetchProviderUsage(
     };
   }
 
-  const fetchPeriod = provider === "openai" ? fetchOpenAI : fetchAnthropic;
   const [today, billing] = await Promise.all(
-    periods.map((period) => fetchPeriod(auth!, period, fetchImpl, options.signal).catch(() => unavailablePeriod(period, "data tidak tersedia"))),
+    periods.map((period) => fetchOpenAI(auth!, period, fetchImpl, options.signal).catch(() => unavailablePeriod(period, "data tidak tersedia"))),
   );
   return {
     provider,

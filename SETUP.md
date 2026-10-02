@@ -85,6 +85,6 @@ npm run test:subagents
 npm run test:todos
 ```
 
-`extensions/subagents` memakai Biome dan test suite sendiri. Extension yang dikelola Orca (`extensions/orca-*.ts`) tidak dipaksa mengikuti formatter/typecheck root karena entrypoint-nya kompatibel dengan host Orca/Pi.
+`extensions/subagents` memakai Biome dan test suite sendiri. Extension yang dikelola Orca (`extensions/orca-*.ts`) dikelola di luar repository.
 
 Tidak semua extension wajib dijalankan pada setiap device; extension yang membutuhkan provider atau Orca dapat menampilkan status unavailable tanpa credential terkait.

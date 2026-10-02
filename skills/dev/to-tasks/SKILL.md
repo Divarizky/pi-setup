@@ -42,6 +42,7 @@ Input dari work card → pastikan `status: approved` di frontmatter. Masih `draf
 ### Definition
 - **Horizontal slice**: satu layer saja (schema, API, UI) — tidak bisa di-demo sampai semua layer selesai
 - **Vertical slice** (tracer bullet): satu jalur sempit tembus SEMUA layer — bisa langsung di-demo
+- **Bootstrap slice**: jika fitur memperkenalkan stack baru yang belum pernah ada (DB, API, Auth), slice pertama wajib merupakan bootstrap vertical yang menembus layer baru tersebut (misal: schema migration + base route + smoke test) agar fondasi teruji sebelum slice fitur lanjutan dibangun. Ikuti **Protocol Missing Stack Docs** di `../shared/COMMON.md`.
 
 ### Project Branching Status
 

@@ -26,7 +26,7 @@ Tanya: **file path lokal atau repository (GitHub/GitLab/URL)?**
 - **Repository**: tanya URL + branch/tag (default: utama). Tambahkan `migration-source/` ke `.gitignore` project baru dulu — clone jangan ikut ter-commit. Clone ke `migration-source/` di working directory project baru. Path scan = folder hasil clone
 - **Tidak bisa akses langsung**: user export/describe manual
 
-Simpan metadata migrasi ke `.workspace/.scratch/migration/meta.md`. Karena skill ini wajib Project, jangan jalankan migration workflow dalam Universal mode.
+Simpan metadata migrasi ke `.workspace/migration/meta.md`. Karena skill ini wajib Project, jangan jalankan migration workflow dalam Universal mode.
 
 ```
 migration_source: <absolute path / clone path / "manual">
@@ -70,11 +70,16 @@ Sebelum ubah kode: belum ada test di area disentuh → tulis characterization te
 
 Eksekusi slice sesuai Step 5. Update `.workspace/context/PROJECT.md` inline kalau modul dinamai konsep baru.
 
+Jika slice migrasi memperkenalkan atau mengubah model data, endpoint contract, konfigurasi auth/secrets, atau stack konvensi di project baru:
+- Sinkronkan perubahan faktual ke section `<!-- auto -->` pada stack doc terkait (`DATABASE.md`, `API.md`, `SECURITY.md`, `CODE_STYLE.md`).
+- Jika file stack doc tersebut belum pernah aktif di project baru (`has_*: false`), buat dari skeleton template, isi fakta hasil migrasi yang sudah diverifikasi, dan set flag terkait di `project-meta.md` menjadi `true`.
+- Jangan duplikasi kode/konsep usang dari project lama; catat fakta implementasi nyata di project baru.
+
 ## Step 8 — Validate
 
 Regression test penuh tiap slice — pastikan slice lain tidak ikut pecah.
 
-Semua slice lolos → setelah konfirmasi user, hapus state migrasi transient di `.workspace/.scratch/migration/` dan clone `migration-source/`.
+Semua slice lolos → setelah konfirmasi user, hapus state migrasi transient di `.workspace/migration/` dan clone `migration-source/`.
 
 ## ADR — When to Record
 

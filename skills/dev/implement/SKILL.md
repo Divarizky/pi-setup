@@ -80,6 +80,10 @@ Adjust by type:
 ### Implementation Notes
 
 - Gunakan vocabulary dari `PROJECT.md`/`CONTEXT.md` bila tersedia, dan hormati `ADR.md` bila ada
+- Baca stack docs relevan (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`) jika aktif:
+  - Patuhi aturan `SECURITY.md`: dilarang mematikan auth, membypass otorisasi, atau memasukkan secret di kode/`.md`
+  - Patuhi `CODE_STYLE.md`: ikuti konvensi penamaan dan jalankan checklist verifikasi sebelum selesai
+  - Jika task melibatkan bootstrap database/API baru, ikuti **Protocol Missing Stack Docs** di `../shared/COMMON.md`
 - Test verifikasi behavior via interface publik, bukan detail implementasi
 - Nemu code smell struktural → catat, jangan perbaiki. Sarankan `improve-architecture` nanti.
 
@@ -103,6 +107,7 @@ Review **SETELAH semua task batch selesai** — sekali untuk seluruh diff batch.
 
 **Review pass:**
 - Jika task berasal dari work card: cut `### In Progress` → `### Done` (append bawah), `[ ]`→`[x]`, lalu update tracker.
+- **Sync Stack Docs (Project mode)**: jika task yang selesai mengubah model data aktual, endpoint contract, konfigurasi auth, atau stack linter, sinkronkan fakta baru ke section bertanda `<!-- auto -->` pada stack doc terkait (`DATABASE.md`, `API.md`, `SECURITY.md`, `CODE_STYLE.md`). Jangan ubah section manual (tanpa marker). Laporkan sinkronisasi ini di `Changes`.
 - Jika Universal mode memakai instruksi langsung: jangan membuat tracking otomatis; laporkan perubahan dan validasi di respons.
 - Jika user sebelumnya memilih path checklist tertentu: update hanya artifact tersebut.
 - Inform user task selesai

@@ -298,12 +298,12 @@ export class ConversationViewer implements Component {
     const modeLabel = getPromptModeLabel(this.record.type);
     const modeTag = modeLabel ? ` ${th.fg("dim", `(${modeLabel})`)}` : "";
     const statusIcon = this.record.status === "running"
-      ? th.fg("accent", "●")
+      ? th.fg("accent", "◼")
       : this.record.status === "completed"
         ? th.fg("success", "✓")
         : this.record.status === "error"
           ? th.fg("error", "✗")
-          : th.fg("dim", "○");
+          : th.fg("dim", "◻");
     const duration = formatDuration(this.record.startedAt, this.record.completedAt);
 
     const headerParts: string[] = [duration];

@@ -238,12 +238,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "execute",
     label: "Execute Context-Safe Script",
-    description: "Run a general non-interactive shell or script in the project and return a compact result. Raw output is cached for later inspection. The tool does not ask for confirmation; callers must get user approval before destructive or hard-to-reverse actions.",
+    description: "Run a general non-interactive shell or script in the project and return a compact result. Raw output is cached for later inspection. All scripts run without confirmation.",
     promptSnippet: "Run a project-local script and return only a compact, cached result",
     promptGuidelines: [
       "Prefer execute for tests, lint, builds, git inspection, and processing large outputs.",
       "Use runtime shell, javascript, typescript, or python; keep the script non-interactive.",
-      "The tool itself does not ask for confirmation. Before running a script that may mutate project state or perform destructive or hard-to-reverse actions, get explicit user approval.",
+      "All scripts run without confirmation, including potentially mutating ones.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({

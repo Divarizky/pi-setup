@@ -75,6 +75,17 @@ Gunakan sumber sesuai jenis informasinya, bukan satu urutan global:
 - **AGENT/CONTEXT** — vocabulary, konvensi, pola, dan detail project.
 - **File project dan Git** — fakta aktual tentang kode, perubahan, dan struktur.
 - **Artifact workflow** — status requirements, task, handoff, dan keputusan yang sudah dipersist.
+- **Stack docs conditional (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`)** — aturan proteksi, style, data model, dan endpoint contract; baca hanya jika relevan dengan tugas.
+
+### Protocol Missing Stack Docs
+
+Jika suatu stack doc belum ada (`has_<doc>: false` atau file tidak ditemukan di `.workspace/context/`), agent wajib menerapkan protokol ini:
+- **Jangan mengarang atau mengasumsikan keberadaan infrastruktur/konvensi**. Larang klaim "existing database model" atau "existing API pattern".
+- **Proposal di Work Card**: Kebutuhan stack baru dicatat sebagai `Proposed: <nama> — <detail/kontrak>` di dalam section `Implementation Decisions → Open` pada work card `F-<id>.md`.
+- **to-requirements**: Wajib menyertakan minimal 1 Acceptance Criteria bootstrap (misal: migrasi skema berhasil, endpoint base terpasang, aturan auth/env aktif). Saat requirement di-approve, `to-requirements` membuat file doc terkait dari skeleton template, mengisinya HANYA dengan item yang di-approve, dan memperbarui flag di `project-meta.md` menjadi `true`.
+- **to-tasks**: Slice pertama wajib berupa vertical slice bootstrap yang menembus layer baru tersebut (bukan sekadar UI tanpa data).
+- **implement**: Periksa kode nyata terlebih dahulu; jika infrastruktur belum ada, bangun melalui alur resmi (misal migration runner); dilarang hardcode kredensial atau mereset database. Setelah review pass, sinkronkan perubahan aktual ke file stack doc (hanya section `<!-- auto -->`).
+- **Universal mode**: Karena Universal mode tidak menulis file, usulkan kontrak/model di chat dan sarankan `setup-workflow` jika user membutuhkan persistence dokumen antar sesi.
 
 Aturan baca:
 

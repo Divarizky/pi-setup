@@ -132,8 +132,8 @@ Istilah baru → Project mode: update file inline mengikuti **Aturan Split** di 
 **Mode Bangun Domain** (new project atau domain yang belum jelas):
 - Interview loop: 1 pertanyaan/giliran, rekomendasi jawaban
 - **Max 15 pertanyaan** → tanya "Lanjut? (y/n)"
-- Fokus: terminology inti, konsep, hubungan entitas, batasan sistem
-- Project mode: output ke PROJECT.md (quick) + CONTEXT.md (detail) + ADR pertama — ikuti **Aturan Split**
+- Fokus: terminology inti, konsep, hubungan entitas, batasan sistem, dan pilihan stack/konvensi
+- Project mode: output ke PROJECT.md (quick) + CONTEXT.md (detail) + ADR pertama — ikuti **Aturan Split**. Tulis stack linter/bahasa ke `CODE_STYLE.md`; kebutuhan awal auth/data/API dicatat sebagai Global Requirements SRS (`GR-xx`) atau rencana di CONTEXT.md, bukan spekulasi final di `SECURITY/DATABASE/API.md` (file stack docs dibuat lazy saat fitur approved via `to-requirements`).
 - Universal mode: tampilkan hasil domain model di chat dan catat statusnya di respons; jangan membuat file
 
 Aturan kedua mode: eksplorasi codebase dulu kalau bisa jawab. Tulis ke PROJECT.md/CONTEXT.md hanya dalam Project mode; Universal mode tetap chat-only.

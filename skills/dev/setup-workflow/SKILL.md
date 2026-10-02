@@ -10,10 +10,10 @@ Tulis config yang skill lain baca. Run sekali per repo. Deteksi state repo nyata
 
 ## Flags
 
-- `--refresh` — Re-scan codebase, update PROJECT.md + CONTEXT.md + ARCHITECTURE.md (kalau ada) secara merge-safe, bump `context_updated` di project-meta.md. No overwrite ADR.md/TRACKER.md/SRS.md/work/.
-- `--refresh --force` — `--refresh` + full overwrite PROJECT.md/CONTEXT.md (abaikan marker manual, semua section ditulis ulang dari scan)
+- `--refresh` — Re-scan codebase, update PROJECT.md + CONTEXT.md + ARCHITECTURE.md + conditional stack docs (SECURITY.md, CODE_STYLE.md, DATABASE.md, API.md bila aktif) secara merge-safe, bump `context_updated` di project-meta.md. No overwrite ADR.md/TRACKER.md/SRS.md/work/.
+- `--refresh --force` — `--refresh` + full overwrite PROJECT.md/CONTEXT.md serta stack docs yang aktif (abaikan marker manual, semua section ditulis ulang dari scan)
 - `--migrate-structure` — One-shot migrasi struktur lama ke `context/` + work card `work/F-<id>.md`. Hanya jalan kalau struktur lama atau artifact `.scratch/<slug>/` terdeteksi.
-- `--no-context` — Setup tanpa CONTEXT.md (project kecil). Default: CONTEXT.md aktif.
+- `--no-context` — Setup tanpa CONTEXT.md dan stack docs detail (project kecil). Default: CONTEXT.md aktif.
 
 ## PROJECT.md vs CONTEXT.md Split Rules
 
@@ -40,6 +40,10 @@ Semua file context lahir dari skeleton fixed di [docs/TEMPLATES.md](docs/TEMPLAT
 | `TRACKER.md` | progres eksekusi fitur | `to-tasks` + `implement` |
 | `ADR.md` | keputusan final berformat | alur ADR per skill |
 | `ARCHITECTURE.md` | module map + arah dependency (conditional) | setup/refresh |
+| `SECURITY.md` | aturan proteksi, auth, env, agent safety (conditional) | setup/to-requirements |
+| `CODE_STYLE.md` | stack, konvensi penamaan, checklist (conditional) | setup/to-requirements |
+| `DATABASE.md` | provider/ORM, model approved, relasi, migrasi (conditional) | setup/to-requirements |
+| `API.md` | base URL, endpoint approved, error shape, integrasi (conditional) | setup/to-requirements |
 
 Rule isi saat grill/scan:
 - Definisi ≤ 1 baris → PROJECT.md
@@ -68,7 +72,7 @@ Dari isi folder + git history:
 - Banyak file custom (+ git history > initial commit) → `status: existing`
 - Bukan git repo → deteksi dari isi folder. Kosong/hanya `.workspace/` → `new`
 
-## Step 3 — Populate PROJECT.md, CONTEXT.md, ADR.md, ARCHITECTURE.md (conditional)
+## Step 3 — Populate Context Files and Conditional Stack Docs
 
 Buat folder `.workspace/context/` kalau belum ada.
 
@@ -81,10 +85,20 @@ Buat folder `.workspace/context/` kalau belum ada.
 - **ARCHITECTURE.md conditional**: generate HANYA JIKA:
   - Scan deteksi >10 folder di `features/` ATAU multi-module/workspace ATAU user confirm "ya, buat ARCHITECTURE.md"
   - Skip: set `has_architecture: false` di project-meta.md, note di PROJECT.md: `architecture: standard feature-first (see PROJECT.md for conventions)`
+- **Conditional Stack Docs (SECURITY, CODE_STYLE, DATABASE, API)**:
+  - Tulis hanya jika ada bukti konkret di codebase; jangan tulis spekulasi atau placeholder kosong.
+  - `CODE_STYLE.md` → generate dari `package.json`, linter/formatter config, atau konvensi bahasa aktual (`has_code_style: true`). Lewati jika `--no-context`.
+  - `SECURITY.md` → generate HANYA JIKA terdeteksi auth provider, middleware auth, session handler, atau secret sensitif (`has_security: true`).
+  - `DATABASE.md` → generate HANYA JIKA terdeteksi database provider, ORM, connection string, schema file, atau migrasi (`has_database: true`).
+  - `API.md` → generate HANYA JIKA terdeteksi route handler, REST/GraphQL controller, public API, atau client integrasi pihak ketiga (`has_api: true`).
+  - Jika suatu stack belum ada: file TIDAK dibuat, flag di `project-meta.md` diset `false`. File akan dibuat lazy oleh `to-requirements` saat fitur yang memperkenalkannya disetujui.
 
 ### New Project
 - Delegasikan ke `ask-me` — jalankan grill dalam **Mode Bangun Domain** (interview loop, PROJECT.md + CONTEXT.md kosong)
 - `ask-me` isi `PROJECT.md` (quick) + `CONTEXT.md` (domain/teknis) + `ADR.md` langsung, ikuti **Aturan Split** dan letakkan fakta domain/integrasi/pattern/test/gotcha pada section CONTEXT yang sesuai.
+- Stack docs pada project baru:
+  - `CODE_STYLE.md` langsung dibuat dari stack pilihan user saat interview.
+  - `SECURITY.md`, `DATABASE.md`, dan `API.md` TIDAK langsung dibuat sebagai klaim final jika belum diimplementasi. Kebutuhan awal dimasukkan ke Global Requirements SRS (`GR-xx`) atau dicatat di `CONTEXT.md` sebagai rencana; file stack docs dibuat lazy saat fitur approved via `to-requirements`.
 - `--no-context` → `ask-me` tulis semua ke PROJECT.md saja
 - Tanya: "Generate ARCHITECTURE.md? [y/N]" — `ask-me` bantu isi dari [template](docs/TEMPLATES.md#architecturemd)
 - Setup seed pertama `.workspace/context/SRS.md`: hanya isi Global Requirements jika ada keputusan global/NFR hasil interview (format EARS); Feature Registry dan Feature Requirements tetap kosong. Update selanjutnya milik `to-requirements` (single-writer).
@@ -128,6 +142,10 @@ setup_date: <YYYY-MM-DD>
 context_updated: <YYYY-MM-DD>
 has_context: <true|false>
 has_architecture: <true|false>
+has_security: <true|false>
+has_code_style: <true|false>
+has_database: <true|false>
+has_api: <true|false>
 migrated_at: <YYYY-MM-DD>  # hanya kalau --migrate-structure jalan
 ```
 
@@ -169,11 +187,14 @@ HANYA kalau flag `--refresh`:
 
 1. Re-scan codebase (existing) / re-grill ringkas via `ask-me` (new) → update `PROJECT.md` + `CONTEXT.md` (ikuti **Aturan Split**)
 2. **Merge-safe**: section bertanda `<!-- auto -->` di-update/append dari scan baru; section manual (no marker) → SKIP, jangan sentuh
-3. `--force` → full overwrite kedua file (section manual ikut tertulis ulang)
+3. `--force` → full overwrite file context dan stack docs aktif (section manual ikut tertulis ulang)
 4. Kalau `has_architecture: true` → re-generate `ARCHITECTURE.md` dari scan terbaru
-5. Scaffold yang hilang dibuat ulang dari template (termasuk `.workspace/context/SRS.md` kalau belum ada — konten tidak disentuh)
-6. Update `project-meta.md`: `context_updated: <today>`
-7. Print: "Context refreshed. Laporkan file yang benar-benar diperbarui: PROJECT.md; CONTEXT.md jika `has_context: true`; ARCHITECTURE.md jika `has_architecture: true`."
+5. Conditional stack docs (`has_security`, `has_code_style`, `has_database`, `has_api`):
+   - Jika doc sudah aktif (`true`) → refresh hanya section `<!-- auto -->` berdasarkan kode terbaru
+   - Jika doc belum aktif (`false`) tetapi scan baru menemukan bukti (misal baru ada DB/API) → buat file dari skeleton template dan update flag di `project-meta.md` menjadi `true`
+6. Scaffold yang hilang dibuat ulang dari template (termasuk `.workspace/context/SRS.md` kalau belum ada — konten tidak disentuh)
+7. Update `project-meta.md`: `context_updated: <today>`
+8. Print: "Context refreshed. Laporkan file yang benar-benar diperbarui: PROJECT.md; CONTEXT.md jika aktif; ARCHITECTURE.md jika aktif; stack docs (SECURITY/CODE_STYLE/DATABASE/API) yang diperbarui."
 
 ## Step 8 — Complete
 

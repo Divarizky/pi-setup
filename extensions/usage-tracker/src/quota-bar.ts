@@ -69,11 +69,15 @@ export function parseStandardQuotaHeaders(
     headers,
     "x-ratelimit-limit-tokens",
     "ratelimit-limit-tokens",
+    "anthropic-ratelimit-tokens-limit",
+    "anthropic-ratelimit-input-tokens-limit",
   );
   const remaining = headerNumber(
     headers,
     "x-ratelimit-remaining-tokens",
     "ratelimit-remaining-tokens",
+    "anthropic-ratelimit-tokens-remaining",
+    "anthropic-ratelimit-input-tokens-remaining",
   );
   if (limit === undefined || limit <= 0 || remaining === undefined) return undefined;
 
@@ -83,7 +87,13 @@ export function parseStandardQuotaHeaders(
     label: "token window",
     usedPercent,
     resetsAt: parseResetDuration(
-      headerValue(headers, "x-ratelimit-reset-tokens", "ratelimit-reset-tokens"),
+      headerValue(
+        headers,
+        "x-ratelimit-reset-tokens",
+        "ratelimit-reset-tokens",
+        "anthropic-ratelimit-tokens-reset",
+        "anthropic-ratelimit-input-tokens-reset",
+      ),
       now,
     ),
   };
@@ -155,6 +165,25 @@ export function findMatchingLimit(
     return normLimit.length > 3 && (normBare.includes(normLimit) || normLimit.includes(normBare));
   });
   if (subMatch) return subMatch;
+
+  // Provider-specific group matching
+  if (usage.provider === "antigravity") {
+    if (normBare.includes("gemini")) {
+      const geminiLimit = usage.limits.find((l) => l.label.toLowerCase().includes("gemini 5h"))
+        || usage.limits.find((l) => l.label.toLowerCase().includes("gemini"));
+      if (geminiLimit) return geminiLimit;
+    }
+    if (normBare.includes("claude") || normBare.includes("gpt")) {
+      const thirdPartyLimit = usage.limits.find((l) => l.label.toLowerCase().includes("claude/gpt 5h"))
+        || usage.limits.find((l) => l.label.toLowerCase().includes("claude"));
+      if (thirdPartyLimit) return thirdPartyLimit;
+    }
+  }
+
+  if (usage.provider === "anthropic" || usage.provider === "claude") {
+    const sessionLimit = usage.limits.find((l) => l.label.toLowerCase().includes("5h"));
+    if (sessionLimit) return sessionLimit;
+  }
 
   // Fallback to highest/primary limit
   return primaryQuotaLimit(usage);

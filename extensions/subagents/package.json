@@ -25,11 +25,9 @@
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.84.0",
     "@earendil-works/pi-coding-agent": ">=0.84.0",
-    "@earendil-works/pi-tui": ">=0.84.0"
-  },
-  "dependencies": {
-    "@sinclair/typebox": "^0.34.49",
-    "typebox": "^1.3.7"
+    "@earendil-works/pi-tui": ">=0.84.0",
+    "@sinclair/typebox": "*",
+    "typebox": "*"
   },
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
@@ -53,7 +51,9 @@
     "@types/node": "^25.5.0",
     "@vitest/coverage-istanbul": "^4.1.10",
     "typescript": "^6.0.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "@sinclair/typebox": "^0.34.49",
+    "typebox": "^1.3.7"
   },
   "pi": {
     "extensions": [

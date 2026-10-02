@@ -25,10 +25,11 @@ Dipanggil eksplisit atau melalui route `ask-me`: "buat requirements", "buat PRD"
 
 Jangan eksplorasi codebase dulu. Gunakan Context Resolver dari `../shared/COMMON.md`.
 
-1. Baca context project hanya jika tersedia: `PROJECT.md` untuk quick reference, `CONTEXT.md` untuk detail, `ADR.md` untuk keputusan arsitektur, dan `.workspace/context/SRS.md` untuk baseline requirements/Feature Registry.
-2. Project mode: cari feature berdasarkan `F-<id>` di Feature Registry dan baca `.workspace/work/F-<id>.md` jika tersedia.
-3. Universal mode: gunakan keputusan dari percakapan dan file project relevan yang dapat diakses.
-4. Eksplorasi codebase terfokus — maks 10 file atau 5 menit. Fokus area relevan fitur (baca nama file/directory di path terkait, bukan seluruh repo).
+1. Baca context project hanya jika tersedia: `PROJECT.md` untuk quick reference, `CONTEXT.md` untuk detail, `ADR.md` untuk keputusan arsitektur, `.workspace/context/SRS.md` untuk baseline requirements/Feature Registry, dan conditional stack docs (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`) bila relevan.
+2. Jika ada stack doc yang belum aktif (`has_*: false`) tetapi fitur baru membutuhkannya (misal fitur butuh DB tapi `DATABASE.md` belum ada), ikuti **Protocol Missing Stack Docs** di `../shared/COMMON.md`: catat model/endpoint/konvensi sebagai `Proposed` di `Implementation Decisions → Open`, dan siapkan AC bootstrap.
+3. Project mode: cari feature berdasarkan `F-<id>` di Feature Registry dan baca `.workspace/work/F-<id>.md` jika tersedia.
+4. Universal mode: gunakan keputusan dari percakapan dan file project relevan yang dapat diakses.
+5. Eksplorasi codebase terfokus — maks 10 file atau 5 menit. Fokus area relevan fitur (baca nama file/directory di path terkait, bukan seluruh repo).
 
 ### Seam Detection Heuristic
 
@@ -156,10 +157,11 @@ requirements tidak masuk siklus triage task; triage dilakukan oleh `to-tasks`. r
 Sebelum kasih ke user, cek:
 1. **Error check**: Ada placeholder `<...>` yang belum keisi? → tanya user
 2. **Alignment check**: Semua Problem punya minimal 1 User Story address? Semua Acceptance Criteria trace ke Solution?
-3. **Seam check**: Seam yang dipilih benar-benar ada di codebase (bukan khayalan)? Seam baru → sebut butuh dibuat.
-4. **Version check**: `version` di-increment benar (baru: 1.0.0, update: minor bump).
-5. **ID check**: `F-<id>` belum pernah dipakai; setiap AC memiliki ID stabil (`AC-01`, `AC-02`, dst.).
-6. **SRS check**: saat approval, Feature Registry memakai status lifecycle (`draft|approved|superseded`) dan Feature Requirements tetap berupa requirement terukur, bukan detail implementasi.
+3. **Bootstrap check**: Jika fitur memperkenalkan stack baru yang belum aktif (`has_*: false`), apakah ada minimal 1 AC bootstrap terukur (migrasi skema / base endpoint / auth rule) dan usulan masuk `Implementation Decisions → Open`?
+4. **Seam check**: Seam yang dipilih benar-benar ada di codebase (bukan khayalan)? Seam baru → sebut butuh dibuat.
+5. **Version check**: `version` di-increment benar (baru: 1.0.0, update: minor bump).
+6. **ID check**: `F-<id>` belum pernah dipakai; setiap AC memiliki ID stabil (`AC-01`, `AC-02`, dst.).
+7. **SRS check**: saat approval, Feature Registry memakai status lifecycle (`draft|approved|superseded`) dan Feature Requirements tetap berupa requirement terukur, bukan detail implementasi.
 
 Ada gap → tanyakan user, jangan publish dulu.
 
@@ -208,9 +210,10 @@ Saat requirements approved:
 1. **Feature Registry**: tambah atau update baris `F-<id>` dengan judul, status `approved`, dan tanggal update. Jangan simpan path work card.
 2. **Feature Requirements**: sinkronkan scope, requirement `REQ-xx`, dan verification dari work card. `REQ-xx` scoped di dalam `F-xx`.
 3. **Global Requirements**: requirement lintas fitur/NFR baru → beri ID `GR-xx`, deduplikasi terhadap requirement existing, lalu tambahkan dalam format EARS. Requirement spesifik fitur tetap di blok fitur.
-4. **Revisi**: jika baseline berubah, update requirement terkait dan bump versi work card; status SRS kembali `draft` sampai approval ulang.
-5. **Supersede**: tandai entry/requirement lama `superseded`, jangan menghapusnya; referensikan ID pengganti jika ada.
-6. **Traceability**: setiap `AC-xx` work card harus dapat dipetakan ke `REQ-xx` atau `GR-xx` yang relevan.
+4. **Lazy Stack Docs Generation**: Jika fitur yang di-approve memperkenalkan stack baru yang sebelumnya `has_*: false` (misal DB/API/Auth pertama), buat file stack doc terkait (`DATABASE.md`, `API.md`, `SECURITY.md`) dari skeleton di `TEMPLATES.md`. Isi HANYA dengan model, route, atau aturan yang sudah approved di fitur ini (bukan spekulasi). Update flag terkait di `project-meta.md` menjadi `true`.
+5. **Revisi**: jika baseline berubah, update requirement terkait dan bump versi work card; status SRS kembali `draft` sampai approval ulang.
+6. **Supersede**: tandai entry/requirement lama `superseded`, jangan menghapusnya; referensikan ID pengganti jika ada.
+7. **Traceability**: setiap `AC-xx` work card harus dapat dipetakan ke `REQ-xx` atau `GR-xx` yang relevan.
 
 Universal mode: tampilkan kontribusi SRS di chat (global requirement + Feature Registry + Feature Requirements), jangan menulis file.
 
