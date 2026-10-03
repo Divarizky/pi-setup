@@ -44,12 +44,20 @@ import { getCurrentAntigravityCatalog as getGatewayAntigravityCatalog } from "./
 import { refreshAntigravityModels } from "./antigravity/models-discovery.js";
 import {
   registerClaudeProvider,
+  unregisterClaudeProvider,
   gatewayClaudeLogin,
   checkClaudeCli,
+  isClaudeCliInstalled,
+  installClaudeCli,
+  isClaudeProviderRegistered,
   markClaudeRebuild,
   recordClaudePromptCapture,
-  CLAUDE_BRIDGE_PROVIDER_ID,
+  CLAUDE_PROVIDER_ID,
 } from "./claude/index.js";
+import {
+  isClaudeInstallDeclined,
+  setClaudeInstallDeclined,
+} from "./claude/config.js";
 
 /**
  * Provider Gateway Pi Extension (v1, paralel dengan 9router.ts)
@@ -219,11 +227,12 @@ type ModelInfo = {
   capabilities?: Record<string, unknown>;
 };
 
+type SqliteStatement = {
+  get: () => Record<string, unknown> | undefined;
+  all: () => Array<Record<string, unknown>>;
+};
 type SqliteDatabase = {
-  prepare: (query: string) => {
-    get: () => { count: number };
-    all: () => Array<{ id?: string; key?: string; data?: string }>;
-  };
+  prepare: (query: string) => SqliteStatement;
   close: () => void;
 };
 
@@ -256,24 +265,60 @@ function getBetterSqlite3Path(dataDir: string): string {
   return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
 }
 
-function getLocalActiveConnectionCount(): number | null {
-  const candidates = getDataDirCandidates();
-  const dataDir = candidates.find((candidate) =>
-    existsSync(join(candidate, "db", "data.sqlite")) &&
-    existsSync(getBetterSqlite3Path(candidate)),
-  ) ?? candidates.find((candidate) =>
+/** First 9Router data dir that actually holds a database. */
+function pickLocalDataDir(): string | null {
+  return getDataDirCandidates().find((candidate) =>
     existsSync(join(candidate, "db", "data.sqlite")),
-  ) ?? candidates[0]!;
+  ) ?? null;
+}
+
+// 9Router >=0.5.x dropped the vendored better-sqlite3 for Node's built-in
+// node:sqlite. Prefer the builtin and keep the old loader as a fallback so
+// filtering keeps working on installs that still vendor the native module.
+function openLocalDatabase(dataDir: string): SqliteDatabase {
   const databaseFile = join(dataDir, "db", "data.sqlite");
+  try {
+    const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
+      DatabaseSync: new (
+        file: string,
+        options?: { readOnly?: boolean },
+      ) => {
+        prepare: (query: string) => { get: () => unknown; all: () => unknown[] };
+        close: () => void;
+      };
+    };
+    const database = new DatabaseSync(databaseFile, { readOnly: true });
+    return {
+      prepare: (query) => {
+        const statement = database.prepare(query);
+        return {
+          get: () => statement.get() as Record<string, unknown> | undefined,
+          all: () => statement.all() as Array<Record<string, unknown>>,
+        };
+      },
+      close: () => database.close(),
+    };
+  } catch {
+    const require = createRequire(import.meta.url);
+    const Database = require(getBetterSqlite3Path(dataDir)) as new (
+      file: string,
+      options?: object,
+    ) => SqliteDatabase;
+    return new Database(databaseFile, { readonly: true });
+  }
+}
+
+function getLocalActiveConnectionCount(): number | null {
+  const dataDir = pickLocalDataDir();
+  if (!dataDir) return null;
 
   try {
-    const require = createRequire(import.meta.url);
-    const Database = require(getBetterSqlite3Path(dataDir)) as new (file: string, options?: object) => SqliteDatabase;
-    const database = new Database(databaseFile, { readonly: true });
+    const database = openLocalDatabase(dataDir);
     try {
-      return database.prepare(
+      const row = database.prepare(
         "SELECT COUNT(*) AS count FROM providerConnections WHERE isActive != 0",
-      ).get().count;
+      ).get();
+      return Number(row?.count ?? 0);
     } finally {
       database.close();
     }
@@ -283,29 +328,23 @@ function getLocalActiveConnectionCount(): number | null {
 }
 
 function getLocalAvailableModelIds(): Map<string, Set<string>> | null {
-  const candidates = getDataDirCandidates();
-  const dataDir = candidates.find((candidate) =>
-    existsSync(join(candidate, "db", "data.sqlite")) &&
-    existsSync(getBetterSqlite3Path(candidate)),
-  ) ?? candidates.find((candidate) =>
-    existsSync(join(candidate, "db", "data.sqlite")),
-  ) ?? candidates[0]!;
-  const databaseFile = join(dataDir, "db", "data.sqlite");
+  const dataDir = pickLocalDataDir();
+  if (!dataDir) return null;
 
   try {
-    const require = createRequire(import.meta.url);
-    const Database = require(getBetterSqlite3Path(dataDir)) as new (file: string, options?: object) => SqliteDatabase;
-    const database = new Database(databaseFile, { readonly: true });
+    const database = openLocalDatabase(dataDir);
     try {
       const nodes = database.prepare("SELECT id, data FROM providerNodes").all();
       const prefixByNodeId = new Map<string, string>();
       for (const node of nodes) {
-        if (!node.id || !node.data) continue;
+        const id = typeof node.id === "string" ? node.id : undefined;
+        const raw = typeof node.data === "string" ? node.data : undefined;
+        if (!id || !raw) continue;
         try {
-          const data: unknown = JSON.parse(node.data);
+          const data: unknown = JSON.parse(raw);
           if (typeof data === "object" && data !== null &&
             typeof (data as { prefix?: unknown }).prefix === "string") {
-            prefixByNodeId.set(node.id, (data as { prefix: string }).prefix);
+            prefixByNodeId.set(id, (data as { prefix: string }).prefix);
           }
         } catch { /* Ignore malformed local node records. */ }
       }
@@ -313,13 +352,14 @@ function getLocalAvailableModelIds(): Map<string, Set<string>> | null {
       const rows = database.prepare("SELECT key FROM kv WHERE scope = 'customModels'").all();
       const modelsByProvider = new Map<string, Set<string>>();
       for (const row of rows) {
-        if (!row.key) continue;
-        const separator = row.key.indexOf("|");
-        const lastSeparator = row.key.lastIndexOf("|");
+        const key = typeof row.key === "string" ? row.key : undefined;
+        if (!key) continue;
+        const separator = key.indexOf("|");
+        const lastSeparator = key.lastIndexOf("|");
         if (separator <= 0 || lastSeparator <= separator) continue;
-        const nodeId = row.key.slice(0, separator);
+        const nodeId = key.slice(0, separator);
         const provider = prefixByNodeId.get(nodeId) ?? nodeId;
-        const modelId = row.key.slice(separator + 1, lastSeparator);
+        const modelId = key.slice(separator + 1, lastSeparator);
         if (!modelId) continue;
         const models = modelsByProvider.get(provider) ?? new Set<string>();
         models.add(modelId);
@@ -626,7 +666,7 @@ async function gatewayLogout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pr
     // Bersihkan sisa OAuth direct lama bila ada, lalu unregister dua ID.
     delete auth[ANTHROPIC_PROVIDER_ID];
     await writeAuthFile(auth);
-    try { pi.unregisterProvider(CLAUDE_BRIDGE_PROVIDER_ID); } catch { /* belum terdaftar */ }
+    unregisterClaudeProvider(pi);
     try { pi.unregisterProvider(ANTHROPIC_PROVIDER_ID); } catch { /* sisa ID lama */ }
   } else if (choice === CHOICE_ANTIGRAVITY) {
     delete auth[ANTIGRAVITY_PROVIDER_ID];
@@ -680,7 +720,7 @@ export default function (pi: ExtensionAPI): void {
     },
   });
 
-  // Prompt capture harus direkam di boundary yang sama seperti bridge asli
+  // Prompt capture harus direkam di tiga boundary hook berikut
   // (before_agent_start/agent_start/turn_start), kalau tidak resolveOrDerive
   // throw "no capture" dan turn gagal sebelum query jalan.
   type RecordOptions = { customPrompt?: string; appendSystemPrompt?: string; contextFiles?: { path: string; content: string }[]; skills?: { filePath: string; disableModelInvocation?: boolean }[]; selectedTools?: string[] };
@@ -705,17 +745,60 @@ export default function (pi: ExtensionAPI): void {
     recordSystemPrompt("turn_start", ctx.getSystemPrompt(), lastSystemPromptOptions);
   });
 
-  registerClaudeProvider(pi);
   registerAntigravityProvider(pi);
 
   // Teruskan rewrite history (compact/tree) ke mirror sesi Claude agar query
-  // parked tidak menjawab dari percakapan basi (pola pi-claude-bridge).
+  // parked tidak menjawab dari percakapan basi.
   pi.on("session_compact", (_event, ctx) =>
     markClaudeRebuild(ctx.sessionManager.getSessionId(), "session_compact"));
   pi.on("session_tree", (_event, ctx) =>
     markClaudeRebuild(ctx.sessionManager.getSessionId(), "session_tree"));
 
-  pi.on("session_start", async (_event, _ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
+    // Registrasi kondisional Claude CLI jika biner tersedia atau dialog konfirmasi fallback
+    try {
+      const claudeInstalled = await isClaudeCliInstalled();
+      if (claudeInstalled) {
+        if (!isClaudeProviderRegistered()) {
+          registerClaudeProvider(pi);
+        }
+      } else if (ctx.hasUI && !isClaudeInstallDeclined()) {
+        const confirmed = await ctx.ui.confirm(
+          "Claude Code CLI Belum Terpasang",
+          "Claude Code CLI (@anthropic-ai/claude-code) belum terpasang di sistem ini.\nApakah Anda ingin memasangnya sekarang secara global via npm?",
+        );
+        if (confirmed) {
+          ctx.ui.notify("Memasang @anthropic-ai/claude-code secara global...", "info");
+          const installRes = await installClaudeCli();
+          if (installRes.success) {
+            setClaudeInstallDeclined(false);
+            registerClaudeProvider(pi);
+            let loggedIn = false;
+            try {
+              const info = await checkClaudeCli();
+              loggedIn = info.loggedIn;
+            } catch {
+              loggedIn = false;
+            }
+            if (loggedIn) {
+              ctx.ui.notify("Claude Code CLI berhasil dipasang dan terhubung.", "info");
+            } else {
+              ctx.ui.notify(
+                "Claude Code CLI berhasil dipasang.\nJalankan `claude login` di terminal untuk mulai menggunakan Claude Pro/Max.",
+                "warning",
+              );
+            }
+          } else {
+            ctx.ui.notify(`Gagal memasang Claude Code CLI: ${installRes.error}`, "error");
+          }
+        } else {
+          setClaudeInstallDeclined(true);
+        }
+      }
+    } catch {
+      // Abaikan error deteksi Claude di session_start agar startup sesi tidak terhambat
+    }
+
     try {
       const apiKey = await getApiKeyEntry(ROUTER_PROVIDER_ID);
       if (apiKey) {

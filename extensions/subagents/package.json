@@ -17,10 +17,8 @@
     "index.ts",
     "src",
     "docs",
-    "!docs/archive",
     "examples",
-    "CHANGELOG.md",
-    "NOTICE.md"
+    "CHANGELOG.md"
   ],
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.84.0",

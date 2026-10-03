@@ -82,9 +82,9 @@ describe("settings persistence", () => {
     expect(loadSettings(projectDir)).toEqual(settings);
   });
 
-  it("migrates the legacy Firstmate-lite setting name on read", () => {
+  it("ignores unknown legacy firstmateLite setting on read", () => {
     writeProject({ firstmateLite: true });
-    expect(loadSettings(projectDir)).toEqual({ agentControl: true });
+    expect(loadSettings(projectDir)).toEqual({});
   });
 
   it("accepts legacy boolean agentMentions values", () => {

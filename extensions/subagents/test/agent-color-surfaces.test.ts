@@ -137,7 +137,7 @@ describe("custom agent color runtime surfaces", () => {
         theme,
         { isPartial: false, isError: false },
       ).render(120).join("\n");
-      expect(missingType).toContain("<toolTitle>*Agent*</toolTitle>");
+      expect(missingType).toContain("<toolTitle>*General*</toolTitle>");
       expect(missingType).not.toContain(PURPLE_BACKGROUND);
 
       // An agent without a color must render the pre-badge line byte for byte:

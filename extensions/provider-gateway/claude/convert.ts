@@ -6,7 +6,7 @@ import type { Message as SessionMessage } from "cc-session-io";
 import { pascalCase } from "change-case";
 import { MCP_TOOL_PREFIX } from "./skills.js";
 
-export const PROVIDER_ID = "claude-bridge";
+export const PROVIDER_ID = "claude-gateway";
 
 // Pi tool names under Claude Code's builtin names. Only ever correct on the
 // AskClaude path, where CC runs its own tools — see mapPiToolNameToSdk.

@@ -41,9 +41,29 @@ test("running execute and inspect renderers add spacing above progress", () => {
   ).render(80);
 
   assert.equal(executeLines[0]?.trim(), "");
-  assert.match(executeLines[1] ?? "", /Running/);
-  assert.equal(inspectLines[0]?.trim(), "");
-  assert.match(inspectLines[1] ?? "", /inspect/);
+  assert.match(executeLines[1] ?? "", /running/);
+  assert.match(inspectLines.join("\n"), /inspecting/);
+});
+
+test("execute and inspect renderCall remain visible when execution finishes", () => {
+  const { execute, inspect } = createExecuteHarness();
+  const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+  const executeCall = execute.renderCall(
+    { runtime: "shell", script: "echo hello" },
+    theme,
+    { executionStarted: true, isPartial: false, isError: false } as any,
+  ).render(100).join("\n");
+  assert.match(executeCall, /execute/);
+  assert.match(executeCall, /echo hello/);
+
+  const inspectCall = inspect.renderCall(
+    { path: "src/index.ts", query: "myFunc" },
+    theme,
+    { executionStarted: true, isPartial: false, isError: false } as any,
+  ).render(100).join("\n");
+  assert.match(inspectCall, /inspect/);
+  assert.match(inspectCall, /src\/index\.ts/);
+  assert.match(inspectCall, /myFunc/);
 });
 
 test("execute renders final output as a bounded Codex-style block", () => {
@@ -82,22 +102,22 @@ test("execute renders final output as a bounded Codex-style block", () => {
     { args, toolCallId: "result-test" } as any,
   ).render(160).join("\n");
 
-  assert.match(call, /Running/);
+  assert.match(call, /execute/);
   assert.match(call, /npm test/);
   assert.ok(!call.includes(String.fromCharCode(27)));
-  assert.match(collapsed, /Ran shell · npm test · success/);
+  assert.match(collapsed, /100 lines/);
+  assert.match(collapsed, /ctrl\+o to expand/);
   assert.ok(!collapsed.includes(String.fromCharCode(27)));
-  assert.match(collapsed, /success/);
-  assert.match(collapsed, /1.3s/);
-  assert.match(collapsed, /line-1/);
-  assert.match(collapsed, /line-4/);
-  assert.match(collapsed, /\+92 lines omitted/);
-  assert.match(collapsed, /line-97/);
-  assert.match(collapsed, /line-100/);
+  assert.doesNotMatch(collapsed, /Ran shell/);
+  assert.doesNotMatch(collapsed, /line-1/);
   assert.doesNotMatch(collapsed, /line-20/);
-  assert.match(expanded, /line-20/);
-  assert.match(expanded, /line-81/);
-  assert.match(expanded, /\+60 lines omitted/);
+  assert.match(expanded, /Ran shell/);
+  assert.match(expanded, /npm test/);
+  assert.match(expanded, /exit 0/);
+  assert.match(expanded, /1.3s/);
+  assert.match(expanded, /line-10/);
+  assert.match(expanded, /line-91/);
+  assert.match(expanded, /\+80 lines omitted/);
   assert.match(expanded, /inspect/);
   assert.match(expanded, /output-a1b2c3d4/);
 });
@@ -107,22 +127,26 @@ test("execute renders failed, timeout, and cancelled statuses with termination d
   const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
   const args = { runtime: "javascript", script: "run-task" };
   const displayOutputPreview = { head: ["captured output"], tail: [], totalLines: 1 };
-  const render = (contextManager: Record<string, unknown>) => execute.renderResult(
+  const render = (contextManager: Record<string, unknown>, expanded = false) => execute.renderResult(
     {
       content: [{ type: "text", text: "failure summary" }],
       details: { contextManager: { runtime: "javascript", durationMs: 1_250, outputId: "output-deadbeef", displayOutputPreview, ...contextManager } },
       isError: true,
     },
-    { expanded: false, isPartial: false },
+    { expanded, isPartial: false },
     theme,
     { args, toolCallId: "status-test" } as any,
   ).render(160).join("\n");
 
-  const failed = render({ exitCode: 7, signal: "SIGTERM" });
-  const timedOut = render({ exitCode: null, signal: "SIGKILL", timedOut: true });
-  const cancelled = render({ exitCode: null, signal: "SIGTERM", cancelled: true });
+  const failedCollapsed = render({ exitCode: 7, signal: "SIGTERM" });
+  const failed = render({ exitCode: 7, signal: "SIGTERM" }, true);
+  const timedOut = render({ exitCode: null, signal: "SIGKILL", timedOut: true }, true);
+  const cancelled = render({ exitCode: null, signal: "SIGTERM", cancelled: true }, true);
 
-  assert.match(failed, /failed \(exit 7\)/);
+  assert.match(failedCollapsed, /1 line/);
+  assert.match(failedCollapsed, /exit 7/);
+  assert.match(failedCollapsed, /SIGTERM/);
+  assert.match(failed, /exit 7/);
   assert.match(failed, /SIGTERM/);
   assert.match(timedOut, /timeout/);
   assert.match(timedOut, /SIGKILL/);
@@ -158,8 +182,14 @@ test("execute retains failure and timeout status, signal, and cached output", as
       theme,
       { args: { runtime: "javascript", script: "exit task" } } as any,
     ).render(160).join("\n");
-    assert.match(failedRender, /failed \(exit 7\)/);
-    assert.match(failedRender, /exit-failure/);
+    assert.match(failedRender, /exit 7/);
+    const failedExpanded = execute.renderResult(
+      { content: [{ type: "text", text: failedError.message }], details: (failedError as any).details, isError: true },
+      { expanded: true, isPartial: false },
+      theme,
+      { args: { runtime: "javascript", script: "exit task" } } as any,
+    ).render(160).join("\n");
+    assert.match(failedExpanded, /exit 7/);
 
     const timeoutError: any = await execute.execute(
       "timeout-output-test",
@@ -181,7 +211,14 @@ test("execute retains failure and timeout status, signal, and cached output", as
       { args: { runtime: "javascript", script: "wait task" } } as any,
     ).render(160).join("\n");
     assert.match(timeoutRender, /timeout/);
-    assert.match(timeoutRender, /before-timeout/);
+    const timeoutExpanded = execute.renderResult(
+      { content: [{ type: "text", text: timeoutError.message }], details: (timeoutError as any).details, isError: true },
+      { expanded: true, isPartial: false },
+      theme,
+      { args: { runtime: "javascript", script: "wait task" } } as any,
+    ).render(160).join("\n");
+    assert.match(timeoutExpanded, /timeout/);
+    assert.match(timeoutExpanded, /before-timeout/);
   } finally {
     if (failedOutputId) await new OutputCache().remove(failedOutputId);
     if (timeoutOutputId) await new OutputCache().remove(timeoutOutputId);
@@ -257,7 +294,15 @@ test("execute reports cancellation with cached partial output", async () => {
       { args, toolCallId: "cancelled-output-test" } as any,
     ).render(160).join("\n");
     assert.match(rendered, /cancelled/);
-    assert.match(rendered, /before-cancel/);
+    assert.doesNotMatch(rendered, /before-cancel/);
+    const renderedExpanded = execute.renderResult(
+      { content: wrappedResult.content, details: wrappedResult.details, isError: true },
+      { expanded: true, isPartial: false },
+      theme,
+      { args: {} } as any,
+    ).render(160).join("\n");
+    assert.match(renderedExpanded, /cancelled/);
+    assert.match(renderedExpanded, /before-cancel/);
   } finally {
     if (outputId) await new OutputCache().remove(outputId);
     rmSync(cwd, { recursive: true, force: true });
@@ -341,9 +386,9 @@ test("execute streams live output into the partial tool renderer", async () => {
     outputId = result.details?.contextManager?.outputId;
 
     assert.equal(partialOutputSeen, true);
-    assert.match(renderedPartial, /live-start/);
-    assert.match(renderedPartial, /stderr-live/);
-    assert.match(renderedPartial, /Running/);
+    assert.match(renderedPartial, /running ·/);
+    assert.match(renderedPartial, /└/);
+    assert.match(renderedPartial, /live-start|stderr-live|live-end/);
 
     const finalModelText = result.content[0]?.type === "text" ? result.content[0].text : "";
     assert.match(finalModelText, /\[context-manager\] Status: success/);
@@ -363,11 +408,20 @@ test("execute streams live output into the partial tool renderer", async () => {
       theme,
       { args: { runtime: "shell", script: "live stream test" } } as any,
     ).render(120).join("\n");
-    assert.match(renderedFinal, /success/);
-    assert.match(renderedFinal, /live-start/);
-    assert.match(renderedFinal, /stderr-live/);
-    assert.match(renderedFinal, /live-end/);
+    assert.match(renderedFinal, /3 lines/);
+    assert.doesNotMatch(renderedFinal, /live-start/);
     assert.match(renderedFinal, /ctrl\+o to expand/);
+    const renderedExpanded = execute.renderResult(
+      result,
+      { expanded: true, isPartial: false },
+      theme,
+      { args: { runtime: "shell", script: "live stream test" } } as any,
+    ).render(120).join("\n");
+    assert.match(renderedExpanded, /Ran shell/);
+    assert.match(renderedExpanded, /exit 0/);
+    assert.match(renderedExpanded, /stderr-live/);
+    assert.match(renderedExpanded, /live-end/);
+    assert.match(renderedExpanded, /Full output/);
   } finally {
     if (outputId) await new OutputCache().remove(outputId);
     rmSync(cwd, { recursive: true, force: true });

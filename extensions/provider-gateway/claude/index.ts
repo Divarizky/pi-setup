@@ -1,11 +1,10 @@
 // Claude Pro/Max provider via Claude Code Agent SDK (first-party, kuota langganan).
 //
-// Diadopsi dari pi-claude-bridge v0.9.0 (MIT, Eli Dickinson). File-file murni
-// (convert, models, mcp-server, extract-tool-results, prompt-stream,
-// query-state, transcript, session-verify, skills, config, prompt-capture,
-// agents-md) di-vendor verbatim di ./claude/*. Struktur orkestrasi query()
-// (streamClaudeAgentSdk, consumeQuery, syncSharedSession, dll) diringkas di
-// file ini agar muat di provider-gateway.
+// Modul pendukung (convert, models, mcp-server, extract-tool-results,
+// prompt-stream, query-state, transcript, session-verify, skills, config,
+// prompt-capture, agents-md) ada di ./claude/*. Orkestrasi query()
+// (streamClaudeAgentSdk, consumeQuery, syncSharedSession, dll) ada di file ini.
+// Lisensi pihak ketiga: ./claude/LICENSE.
 //
 // Cara kerja: tiap turn spawn subprocess `claude` CLI resmi via query().
 // Request keluar dari CLI first-party -> memotong kuota Pro/Max, bukan Extra Usage.
@@ -39,7 +38,7 @@ import {
 import type { ContentBlockParam } from "@anthropic-ai/sdk/resources";
 import { createSession, deleteSession, openSession, repairToolPairing } from "cc-session-io";
 
-import { PROVIDER_ID as CLAUDE_BRIDGE_ID, convertPiMessages } from "./convert.js";
+import { PROVIDER_ID as CLAUDE_API_ID, convertPiMessages } from "./convert.js";
 import {
   applyLongContext,
   buildModels,
@@ -51,7 +50,7 @@ import { MCP_SERVER_NAME, MCP_TOOL_PREFIX } from "./skills.js";
 import { extractAllToolResults as extractResults, type McpResult } from "./extract-tool-results.js";
 import { QueryContext, ctx } from "./query-state.js";
 import { makePromptStream, userMessage } from "./prompt-stream.js";
-import { nonSystemMessages, toBridgeContext } from "./transcript.js";
+import { nonSystemMessages, toSdkContext } from "./transcript.js";
 import { createToolServer } from "./mcp-server.js";
 import { collectCarriedAttachments, type CarriedAttachment } from "./attachments.js";
 import {
@@ -59,6 +58,7 @@ import {
   sharedPromptCaptures,
 } from "./prompt-capture.js";
 import { loadConfig, type Config } from "./config.js";
+import { publishClaudeRateLimit } from "./rate-limit.js";
 import * as piAiCompatShim from "@earendil-works/pi-ai/compat";
 
 export const CLAUDE_PROVIDER_ID = "claude";
@@ -70,9 +70,9 @@ const CC_CHILD_ENV = {
 } as const;
 const CLAUDE_MD_EXCLUDES = ["**/CLAUDE.md", "**/.claude/rules/**"];
 
-const DEBUG = process.env.CLAUDE_BRIDGE_DEBUG === "1";
+const DEBUG = process.env.CLAUDE_GATEWAY_DEBUG === "1";
 const DEBUG_LOG_PATH =
-  process.env.CLAUDE_BRIDGE_DEBUG_PATH || join(homedir(), ".pi", "agent", "claude-bridge.log");
+  process.env.CLAUDE_GATEWAY_DEBUG_PATH || join(homedir(), ".pi", "agent", "claude-gateway.log");
 if (DEBUG) {
   try { mkdirSync(dirname(DEBUG_LOG_PATH), { recursive: true }); } catch { /* abaikan */ }
 }
@@ -527,7 +527,10 @@ async function consumeQuery(
         queryCtx.turnOutput.errorMessage = resultError;
       }
     }
-    if (message.type === "rate_limit_event") continue;
+    if (message.type === "rate_limit_event") {
+      publishClaudeRateLimit(claudeProviderApi, message.rate_limit_info);
+      continue;
+    }
     if (!queryCtx.currentPiStream || !queryCtx.turnOutput) continue;
     switch (message.type) {
       case "stream_event":
@@ -636,7 +639,7 @@ async function runClaudeQuery(
   options: SimpleStreamOptions | undefined,
   stream: AssistantMessageEventStream,
 ): Promise<void> {
-  context = toBridgeContext(context);
+  context = toSdkContext(context);
   if (options?.cacheRetention === "none") {
     await runIsolatedSummary(model, context, options, stream);
     return;
@@ -835,7 +838,7 @@ async function runIsolatedSummary(
   options: SimpleStreamOptions | undefined,
   stream: AssistantMessageEventStream,
 ): Promise<void> {
-  context = toBridgeContext(context);
+  context = toSdkContext(context);
   let sdkQuery: ReturnType<typeof query> | undefined;
   let wasAborted = false;
   const onAbort = () => {
@@ -906,7 +909,7 @@ async function runIsolatedSummary(
   }
 }
 
-// --- login: direct ala pi-claude-bridge (delegasi ke CLI, tanpa OAuth inline) ---
+// --- login: delegasi ke CLI (tanpa OAuth inline) ---
 
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
@@ -922,7 +925,7 @@ function globalClaudeExePath(): string | null {
 }
 
 // Satu-satunya path CLI yang dipakai query() SDK. Urutan: setting user
-// (claude-bridge.json pathToClaudeCodeExecutable) -> claude.exe global ->
+// (claude-gateway.json pathToClaudeCodeExecutable) -> claude.exe global ->
 // biarkan SDK resolve biner bawaannya sendiri (undefined).
 function resolveClaudeExecutable(): string | undefined {
   if (providerSettings.pathToClaudeCodeExecutable) return providerSettings.pathToClaudeCodeExecutable;
@@ -956,8 +959,56 @@ async function checkClaudeCli(): Promise<{ path: string; version: string; logged
   }
 }
 
+async function isClaudeCliInstalled(): Promise<boolean> {
+  try {
+    await runClaudeCli(["--version"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function installClaudeCli(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const isWindows = process.platform === "win32";
+    const cmd = isWindows ? "npm.cmd" : "npm";
+    await execFileAsync(cmd, ["install", "-g", "@anthropic-ai/claude-code"], { timeout: 180_000 });
+    return { success: true };
+  } catch (error) {
+    try {
+      await execAsync("npm install -g @anthropic-ai/claude-code", { timeout: 180_000 });
+      return { success: true };
+    } catch (fallbackError) {
+      return {
+        success: false,
+        error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+      };
+    }
+  }
+}
+
 async function gatewayClaudeLogin(ctx: ExtensionCommandContext): Promise<void> {
-  registerClaudeProviderGlobal();
+  const installed = await isClaudeCliInstalled();
+  if (!installed) {
+    const confirmed = await ctx.ui.confirm(
+      "Claude Code CLI Belum Terpasang",
+      "Claude Code CLI (@anthropic-ai/claude-code) belum terpasang di sistem.\nApakah Anda ingin memasangnya sekarang secara global via npm?",
+    );
+    if (!confirmed) {
+      ctx.ui.notify("Pemasangan Claude Code CLI dibatalkan.", "info");
+      return;
+    }
+    ctx.ui.notify("Memasang @anthropic-ai/claude-code secara global...", "info");
+    const installRes = await installClaudeCli();
+    if (!installRes.success) {
+      ctx.ui.notify(`Gagal memasang Claude Code CLI: ${installRes.error}`, "error");
+      return;
+    }
+    // Jika instalasi berhasil, reset penolakan sebelumnya
+    const { setClaudeInstallDeclined } = await import("./config.js");
+    setClaudeInstallDeclined(false);
+  }
+
   let info;
   try {
     info = await checkClaudeCli();
@@ -972,21 +1023,27 @@ async function gatewayClaudeLogin(ctx: ExtensionCommandContext): Promise<void> {
     );
     return;
   }
+  registerClaudeProviderGlobal();
   ctx.ui.notify(`Claude Pro/Max terhubung (${info.version}).`, "info");
 }
 
 let claudeProviderApi: ExtensionAPI | null = null;
+let isClaudeRegistered = false;
+
+function isClaudeProviderRegistered(): boolean {
+  return isClaudeRegistered;
+}
 
 function registerCompatClaudeApi(): void {
   const register = (piAiCompatShim as {
     registerApiProvider?: (provider: {
-      api: typeof CLAUDE_BRIDGE_ID;
+      api: typeof CLAUDE_API_ID;
       stream: typeof streamClaudeAgentSdk;
       streamSimple: typeof streamClaudeAgentSdk;
     }) => void;
   }).registerApiProvider;
   if (typeof register !== "function") return;
-  register({ api: CLAUDE_BRIDGE_ID, stream: streamClaudeAgentSdk as any, streamSimple: streamClaudeAgentSdk as any });
+  register({ api: CLAUDE_API_ID, stream: streamClaudeAgentSdk as any, streamSimple: streamClaudeAgentSdk as any });
 }
 
 export function registerClaudeProvider(pi: ExtensionAPI): void {
@@ -1006,12 +1063,22 @@ export function registerClaudeProvider(pi: ExtensionAPI): void {
   claudeProviderApi = pi;
   registerCompatClaudeApi();
   pi.registerProvider(CLAUDE_PROVIDER_ID, {
-    baseUrl: "claude-bridge",
+    baseUrl: "claude-gateway",
     apiKey: "not-used",
-    api: CLAUDE_BRIDGE_ID,
+    api: CLAUDE_API_ID,
     models: registeredModels,
     streamSimple: streamClaudeAgentSdk as any,
   });
+  isClaudeRegistered = true;
+}
+
+export function unregisterClaudeProvider(pi: ExtensionAPI): void {
+  try {
+    pi.unregisterProvider(CLAUDE_PROVIDER_ID);
+  } catch {
+    /* abaikan jika belum terdaftar */
+  }
+  isClaudeRegistered = false;
 }
 
 function registerClaudeProviderGlobal(): void {
@@ -1030,6 +1097,12 @@ export function recordClaudePromptCapture(
   promptCaptures.record(systemPrompt, input as never, source);
 }
 
-export { MODELS as CLAUDE_BRIDGE_MODELS, claudeCodeModelId };
-export { gatewayClaudeLogin, checkClaudeCli };
-export { CLAUDE_PROVIDER_ID as CLAUDE_BRIDGE_PROVIDER_ID, CLAUDE_PROVIDER_NAME };
+export { MODELS as CLAUDE_MODELS, claudeCodeModelId };
+export {
+  gatewayClaudeLogin,
+  checkClaudeCli,
+  isClaudeCliInstalled,
+  installClaudeCli,
+  isClaudeProviderRegistered,
+};
+export { CLAUDE_PROVIDER_NAME };

@@ -1,4 +1,14 @@
 {
-  "extends": "../../tsconfig.json",
-  "include": ["index.ts", "src/**/*.ts", "*.test.ts"]
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "types": ["node"]
+  },
+  "include": ["index.ts", "src/**/*.ts"]
 }

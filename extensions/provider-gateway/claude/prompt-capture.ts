@@ -2,7 +2,7 @@ import type { Skill } from "@earendil-works/pi-coding-agent";
 import { formatProjectContext } from "./agents-md.js";
 import { renderSkillsBlock, type SkillReadTool } from "./skills.js";
 
-// What pi assembled for one agent, kept so the bridge can append only the
+// What pi assembled for one agent, kept so the provider can append only the
 // portable parts after Claude Code's own preset.
 
 export type PromptCaptureInput = {
@@ -20,7 +20,7 @@ type InheritedPrompt = {
 
 export type PromptCapture = PromptCaptureInput & {
 	assembledPrompt: string;
-	/** Which bridge boundary last recorded this key (before_agent_start | agent_start | turn_start). */
+	/** Which hook boundary last recorded this key (before_agent_start | agent_start | turn_start). */
 	source?: string;
 	/** Exact previously assembled prompts embedded in `custom`. */
 	inherited: InheritedPrompt[];
@@ -51,10 +51,10 @@ export type PromptCaptureDiagnostic = {
 export class PromptCaptures {
 	private readonly captures = new Map<string, PromptCapture>();
 	/** Invoked with everything that would otherwise be lost when resolution throws,
-	 *  so the bridge can write it to its debug log. Kept off the throw path itself:
+	 *  so the provider can write it to its debug log. Kept off the throw path itself:
 	 *  the resolver is hot and the caller may own a faster sink than string-building.
 	 *
-	 *  Set by the bridge on the shared instance; tests that want the diagnostic can
+	 *  Set by the provider on the shared instance; tests that want the diagnostic can
 	 *  pass one per instance. */
 	private readonly onDiagnose: (diagnostic: PromptCaptureDiagnostic) => void;
 
@@ -158,7 +158,7 @@ export class PromptCaptures {
 		// Inheritance must be tried before any tolerance/adoption route. A sub-agent
 		// child that embeds its parent's prompt verbatim contains every portable part
 		// of the parent's capture, so an "adopt the capture whose portable parts all
-		// appear here" heuristic (as drafted in upstream PR #76's findPortableMatch)
+		// appear here" heuristic (a findPortableMatch-style match)
 		// placed above this route would match first, re-key the PARENT's capture under
 		// the child's prompt, and silently drop the child's wrapper text — exactly the
 		// instruction loss the throw exists to prevent. If such a route is ever added,
@@ -172,7 +172,7 @@ export class PromptCaptures {
 				+ `Closest known match diverges at offset ${matches[0]?.firstDivergent ?? "?"} `
 				+ `(${matches.length ? matches[0].key.length : 0}-char key${matches[0]?.source ? `, last recorded at ${matches[0].source}` : ""}). `
 				+ `Claude Code would receive none of this turn's context files, skills or custom instructions. `
-				+ `The usual cause is an extension loaded after claude-bridge that rewrites the system prompt from before_agent_start — `
+				+ `The usual cause is an extension loaded after provider-gateway that rewrites the system prompt from before_agent_start — `
 				+ `one that wraps it is fine, one that rebuilds or strips it leaves nothing to match. `
 				+ `(Also possible: pi rebuilt the prompt outside before_agent_start — a late-registered tool or fresh resource discovery.)`,
 			);
@@ -257,7 +257,7 @@ const ANTHROPIC_THIRD_PARTY_TRIGGERS = ["docs/custom-provider.md", "docs/package
 /** One piece of the append, named so a refusal can say where it found the text. */
 type PromptPart = { label: string; text: string };
 
-const SHARED_CAPTURES_KEY = Symbol.for("claude-bridge:promptCaptures");
+const SHARED_CAPTURES_KEY = Symbol.for("claude-gateway:promptCaptures");
 
 /** Isolated agents re-evaluate this module; a process-wide instance lets the pinned
  *  stream resolve their captures (issue #64). The first instance's onDiagnose wins —
@@ -355,9 +355,8 @@ function assertSendablePrompt(parts: readonly PromptPart[], capture: PromptCaptu
 		"  app: it fails with 400 or is billed as extra usage.",
 		...findings.map((finding) => `  Found: ${finding}.`),
 		`  Capture: ${capture.source ?? "unknown"}, ${capture.inherited.length} inherited capture(s) substituted.`,
-		"  If this came from an inherited pi prompt, see README \"Compatibility with other extensions\".",
-		"  If it is your own text, reword or remove it. CLAUDE_BRIDGE_DEBUG=1 writes the full prompt to",
-		"  ~/.pi/agent/claude-bridge.log.",
+		"  If it is your own text, reword or remove it. CLAUDE_GATEWAY_DEBUG=1 writes the full prompt to",
+		"  ~/.pi/agent/claude-gateway.log.",
 	].join("\n"));
 }
 

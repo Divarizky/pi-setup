@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { isInsideProject } from "./src/security.ts";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth } from "@earendil-works/pi-tui";
 import {
   findSnippets,
   formatLineRange,
@@ -20,7 +20,9 @@ import {
   recordSummary,
 } from "./src/context-stats.ts";
 import { OutputCache } from "./src/output-cache.ts";
-import { collectOutputPreview, formatOutputPreview } from "./src/output-preview.ts";
+import { expandControl } from "./src/expand-control.ts";
+import { collectOutputPreview } from "./src/output-preview.ts";
+import { inspectBlocks, Lines, previewRows, renderFrameBlocks, renderFrameRows } from "./src/output-frame.ts";
 import type { OutputPreview } from "./src/output-preview.ts";
 import { formatContextPercent, selectCompressionMode } from "./src/context-policy.ts";
 import {
@@ -180,15 +182,6 @@ const PI_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧
 // perintah. Satu baris kosong di awal memberi jarak dari judul tool.
 // Loader Pi render di dalam Box(1,1) sehingga indent 2 spasi. Frame spinner
 // dipilih dari elapsed tanpa interval render tambahan.
-function renderToolLoading(label: string, elapsedMs: number, theme: any, outputPreview?: string): Text {
-  const frame = PI_SPINNER_FRAMES[Math.floor(elapsedMs / 100) % PI_SPINNER_FRAMES.length];
-  const lines = [theme.fg("accent", frame) + " " + theme.fg("muted", label)];
-  if (outputPreview) {
-    lines.push(...outputPreview.split("\n").map((line) => `  ${theme.fg("dim", line)}`));
-  }
-  return new Text(`\n${lines.join("\n")}`, 0, 0);
-}
-
 export default function (pi: ExtensionAPI) {
   let stats = createContextStats();
   const reminderState = { level: "unknown" as ReminderLevel };
@@ -238,6 +231,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "execute",
     label: "Execute Context-Safe Script",
+    renderShell: "self",
     description: "Run a general non-interactive shell or script in the project and return a compact result. Raw output is cached for later inspection. All scripts run without confirmation.",
     promptSnippet: "Run a project-local script and return only a compact, cached result",
     promptGuidelines: [
@@ -398,16 +392,20 @@ export default function (pi: ExtensionAPI) {
       const runtime = String(args.runtime ?? "shell");
       const started = context.executionStarted;
       const running = started && context.isPartial;
-      if (started && !running) return new Text("", 0, 0);
-      const label = !started ? "execute" : "Running";
-      const marker = !started
-        ? theme.fg("toolTitle", "▶ ")
-        : theme.fg("accent", "▶ ");
-      const line = marker
-        + theme.fg("toolTitle", theme.bold(label))
-        + " " + theme.fg("muted", runtime + " · ")
-        + theme.fg("dim", preview || "(no script)");
-      return new Text(line, 0, 0);
+      const failed = context.isError;
+      const bullet = running || !started
+        ? theme.fg(started ? "accent" : "muted", "● ")
+        : failed
+          ? theme.fg("error", "● ")
+          : theme.fg("success", "● ");
+      const arg = runtime === "shell" ? preview : `${runtime} · ${preview}`;
+      return new Text(
+        bullet +
+          theme.fg("toolTitle", theme.bold("execute")) +
+          theme.fg("muted", ` (${arg || "no script"})`),
+        0,
+        0,
+      );
     },
     renderResult(result, { expanded, isPartial }, theme, context) {
       const d = result.details as { contextManager?: {
@@ -435,52 +433,87 @@ export default function (pi: ExtensionAPI) {
       const signalValue = cm?.signal ?? raw.match(/signal:\s*([^\s|.]+)/i)?.[1];
       const signal = signalValue ? sanitizeTerminalOutput(signalValue) : "";
       const signalSuffix = signal ? ` · signal ${signal}` : "";
-      const exitSuffix = nonzeroExit ? ` (exit ${exitLabel})` : "";
       const failed = Boolean((result as any).isError) || cancelled || timedOut || nonzeroExit;
-      const status = cancelled
-        ? `cancelled${exitSuffix}${signalSuffix}`
-        : timedOut
-          ? `timeout${exitSuffix}${signalSuffix}`
-          : nonzeroExit
-            ? `failed${exitSuffix}${signalSuffix}`
-            : failed
-              ? `failed${signalSuffix}`
-              : "success";
       const dur = cm?.durationMs != null ? ` · ${formatElapsed(cm.durationMs)}` : "";
       if (isPartial) {
-        const label = c0?.type === "text" && String(c0.text).trim()
-          ? String(c0.text).trim()
-          : "run";
-        return renderToolLoading(label, cm?.elapsedMs ?? 0, theme, cm?.outputPreview);
+        const elapsed = cm?.elapsedMs ?? 0;
+        const frame = PI_SPINNER_FRAMES[Math.floor(elapsed / 100) % PI_SPINNER_FRAMES.length];
+        const lines: string[] = [];
+        const partial = (cm?.outputPreview ?? "")
+          .split("\n")
+          .map((line) => line.trimEnd())
+          .filter((line) => line.length > 0);
+        lines.push(
+          theme.fg("dim", "  ⎿  ") +
+            theme.fg("accent", frame) +
+            " " +
+            theme.fg(
+              "muted",
+              `running · ${formatElapsed(elapsed)}${partial.length > 0 ? ` · ${partial.length} lines` : ""}`,
+            ),
+        );
+        const latest = partial[partial.length - 1];
+        if (latest) {
+          lines.push(theme.fg("dim", "     └ ") + theme.fg("toolOutput", latest));
+        }
+        return new Text(`\n${lines.join("\n")}`, 0, 0);
       }
 
       const preview = cm?.displayOutputPreview ?? collectOutputPreview(raw);
-      const previewLines = formatOutputPreview(preview, expanded ? 40 : 8);
-      const saved = cm?.outputId
-        ? expanded ? " · output tersimpan" : " · tersimpan · ctrl+o to expand"
-        : expanded ? "" : " · ctrl+o to expand";
       const args = context.args as { runtime?: unknown; script?: unknown } | undefined;
       const command = formatCommandPreview(args?.script);
       const runtime = cm?.runtime ?? String(args?.runtime ?? "shell");
-      const statusLine = `${failed ? "✗" : "✓"} Ran ${runtime} · ${command || "(no script)"} · ${status}${dur}${saved}`;
-      const outputLines = previewLines.map((line, index) =>
-        theme.fg("toolOutput", `${index === 0 ? "  └ " : "    "}${line}`),
+      const total = preview.totalLines;
+      const countLabel = total === 0 ? "no output" : total === 1 ? "1 line" : `${total} lines`;
+      const icon = failed ? theme.fg("error", "✗") : theme.fg("success", "✓");
+      const statusLabel = cancelled
+        ? `cancelled${signalSuffix}`
+        : timedOut
+          ? `timeout${signalSuffix}`
+          : nonzeroExit
+            ? `exit ${exitLabel}${signalSuffix}`
+            : failed
+              ? `failed${signalSuffix}`
+              : "exit 0";
+      const meta = `${icon} ${theme.fg(failed ? "error" : "muted", statusLabel)}${dur}${theme.fg("muted", ` · ${countLabel}`)}${cm?.outputId ? theme.fg("muted", " · tersimpan") : ""}`;
+      const head = theme.fg("muted", "● ") + theme.fg("toolTitle", theme.bold(`Ran ${runtime}`)) + theme.fg("dim", command ? ` ${command}` : "") + theme.fg("muted", " · ") + meta;
+      if (!expanded) {
+        // Collapsed view stays minimal: line count plus the expand hint.
+        // If failed, include the error icon and status badge so failures are never hidden.
+        const control = expandControl(false);
+        const controlText = control
+          ? ` ${control.button ? theme.underline(theme.fg("accent", control.text)) : theme.fg("muted", control.text)}`
+          : "";
+        const statusPrefix = failed
+          ? `${icon} ${theme.fg("error", statusLabel)} · `
+          : "";
+        return new Text(
+          theme.fg("dim", "  ⎿  ") + statusPrefix + theme.fg("muted", countLabel) + controlText,
+          0,
+          0,
+        );
+      }
+      const rows = previewRows(preview, 20);
+      const control = expandControl(true);
+      const footer = theme.fg(
+        "muted",
+        cm?.outputId
+          ? `     Full output: inspect { outputId: "${cm.outputId}", query: "<kata>" }`
+          : "     Full output tidak tersedia di cache.",
       );
-      const fullOutputHint = cm?.outputId
-        ? `  Full output: inspect { outputId: "${cm.outputId}", query: "<kata>" }`
-        : "  Full output tidak tersedia di cache.";
-      const rendered = [
-        theme.fg(failed ? "warning" : "success", statusLine),
-        ...outputLines,
-        ...(expanded ? [theme.fg("muted", fullOutputHint)] : []),
-      ].join("\n");
-      return new Text(rendered, 0, 0);
+      return new Lines((width) => [
+        truncateToWidth(head, width),
+        ...(rows.length > 0 ? renderFrameRows(rows, width, theme) : []),
+        ...(control?.button ? [theme.fg("muted", `     ${control.text}`)] : []),
+        truncateToWidth(footer, width),
+      ]);
     },
   });
 
   pi.registerTool({
     name: "inspect",
     label: "Inspect Local Context",
+    renderShell: "self",
     description: "Analyze a project-local text file or cached tool output without sending the raw content into context. Returns a local summary and snippets matching the query.",
     promptSnippet: "Summarize project files or cached output and retrieve snippets by query",
     promptGuidelines: [
@@ -497,27 +530,79 @@ export default function (pi: ExtensionAPI) {
       head: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
       tail: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
     }),
-    renderCall(args, theme, _context) {
-      const arrow = theme.fg("toolTitle", "▶ ");
-      const target = args.outputId ? `outputId ${args.outputId}` : args.path ?? "(no target)";
-      const q = args.query ? ` · q:"${String(args.query).slice(0,40)}"` : "";
-      return new Text(arrow + theme.fg("toolTitle", theme.bold("inspect")) + " " + theme.fg("dim", target + q), 0, 0);
+    renderCall(args, theme, context) {
+      const target = args.outputId ? `outputId ${args.outputId}` : (args.path ?? "(no target)");
+      const q = args.query ? ` · "${String(args.query).slice(0, 40)}"` : "";
+      const started = context.executionStarted;
+      const running = started && context.isPartial;
+      const failed = context.isError;
+      const bullet = running || !started
+        ? theme.fg(started ? "accent" : "muted", "● ")
+        : failed
+          ? theme.fg("error", "● ")
+          : theme.fg("success", "● ");
+      return new Text(
+        bullet +
+          theme.fg("toolTitle", theme.bold("inspect")) +
+          theme.fg("muted", ` (${target}${q})`),
+        0,
+        0,
+      );
     },
     renderResult(result, { expanded, isPartial }, theme, _context) {
-      if (isPartial) return renderToolLoading("inspect", 0, theme);
       const c0 = result.content[0]; const raw = c0?.type === "text" ? String(c0.text) : "";
-      if (expanded) return new Text(raw, 0, 0);
-      if ((result as any).isError) return new Text(theme.fg("error", "✗ inspect gagal · ctrl+o to expand"), 0, 0);
-      const details = result.details as { path?: string; outputId?: string; query?: string; snippets?: number } | undefined;
-      const target = details?.path ?? "hasil";
+      if (isPartial) {
+        const frame = PI_SPINNER_FRAMES[Math.floor(Date.now() / 100) % PI_SPINNER_FRAMES.length];
+        return new Text(theme.fg("dim", "  ⎿  ") + theme.fg("accent", frame) + " " + theme.fg("muted", "inspecting …"), 0, 0);
+      }
+      if ((result as any).isError) {
+        const control = expandControl(expanded);
+        const controlText = control
+          ? ` ${control.button ? theme.underline(theme.fg("accent", control.text)) : theme.fg("muted", control.text)}`
+          : "";
+        return new Text(
+          theme.fg("dim", "  ⎿  ") + theme.fg("error", "✗ inspect gagal") + controlText,
+          0,
+          0,
+        );
+      }
+      const details = result.details as { path?: string; outputId?: string; query?: string; snippets?: number; bytes?: number; durationMs?: number } | undefined;
+      const target = details?.path ?? details?.outputId ?? "hasil";
       const compactTarget = target.length > 48 ? `${target.slice(0, 47)}…` : target;
       const snippetInfo = details?.query
-        ? ` · ${details.snippets ?? 0} snippet`
+        ? ` · ${details.snippets ?? 0} snippet${(details.snippets ?? 0) === 1 ? "" : "s"}`
         : " · summary siap";
-      return new Text(theme.fg("success", `✓ excerpt · ${compactTarget}${snippetInfo} · tersimpan · ctrl+o to expand`), 0, 0);
+      const dur = typeof details?.durationMs === "number" ? ` · ${formatElapsed(details.durationMs)}` : "";
+      const control = expandControl(expanded);
+      const lines: string[] = [
+        theme.fg("muted", "● ") +
+          theme.fg("toolTitle", theme.bold(details?.query ? `Searched "${String(details.query).slice(0, 24)}"` : "Summarized")) +
+          theme.fg("dim", ` ${compactTarget}`) +
+          theme.fg("muted", " · ") +
+          theme.fg("success", "✓") +
+          theme.fg("muted", `${snippetInfo}${dur} · tersimpan`),
+      ];
+      if (expanded) {
+        const blocks = inspectBlocks(raw, details?.query);
+        return new Lines((width) => [
+          truncateToWidth(lines[0]!, width),
+          ...renderFrameBlocks(blocks, width, theme),
+          ...(control?.button ? [theme.fg("muted", `     ${control.text}`)] : []),
+        ]);
+      }
+      // Collapsed view stays minimal: count plus the expand hint. The
+      // detailed Searched/Summarized line appears only when expanded.
+      return new Text(
+        theme.fg("dim", "  ⎿  ") +
+          theme.fg("muted", details?.query ? `${details?.snippets ?? 0} snippet${(details?.snippets ?? 0) === 1 ? "" : "s"}` : "summary siap") +
+          (control ? ` ${control.button ? theme.underline(theme.fg("accent", control.text)) : theme.fg("muted", control.text)}` : ""),
+        0,
+        0,
+      );
     },
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
+      const startedAt = Date.now();
       if (params.path && params.outputId) {
         throw new Error("Provide either path or outputId, not both.");
       }
@@ -617,7 +702,7 @@ export default function (pi: ExtensionAPI) {
 
       return {
         content: [{ type: "text", text: inspectText }],
-        details: { path: params.path, outputId: inspectOutputId, query: params.query, bytes, summary, snippets: snippets.length },
+        details: { path: params.path, outputId: inspectOutputId, query: params.query, bytes, summary, snippets: snippets.length, durationMs: Date.now() - startedAt },
       };
     },
   });

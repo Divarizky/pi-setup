@@ -9,6 +9,7 @@ import {
   type ProviderId,
 } from "./src/providers.ts";
 import { UsageTrackerDashboard, type UsageTrackerViewData } from "./src/ui.ts";
+import { CLAUDE_RATE_LIMIT_CHANNEL } from "./src/claude-usage.ts";
 import {
   fetchNineRouterQuotas,
   readNineRouterUsage,
@@ -26,6 +27,8 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const QUOTA_WIDGET_KEY = "usage-tracker-quota-bar";
 const QUOTA_REFRESH_INTERVAL_MS = 45_000;
 const QUOTA_RENDER_INTERVAL_MS = 1_000;
+// /usage-tracker boleh memakai cache usage Claude yang lebih baru dari quota bar.
+const COMMAND_CLAUDE_MAX_AGE_MS = 60_000;
 type ThinkingLevel = NonNullable<ExtensionContext["thinkingLevel"]>;
 
 function sessionUsage(ctx: ExtensionContext): UsageTotals {
@@ -96,7 +99,7 @@ async function loadUsage(ctx: ExtensionContext): Promise<UsageTrackerViewData> {
         fetchProviderUsage(
           provider,
           () => Promise.resolve(auth),
-          { signal: controller.signal },
+          { signal: controller.signal, maxAgeMs: COMMAND_CLAUDE_MAX_AGE_MS },
         ),
       ),
     );
@@ -186,6 +189,8 @@ type QuotaBarRuntime = {
   updateFromHeaders(model: QuotaModelRef, headers: Readonly<Record<string, string>>, ctx: ExtensionContext): void;
   setThinkingLevel(level: ThinkingLevel): void;
   refresh(ctx: ExtensionContext, force?: boolean): void;
+  /** Refresh paksa bila model aktif memakai provider ini. */
+  refreshActive(provider: string): void;
   dispose(): void;
 };
 
@@ -255,8 +260,9 @@ function createQuotaBarRuntime(
       const matched = await fetchActiveQuota(ctx, model, controller.signal);
       if (generation !== refreshGeneration || activeModelKey !== modelKey(model)) return;
 
-      activeMatched = matched;
-      if (matched) {
+      // Hasil kosong (misalnya endpoint 429) tidak boleh menghapus snapshot yang masih ada.
+      activeMatched = matched ?? activeMatched;
+      if (activeMatched) {
         mountWidget(ctx);
         requestRender?.();
       } else {
@@ -339,6 +345,9 @@ function createQuotaBarRuntime(
     updateFromHeaders,
     setThinkingLevel,
     refresh: (ctx, force = false) => void refresh(ctx, force),
+    refreshActive: (provider) => {
+      if (activeModel?.provider === provider) void refresh(latestCtx, true);
+    },
     dispose: () => {
       refreshGeneration++;
       requestController?.abort();
@@ -372,6 +381,12 @@ export default function usageTrackerExtension(pi: ExtensionAPI) {
 
   pi.on("turn_end", (_event, ctx) => {
     quotaBar?.refresh(ctx);
+  });
+
+  // provider-gateway mengirim rate_limit_event Claude CLI lewat channel ini dan
+  // menulisnya ke cache, jadi refresh cukup membaca cache tanpa request baru.
+  pi.events.on(CLAUDE_RATE_LIMIT_CHANNEL, () => {
+    quotaBar?.refreshActive("claude");
   });
 
   pi.on("session_shutdown", () => {

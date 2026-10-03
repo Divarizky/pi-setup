@@ -232,6 +232,14 @@ function formatReset(resetAt: Date | undefined, now: Date): string | undefined {
   return `${minutes}m`;
 }
 
+function formatAge(since: Date | undefined, now: Date): string | undefined {
+  if (!since || !Number.isFinite(since.getTime())) return undefined;
+  const minutes = Math.max(0, Math.floor((now.getTime() - since.getTime()) / 60_000));
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h${minutes % 60 > 0 ? ` ${minutes % 60}m` : ""}`;
+  return `${minutes}m`;
+}
+
 /**
  * Render a quota rail directly below Pi's editor separator, followed by a
  * closing rule that keeps the built-in footer visually separate.
@@ -254,7 +262,9 @@ export function renderQuotaBar(
   const usedPercent = Math.max(0, Math.min(100, matched.limit.usedPercent));
   const percent = `${usedPercent.toFixed(0)}% used`;
   const reset = formatReset(matched.limit.resetsAt, now);
-  const suffix = reset ? `${percent} · reset ${reset}` : percent;
+  const base = reset ? `${percent} · reset ${reset}` : percent;
+  const age = matched.usage.stale ? formatAge(matched.usage.updatedAt, now) : undefined;
+  const suffix = age ? `${base} · stale ${age}` : base;
 
   // Fill every column between the provider and the quota information.
   const divider = borderColor("│");

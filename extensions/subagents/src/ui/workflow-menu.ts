@@ -162,7 +162,7 @@ export function openWorkflowFromFleet(id: string, deps: WorkflowMenuDeps): Promi
   return showWorkflowDialog(ctx, task, deps);
 }
 
-/** `/agents → Workflows` — list this session's runs, open one. */
+/** `/subagents → Workflows` — list this session's runs, open one. */
 export async function showWorkflowsMenu(
   ctx: ExtensionCommandContext,
   deps: WorkflowMenuDeps,

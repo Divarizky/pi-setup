@@ -1,11 +1,11 @@
 /**
  * Translate pi's transcript-shaped provider input into the prompt/tools fields used by
- * the bridge's downstream consumers.
+ * the Claude Agent SDK query path.
  *
  * System messages carry the base prompt and tool set plus later section patches and tool
  * deltas. pi-ai replays that state, but preserves section replay order. Prompt capture
  * keys come from pi's canonical section builder, so a deleted and re-added section must
- * be ranked back into canonical order before the bridge performs its exact-key lookup.
+ * be ranked back into canonical order before the provider performs its exact-key lookup.
  */
 import {
 	contentText,
@@ -53,11 +53,11 @@ function canonicalSystemPrompt(message: SystemMessage | undefined): string | und
 }
 
 /**
- * Restore the prompt and tools fields expected by the bridge and remove prompt-state
+ * Restore the prompt and tools fields expected by the SDK query path and remove prompt-state
  * messages from conversation history. Contexts without system messages are returned
- * unchanged because systemless one-off calls already use the bridge-compatible shape.
+ * unchanged because systemless one-off calls already use the SDK-compatible shape.
  */
-export function toBridgeContext(context: Context): Context {
+export function toSdkContext(context: Context): Context {
 	if (!context.messages.some((message) => message.role === "system")) return context;
 	const tools = getCurrentTools(context.messages);
 	return {

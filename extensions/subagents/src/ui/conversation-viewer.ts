@@ -12,7 +12,7 @@ import { extractText } from "../context.js";
 import type { AgentRecord, ViewerMarkdownMode } from "../types.js";
 import { getLifetimeCost, getLifetimeTotal, getSessionContextPercent } from "../usage.js";
 import type { Theme } from "./agent-widget.js";
-import { type AgentActivity, buildInvocationTags, describeActivity, fgPreservingNestedStyles, formatCost, formatDuration, formatSessionTokens, getPromptModeLabel } from "./agent-widget.js";
+import { type AgentActivity, buildInvocationTags, describeActivity, fgPreservingNestedStyles, formatCost, formatDuration, formatSessionTokens } from "./agent-widget.js";
 import { createViewerKeys, type ViewerKeybindings, type ViewerKeys } from "./viewer-keys.js";
 
 /** Base lines consumed by chrome: top border + header + header sep + footer sep + footer + bottom border. */
@@ -186,7 +186,7 @@ export class ConversationViewer implements Component {
      */
     private viewerMarkdown?: () => ViewerMarkdownMode,
     /**
-     * Persist a mode chosen with `m`, so the key and `/agents → Settings` mean
+     * Persist a mode chosen with `m`, so the key and `/subagents → Settings` mean
      * the same thing. Omitted → `m` still cycles, viewer-locally.
      */
     private onMarkdownMode?: (mode: ViewerMarkdownMode) => void,
@@ -295,8 +295,6 @@ export class ConversationViewer implements Component {
 
     // Header
     lines.push(hrTop);
-    const modeLabel = getPromptModeLabel(this.record.type);
-    const modeTag = modeLabel ? ` ${th.fg("dim", `(${modeLabel})`)}` : "";
     const statusIcon = this.record.status === "running"
       ? th.fg("accent", "◼")
       : this.record.status === "completed"
@@ -321,7 +319,7 @@ export class ConversationViewer implements Component {
     if (cost) headerParts.push(cost);
 
     lines.push(row(
-      `${statusIcon} ${renderAgentName(this.record.type, th, { bold: true })}${modeTag}  ${th.fg("muted", this.record.description)} ${th.fg("dim", "·")} ${fgPreservingNestedStyles(th, "dim", headerParts.join(" · "))}`,
+      `${statusIcon} ${renderAgentName(this.record.type, th, { bold: true })}  ${th.fg("muted", this.record.description)} ${th.fg("dim", "·")} ${fgPreservingNestedStyles(th, "dim", headerParts.join(" · "))}`,
     ));
     const invocationLine = this.invocationLine();
     if (invocationLine) lines.push(row(invocationLine));

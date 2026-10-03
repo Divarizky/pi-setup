@@ -92,10 +92,6 @@ function sanitize(raw: unknown): SubagentsSettings {
   }
   if (typeof r.agentControl === "boolean") {
     out.agentControl = r.agentControl;
-  } else if (typeof r.firstmateLite === "boolean") {
-    // Backward-compatible read of the pre-Agent-Control setting name. New
-    // writes use `agentControl`, so the old product name disappears over time.
-    out.agentControl = r.firstmateLite;
   }
   return out;
 }

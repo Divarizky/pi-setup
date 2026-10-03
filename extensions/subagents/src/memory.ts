@@ -12,8 +12,7 @@
  */
 
 import { existsSync, lstatSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, } from "node:path";
+import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { MemoryScope } from "./types.js";
 
@@ -63,17 +62,8 @@ export function resolveMemoryDir(agentName: string, scope: MemoryScope, cwd: str
     throw new Error(`Unsafe agent name for memory directory: "${agentName}"`);
   }
   switch (scope) {
-    case "user": {
-      const current = join(getAgentDir(), "agent-memory", agentName);
-      // Legacy location from when this path was hardcoded. Keep using it if it
-      // already holds this agent's memory and the new location hasn't been
-      // created yet — otherwise existing memories would be silently orphaned.
-      const legacy = join(homedir(), ".pi", "agent-memory", agentName);
-      if (!existsSync(current) && existsSync(legacy) && !isSymlink(legacy)) {
-        return legacy;
-      }
-      return current;
-    }
+    case "user":
+      return join(getAgentDir(), "agent-memory", agentName);
     case "project":
       return join(cwd, ".pi", "agent-memory", agentName);
     case "local":

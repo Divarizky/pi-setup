@@ -58,7 +58,6 @@ import {
   formatTokens,
   formatTurns,
   getDisplayName,
-  getPromptModeLabel,
   SPINNER,
   type Theme,
   type UICtx,
@@ -1793,10 +1792,8 @@ Notes:
         acceptanceCriteria: params.acceptance_criteria,
         validationCommands: params.validation_commands,
       };
-      // Tool-result render shows the mode label too; viewer's header already does.
-      const modeLabel = getPromptModeLabel(subagentType);
       const { tags: invocationTags } = buildInvocationTags(agentInvocation);
-      const agentTags = modeLabel ? [modeLabel, ...invocationTags] : invocationTags;
+      const agentTags = invocationTags;
 
       // Persist the task contract before creating an AgentRecord. Ship tasks
       // additionally pass a read-only Git/worktree/scope preflight, so a
@@ -1894,14 +1891,12 @@ Notes:
         if (!rec?.invocation) return detailBase;
         const type = rec.type;
         const { modelName: recModelName, tags } = buildInvocationTags(rec.invocation);
-        const recModeLabel = getPromptModeLabel(type);
-        const recTags = recModeLabel ? [recModeLabel, ...tags] : tags;
         return {
           displayName: getDisplayName(type),
           description: rec.description,
           subagentType: type,
           modelName: recModelName,
-          tags: recTags.length > 0 ? recTags : undefined,
+          tags: tags.length > 0 ? tags : undefined,
         };
       };
 
@@ -2682,7 +2677,7 @@ Notes:
     // than saying why nothing ran.
     if (!isWorkflowsEnabled()) {
       report(
-        `--${WORKFLOW_FILE_FLAG} ignored: workflows are off. Turn them on in /agents → Settings → Workflows, ` +
+        `--${WORKFLOW_FILE_FLAG} ignored: workflows are off. Turn them on in /subagents → Settings → Workflows, ` +
           'or set `"workflowsEnabled": true` in .pi/subagents.json.',
         "warning",
       );

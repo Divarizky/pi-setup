@@ -2,6 +2,7 @@ import type { AuthResult } from "@earendil-works/pi-ai";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { getClaudeUsage, parseOAuthUsagePayload, windowsToLimits } from "./claude-usage.ts";
 
 export type ProviderId = string;
 export type UsageStatus = "ok" | "unavailable";
@@ -45,12 +46,18 @@ export interface ProviderUsage {
   readonly quota?: string;
   readonly balance?: string;
   readonly message?: string;
+  /** Waktu data limit terakhir diamati. */
+  readonly updatedAt?: Date;
+  /** Data limit berasal dari cache yang sudah lewat masa segarnya. */
+  readonly stale?: boolean;
 }
 
 export interface UsageFetchOptions {
   readonly fetchImpl?: typeof fetch;
   readonly now?: Date;
   readonly signal?: AbortSignal;
+  /** Umur maksimum cache usage Claude sebelum endpoint dipanggil lagi. */
+  readonly maxAgeMs?: number;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -380,24 +387,7 @@ function extractAntigravityToken(auth: AuthResult): { token: string; projectId?:
   return undefined;
 }
 
-function claudeCliAuth(): AuthResult | undefined {
-  try {
-    const file = join(homedir(), ".claude", ".credentials.json");
-    if (!existsSync(file)) return undefined;
-    const oauth = asRecord(asRecord(JSON.parse(readFileSync(file, "utf8")))?.claudeAiOauth);
-    const token = oauth?.accessToken;
-    if (typeof token !== "string" || !token) return undefined;
-    return {
-      auth: { apiKey: token, headers: { authorization: `Bearer ${token}` } },
-      source: "claude CLI (oauth)",
-    };
-  } catch {
-    return undefined;
-  }
-}
-
 function fallbackAuth(provider: ProviderId): AuthResult | undefined {
-  if (provider === "claude") return claudeCliAuth();
   try {
     const authFile = join(homedir(), ".pi", "agent", "auth.json");
     if (!existsSync(authFile)) return undefined;
@@ -583,6 +573,7 @@ async function fetchAnthropicOAuth(
   const headers = {
     Authorization: `Bearer ${token}`,
     "anthropic-version": "2023-06-01",
+    "anthropic-beta": "oauth-2025-04-20",
     Accept: "application/json",
   };
   const payload = await getJson(
@@ -591,69 +582,10 @@ async function fetchAnthropicOAuth(
     fetchImpl,
     signal,
   );
-  const data = asRecord(payload);
-  if (!data) throw new Error("Format respons Anthropic OAuth tidak valid");
-
-  const limits: UsageLimit[] = [];
-  const fiveHour = asRecord(data.five_hour);
-  const sevenDay = asRecord(data.seven_day);
-  const rawLimits = Array.isArray(data.limits) ? data.limits : [];
-
-  const parsePercent = (utilization: unknown, fallbackPercent?: unknown): number => {
-    if (typeof fallbackPercent === "number" && Number.isFinite(fallbackPercent)) {
-      return Math.max(0, Math.min(100, fallbackPercent));
-    }
-    if (typeof utilization === "number" && Number.isFinite(utilization)) {
-      const pct = utilization <= 1 ? utilization * 100 : utilization;
-      return Math.max(0, Math.min(100, Math.round(pct * 10) / 10));
-    }
-    return 0;
-  };
-
-  const parseReset = (val: unknown): Date | undefined => {
-    if (typeof val === "string" && val.trim()) {
-      const d = new Date(val);
-      if (Number.isFinite(d.getTime())) return d;
-    }
-    return undefined;
-  };
-
-  const sessionRaw = rawLimits.find((l) => asRecord(l)?.group === "session" || asRecord(l)?.kind === "session");
-  const weeklyRaw = rawLimits.find((l) => asRecord(l)?.group === "weekly" || asRecord(l)?.kind?.toString().startsWith("weekly"));
-
-  if (fiveHour || sessionRaw) {
-    const usedPercent = parsePercent(fiveHour?.utilization, asRecord(sessionRaw)?.percent);
-    const resetsAt = parseReset(fiveHour?.resets_at) ?? parseReset(asRecord(sessionRaw)?.resets_at);
-    limits.push({
-      label: "5h session",
-      usedPercent,
-      limitWindowSeconds: 5 * 3600,
-      resetsAt,
-    });
-  }
-
-  if (sevenDay || weeklyRaw) {
-    const usedPercent = parsePercent(sevenDay?.utilization, asRecord(weeklyRaw)?.percent);
-    const resetsAt = parseReset(sevenDay?.resets_at) ?? parseReset(asRecord(weeklyRaw)?.resets_at);
-    limits.push({
-      label: "7d weekly",
-      usedPercent,
-      limitWindowSeconds: 7 * 24 * 3600,
-      resetsAt,
-    });
-  }
-
-  const extraUsage = asRecord(data.extra_usage);
-  const extraEnabled = extraUsage?.is_enabled === true;
-  if (extraEnabled && typeof extraUsage?.utilization === "number") {
-    limits.push({
-      label: "Extra Usage",
-      usedPercent: parsePercent(extraUsage.utilization),
-    });
-  }
-
-  const planType = extraEnabled ? "Claude Pro / Team (Extra Usage aktif)" : "Claude Pro / Team";
-  return { limits, quota: planType };
+  const { windows, extraUsageEnabled } = parseOAuthUsagePayload(payload);
+  const limits = windowsToLimits(windows);
+  if (limits.length === 0) throw new Error("Anthropic OAuth usage window tidak tersedia");
+  return { limits, quota: extraUsageEnabled ? "Claude Pro / Team (Extra Usage aktif)" : "Claude Pro / Team" };
 }
 
 export async function fetchProviderUsage(
@@ -668,9 +600,31 @@ export async function fetchProviderUsage(
     message,
   });
 
+  // Provider "claude" (provider-gateway) memakai placeholder apiKey; token asli
+  // dibaca dari Claude CLI dan hasilnya di-cache bersama antar instance Pi.
+  if (provider === "claude") {
+    const claude = await getClaudeUsage({ fetchImpl: options.fetchImpl, signal: options.signal, now: options.now, maxAgeMs: options.maxAgeMs });
+    const lastSeen = claude.stale && claude.updatedAt
+      ? `data terakhir ${claude.updatedAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`
+      : undefined;
+    const message = [claude.message, claude.limits.length ? lastSeen : "data tidak tersedia"]
+      .filter(Boolean)
+      .join(" · ") || undefined;
+    return {
+      provider,
+      source: "Claude CLI (oauth)",
+      status: claude.limits.length ? "ok" : "unavailable",
+      today: unavailablePeriod(periods[0], "session usage"),
+      billing: unavailablePeriod(periods[1], "session usage"),
+      limits: claude.limits,
+      quota: claude.quota,
+      message,
+      updatedAt: claude.updatedAt,
+      stale: claude.stale,
+    };
+  }
+
   let auth: AuthResult | undefined;
-  // Provider "claude" (provider-gateway) memakai placeholder apiKey; token asli ada di CLI.
-  if (provider === "claude") auth = claudeCliAuth();
   try {
     auth ??= await getAuth();
   } catch {
@@ -714,7 +668,7 @@ export async function fetchProviderUsage(
     }
   }
 
-  if (provider === "anthropic" || provider === "claude") {
+  if (provider === "anthropic") {
     const bearer = extractBearerToken(auth);
     if (bearer && (auth.source?.toLowerCase().includes("oauth") || auth.auth.headers?.authorization || !auth.auth.apiKey?.startsWith("sk-ant-"))) {
       try {
@@ -729,7 +683,15 @@ export async function fetchProviderUsage(
           quota: anthropic.quota,
         };
       } catch {
-        // Fallback ke report API key di bawah jika OAuth gagal
+        // Token OAuth tidak punya akses ke report API; jangan fallback ke sana.
+        return {
+          provider,
+          source: auth.source ?? "OAuth",
+          status: "unavailable",
+          today: unavailablePeriod(periods[0], "data tidak tersedia"),
+          billing: unavailablePeriod(periods[1], "data tidak tersedia"),
+          message: "data tidak tersedia",
+        };
       }
     }
 

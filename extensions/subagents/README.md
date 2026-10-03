@@ -28,7 +28,7 @@ For development:
 pi -e ./extensions/subagents/src/index.ts
 ```
 
-The primary command is `/subagents`; `/agents` remains a compatibility alias.
+The primary command is `/subagents`.
 
 ## Quick start
 
@@ -58,9 +58,9 @@ With Agent Control enabled, top-level `Agent` calls use durable task policies:
 - `build` is an isolated ship task and requires 1–5 `validation_commands`.
 - `general` requires `task_mode: "scout"` or `task_mode: "ship"`.
 
-Open `/agents` → **Agent Control tasks** to review durable task state, candidate branch/SHA, target branch/SHA, changed files, and validation evidence. Candidate approval, rejection, and integration are interactive user actions; model output cannot substitute for confirmation. Headless mode remains read-only and refuses integration.
+Open `/subagents` → **Agent Control tasks** to review durable task state, candidate branch/SHA, target branch/SHA, changed files, and validation evidence. Candidate approval, rejection, and integration are interactive user actions; model output cannot substitute for confirmation. Headless mode remains read-only and refuses integration.
 
-Task snapshots and lifecycle events are stored under the repository's Git common directory in `agent-control/`. Candidate branches are retained after rejection or integration. The legacy `firstmateLite` setting name is still accepted when reading old project settings; new writes use `agentControl`.
+Task snapshots and lifecycle events are stored under the repository's Git common directory in `agent-control/`. Candidate branches are retained after rejection or integration.
 
 Built-in roles are intentionally small:
 
@@ -141,7 +141,6 @@ Settings are project-local in `.pi/subagents.json`; global defaults are read fro
 
 - `@explore`, `@build`, and `@general` can start or address an agent.
 - `/subagents` opens the management menu.
-- `/agents` is an alias for existing scripts and muscle memory.
 - Persisted Pi session names use `<type>: <description>`, capped at 160 characters.
 - Fleet view is rendered below the editor and the widget is rendered above it.
 - UI code is guarded by `ctx.hasUI`; print and RPC modes remain headless-safe.

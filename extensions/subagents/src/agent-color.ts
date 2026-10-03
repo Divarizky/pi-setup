@@ -155,7 +155,7 @@ export function renderAgentName(
   theme: AgentNameTheme,
   style: AgentNameStyle = {},
 ): string {
-  if (!type) return renderAgentNameLabel("Agent", undefined, theme, style);
+  if (!type) return renderAgentNameLabel("General", undefined, theme, style);
   const config = getConfig(type);
   return renderAgentNameLabel(config.displayName, config.color, theme, style);
 }

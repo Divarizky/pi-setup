@@ -65,17 +65,10 @@ export function registerAgents(userAgents: Map<string, AgentConfig>): void {
   }
 }
 
-/** Legacy aliases: Claude Code compat (general-purpose → general). */
-const TYPE_ALIASES: Readonly<Record<string, string>> = { "general-purpose": "general" };
-function canonical(name: string): string {
-  return TYPE_ALIASES[name.toLowerCase()] ?? name;
-}
-
 /** Case-insensitive key resolution within a registry. */
 function resolveKeyIn(registry: Map<string, AgentConfig>, name: string): string | undefined {
-  const c = canonical(name);
-  if (registry.has(c)) return c;
-  const lower = c.toLowerCase();
+  if (registry.has(name)) return name;
+  const lower = name.toLowerCase();
   for (const key of registry.keys()) {
     if (key.toLowerCase() === lower) return key;
   }
@@ -120,9 +113,8 @@ export function getAvailableTypesIn(registry: Map<string, AgentConfig>): string[
  * different agent, model and tool policy than the caller meant.
  */
 function resolveUnambiguousKeyIn(registry: Map<string, AgentConfig>, name: string): string | undefined {
-  const c = canonical(name);
-  if (registry.has(c)) return c;
-  const lower = c.toLowerCase();
+  if (registry.has(name)) return name;
+  const lower = name.toLowerCase();
   const matches = [...registry.keys()].filter(key => key.toLowerCase() === lower);
   return matches.length === 1 ? matches[0] : undefined;
 }
@@ -280,7 +272,7 @@ export function getConfig(type: string): {
 
   // Absolute fallback (should never happen)
   return {
-    displayName: "Agent",
+    displayName: "General",
     description: "General-purpose agent for complex, multi-step tasks",
     builtinToolNames: BUILTIN_TOOL_NAMES,
     extensions: true,

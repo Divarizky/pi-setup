@@ -17,6 +17,8 @@ Provider upstream hanya ditampilkan jika endpoint session usage atau response AP
 Catatan:
 
 - Codex memakai endpoint backend `https://chatgpt.com/backend-api/wham/usage`, yang merupakan endpoint internal dan dapat berubah.
+- Claude Pro/Max (provider `claude` dari provider-gateway) membaca token dari `~/.claude/.credentials.json` dan memanggil `https://api.anthropic.com/api/oauth/usage` paling sering sekali per 5 menit untuk semua instance Pi. Hasilnya disimpan di `~/.pi/agent/cache/claude-usage.json`. Respons 429 menyimpan `retry-after` sebagai backoff, dan token yang sudah kedaluwarsa tidak dipakai untuk request.
+- Setiap turn Claude, provider-gateway meneruskan `rate_limit_event` dari Claude CLI lewat channel `claude:rate-limit` dan menulisnya ke `~/.pi/agent/cache/claude-rate-limit.json`. Data ini dipakai bila lebih baru dari hasil endpoint. Bila endpoint gagal, quota bar tetap menampilkan snapshot terakhir dengan tanda `stale`.
 - Jika tidak ada provider dengan session usage atau database 9Router, dashboard tetap menampilkan usage session Pi lokal.
 - Database 9Router dibaca read-only ketika `/usage-tracker` dijalankan; API key dan token tidak dibaca untuk ditampilkan.
 - Quota bar mengikuti `model_select`, melakukan refresh berkala, dan disembunyikan untuk model gratis atau tanpa quota terverifikasi.

@@ -76,7 +76,7 @@ describe("agent type registry", () => {
 
     it("returns correct config for default types", () => {
       const config = getConfig("general");
-      expect(config.displayName).toBe("Agent");
+      expect(config.displayName).toBe("General");
       expect(config.builtinToolNames).toEqual(BUILTIN_TOOL_NAMES);
       expect(config.extensions).toBe(true);
       expect(config.skills).toBe(true);
@@ -198,7 +198,7 @@ describe("agent type registry", () => {
 
     it("getConfig falls back to general for unknown types", () => {
       const config = getConfig("nonexistent");
-      expect(config.displayName).toBe("Agent");
+      expect(config.displayName).toBe("General");
       expect(config.description).toBe(DEFAULT_AGENTS.get("general")?.description);
     });
 
@@ -246,7 +246,7 @@ describe("agent type registry", () => {
       expect(isValidType("general")).toBe(false);
       // getConfig fallback should still return something reasonable
       const config = getConfig("general");
-      expect(config.displayName).toBe("Agent");
+      expect(config.displayName).toBe("General");
     });
   });
 

@@ -43,7 +43,6 @@ function loadSkillContent(name: string, cwd: string): string {
     join(cwd, ".agents", "skills"), // project — Agent Skills spec
     join(getAgentDir(), "skills"), // user — Pi standard
     join(homedir(), ".agents", "skills"), // user — Agent Skills spec
-    join(homedir(), ".pi", "skills"), // legacy global, pre-Pi
   ];
   for (const root of roots) {
     const content = findInRoot(root, name);

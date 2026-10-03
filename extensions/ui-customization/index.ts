@@ -36,6 +36,10 @@ export const CUSTOM_FOOTER_CHAIN_KEY = "__piCustomFooterFactory";
 export const CUSTOM_FOOTER_CHAIN_EVENT = "ui-customization:footer";
 
 import type { Model } from "@earendil-works/pi-ai";
+import { installWorkingMessage } from "./src/working.ts";
+import { installThinkingDisplay } from "./src/thinking.ts";
+import { installToolRendering } from "./src/tool-render.ts";
+import { bindUi } from "./src/ui-binding.ts";
 
 type Rgb = [number, number, number];
 interface RenderableNode {
@@ -342,6 +346,9 @@ function columns(left: string, right: string, width: number) {
 }
 
 export default function uiCustomization(pi: ExtensionAPI) {
+  installWorkingMessage(pi);
+  installThinkingDisplay(pi);
+  installToolRendering(pi);
   let title = "pi";
   let modelInfo = emptyModelInfoState();
   let gitInfo = emptyGitInfoState();
@@ -513,6 +520,11 @@ export default function uiCustomization(pi: ExtensionAPI) {
 
     ctx.ui.setHeader((tui, theme) => {
       activeTui = tui;
+      bindUi({
+        mode: () => (tui as { mode?: unknown }).mode,
+        theme,
+        requestRender: () => tui.requestRender(),
+      });
       memoryTheme = theme;
       requestRender = () => tui.requestRender();
       scheduleThemeRemoval(tui);
@@ -654,6 +666,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
     memoryInsertTimers = [];
     activeTui = undefined;
     requestRender = undefined;
+    bindUi(undefined);
     if (ctx.mode === "tui") {
       ctx.ui.setHeader(undefined);
       ctx.ui.setFooter(undefined);

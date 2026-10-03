@@ -35,7 +35,7 @@ export class QueryContext {
 	lastRateLimitWarnStep: number | null = null;
 	lastRateLimitWarnThreshold: number | undefined;
 	/** pi session this query serves, from SimpleStreamOptions.sessionId at fresh-query
-	 *  setup. A bridge process serves several pi sessions at once (subagents run their
+	 *  setup. One provider process serves several pi sessions at once (subagents run their
 	 *  own AgentSessions), and history rewrites must only discard the rewriting
 	 *  session's parked queries — this is the match key. Null when the host did not
 	 *  supply an id.

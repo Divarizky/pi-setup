@@ -1,5 +1,5 @@
 // User-facing extension config. Loaded once at extension registration from
-// the global agent dir (getAgentDir(), e.g. ~/.pi/agent/claude-bridge.json)
+// the global agent dir (getAgentDir(), e.g. ~/.pi/agent/claude-gateway.json)
 // and the project Pi config directory, project overriding global. Missing or
 // unparseable files are ignored (error to console.error, empty object
 // returned) so the extension always starts.
@@ -11,6 +11,8 @@ import { dirname, join } from "path";
 export interface Config {
 	/** Date (YYYY-MM-DD) the one-time startup notice was shown. Written by the extension, not the user. */
 	startupNoticeShown?: string;
+	/** Whether user declined automatic Claude CLI installation prompt at startup. */
+	claudeInstallDeclined?: boolean;
 	askClaude?: {
 		enabled?: boolean;
 		name?: string;
@@ -43,7 +45,7 @@ export function tryParseJson(path: string): Partial<Config> {
 	try {
 		return JSON.parse(readFileSync(path, "utf-8"));
 	} catch (e) {
-		console.error(`claude-bridge: failed to parse ${path}: ${e}`);
+		console.error(`claude-gateway: failed to parse ${path}: ${e}`);
 		return {};
 	}
 }
@@ -53,7 +55,7 @@ export function claudeCodeSettings(provider: Config["provider"] = {}): { autoMem
 }
 
 export function globalConfigPath(): string {
-	return join(getAgentDir(), "claude-bridge.json");
+	return join(getAgentDir(), "claude-gateway.json");
 }
 
 /** Record today's date in the global config so the startup notice shows once, preserving every
@@ -70,7 +72,7 @@ export function markStartupNoticeShown(): string {
 		try {
 			existing = JSON.parse(readFileSync(path, "utf-8"));
 		} catch (e) {
-			console.error(`claude-bridge: leaving ${path} alone, it does not parse: ${e}`);
+			console.error(`claude-gateway: leaving ${path} alone, it does not parse: ${e}`);
 			return path;
 		}
 	}
@@ -81,9 +83,29 @@ export function markStartupNoticeShown(): string {
 	return path;
 }
 
+export function isClaudeInstallDeclined(): boolean {
+	const config = tryParseJson(globalConfigPath());
+	return Boolean(config.claudeInstallDeclined);
+}
+
+export function setClaudeInstallDeclined(declined: boolean): void {
+	const path = globalConfigPath();
+	let existing: Partial<Config> = {};
+	if (existsSync(path)) {
+		try {
+			existing = JSON.parse(readFileSync(path, "utf-8"));
+		} catch {
+			existing = {};
+		}
+	}
+	const next = { ...existing, claudeInstallDeclined: declined };
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
+}
+
 export function loadConfig(cwd: string): Config {
 	const global = tryParseJson(globalConfigPath());
-	const project = tryParseJson(join(cwd, CONFIG_DIR_NAME, "claude-bridge.json"));
+	const project = tryParseJson(join(cwd, CONFIG_DIR_NAME, "claude-gateway.json"));
 	return {
 		startupNoticeShown: project.startupNoticeShown ?? global.startupNoticeShown,
 		askClaude: { ...global.askClaude, ...project.askClaude },

@@ -14,10 +14,9 @@ Tambahkan ke project settings `.pi/subagents.json`:
 }
 ```
 
-Catatan migrasi:
+Catatan konfigurasi:
 
-- Setting lama `firstmateLite` masih dibaca.
-- Penulisan baru memakai `agentControl`.
+- Mengaktifkan memakai `"agentControl": true`.
 - Menonaktifkan kembali cukup dengan `"agentControl": false`.
 
 ## 2. Task mode

@@ -25,6 +25,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stabilized the full test suite on Windows.** Vitest now runs one worker to avoid VM and filesystem timeouts caused by contention.
 - **The workflow stand-down now recognises a lowercase `workflow` tool.** Exact matching is preserved so unrelated tools such as `list_workflows` do not disable this extension.
 
-## Historical releases
 
-Detailed pre-2.0 release notes are archived in [docs/archive/changelog-pre-2.0.md](docs/archive/changelog-pre-2.0.md). They describe the upstream baseline and migration history; current behavior is documented above.
