@@ -27,6 +27,9 @@ extensions/run-summaries/config.private.json.*.tmp
 # Orca managed extensions
 extensions/orca-*.ts
 
+# Herdr managed extensions
+extensions/herdr-agent-state.ts
+
 # Editors
 .vscode/
 .idea/

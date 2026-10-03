@@ -4,19 +4,22 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 
 ## What's Included
 
-**Extensions (10)**
-- `provider-gateway` — Unified provider gateway (9Router, OpenCode Zen, Claude Pro/Max CLI, Antigravity, OpenAI Codex)
+**Extensions (11)**
+
+- `agent-memory` — Injeksi read-only `memory brief` ke system prompt dari vault Obsidian bersama (via skill `agent-memory`)
+- `provider-gateway` — Unified provider gateway (9Router, OpenCode Zen, Claude Pro/Max CLI, Antigravity, OpenAI Codex) dengan auto-deteksi CLI dan dukungan `node:sqlite`
 - `ask-user` — Multiple choice questions for the model
-- `context-manager` — Session context tracking, large-output caching/pruning, and execute/inspect tools (no confirmation prompt)
+- `context-manager` — Session context tracking, large-output caching/pruning, output-frame, dan execute/inspect tools
 - `copy-all` — Copy conversation to clipboard
 - `git-info` — Git branch, changes, PR status in footer
 - `run-summaries` — Auto-summarize agent runs
-- `subagents` — Background Pi subagents, workflows, worktrees, and Agent Control (v2)
+- `subagents` — Background Pi subagents, workflows, worktrees, dan Agent Control (v2) dengan display name `General`
 - `todos` — Todo tracking with overlay widget
-- `ui-customization` — Custom header/footer, theme tweaks, memory status
-- `usage-tracker` — Provider quota & session usage dashboard
+- `ui-customization` — Custom tool rendering (read, bash, edit, write), thinking shimmer, working message, header/footer, dan penyesuaian tema
+- `usage-tracker` — Provider quota & session usage dashboard (Claude CLI OAuth, 9Router, Codex, Zen)
 
-**Skills (14)**
+**Skills (15)**
+
 - `ask-me` — Grill + router (main entry for ambiguous requests)
 - `bug-diagnosis` — 6-phase disciplined bug diagnosis
 - `code-review` — Dual-axis review (Standards + Spec)
@@ -25,6 +28,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `humanize` — Manual-only prose rewrites that preserve meaning
 - `implement` — TDD implementation with code-review chain
 - `improve-architecture` — Deepening scan + interview
+- `merge-conflict` — Resolusi konflik Git terstruktur dan aman
 - `project-migration` — Project migration workflow
 - `prototype` — Throwaway prototypes (LOGIC/UI)
 - `setup-workflow` — Initialize `.workspace/` for project-aware mode
@@ -33,13 +37,14 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `to-tasks` — Break approved feature work into vertical-slice tasks
 
 **Themes (3)**
+
 - `catppuccin-mocha` — tema Mocha
 - `github-dark-default` — tema aktif saat ini (lihat `settings.json`)
 - `urple` — varian ungu gelap
 
 `dashboard-state` adalah modul internal yang dipakai bersama oleh `git-info`, `ui-customization`, dan `usage-tracker`; bukan extension user-facing terpisah.
 
-Setup aktif juga memakai extension dan skill eksternal dari Orca (`extensions/orca-*.ts` serta skill seperti `computer-use`, `find-skills`, `orca-cli`, dan `orchestration`). Sumber daya eksternal tersebut dikelola oleh host Orca dan sengaja tidak diikutkan ke repo ini.
+Setup aktif juga memakai extension dan skill eksternal dari Orca (`extensions/orca-*.ts` serta skill seperti `computer-use`, `find-skills`, `orca-cli`, dan `orchestration`). Sumber daya eksternal tersebut dikelola oleh host Orca dan sengaja tidak diikutkan ke repo ini. Memory lintas agent dikelola via vault Obsidian bersama melalui skill `agent-memory`.
 
 ## Quick Start
 
@@ -79,6 +84,7 @@ For persistence across sessions, run `setup-workflow` once per repo:
 ```
 
 This creates the current `.workspace/` structure:
+
 - `project-meta.md` — Setup and refresh metadata
 - `context/PROJECT.md` — Quick references
 - `context/CONTEXT.md` — Domain and technical detail
@@ -90,4 +96,14 @@ Universal mode works without setup — context stays in chat.
 
 ## Extensions Development
 
-Each extension in `extensions/` is a standalone TypeScript module. See `extensions/<name>/` for structure. `subagents` saat ini versi `2.0.0`, memakai Biome dan test suite sendiri. Extension yang dikelola Orca (`extensions/orca-*.ts`) dihasilkan oleh host Orca secara dinamis dan diabaikan dari repo ini.
+Setiap ekstensi di `extensions/` merupakan modul TypeScript mandiri. Lihat `extensions/<name>/` untuk struktur internal masing-masing.
+
+Perintah verifikasi repositori:
+
+- `npm run check`: typecheck seluruh ekstensi (`tsc --noEmit`)
+- `npm run check:extensions`: smoke test dan pemeriksaan paket ekstensi
+- `npm run test:subagents`: test suite untuk `subagents` (Vitest)
+- `npm run test:ui-customization`: unit test untuk `ui-customization`
+- `npm run format:check`: verifikasi format kode via Prettier
+
+`subagents` saat ini versi `2.0.0`, memakai Biome dan Vitest. Perintah utama manajemen subagent adalah `/subagents` dengan agen bawaan `@general`, `@build`, dan `@explore`. Extension yang dikelola Orca (`extensions/orca-*.ts`) dihasilkan oleh host Orca secara dinamis dan diabaikan dari repo ini.
