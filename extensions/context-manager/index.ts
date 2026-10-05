@@ -34,7 +34,10 @@ import {
   MIN_CONTEXT_BUDGET_PERCENT,
   MIN_OUTPUT_CHAR_THRESHOLD,
   MIN_OUTPUT_LINE_THRESHOLD,
+  MAX_TOOL_OUTPUT_BUDGET_TOKENS,
+  MIN_TOOL_OUTPUT_BUDGET_TOKENS,
   resetContextManagerConfig,
+  resolveToolOutputBudgetTokens,
   saveContextManagerConfig,
   type ContextManagerConfig,
 } from "./src/context-config.ts";
@@ -56,6 +59,35 @@ const MAX_EXECUTION_TIMEOUT_MS = 300_000;
 const MAX_EXECUTION_OUTPUT_CHARS = 100_000;
 // tool_result coverage: beberapa versi Pi pakai nama berbeda
 const LARGE_OUTPUT_TOOL_NAMES = new Set(["read", "bash", "powershell", "grep", "read_file", "shell"]);
+// Output di bawah ini terlalu kecil untuk layak dipangkas.
+const PRUNE_TRACK_MIN_CHARS = 1_500;
+// Setelah budget terlampaui, pangkas sampai output tersisa <= 50% budget.
+const PRUNE_LOW_WATERMARK = 0.5;
+// Custom entry sesi berisi toolCallId yang sudah dipangkas, dipulihkan saat resume.
+const PRUNE_ENTRY_TYPE = "context-manager-prune";
+
+// read bawaan Pi memotong output di 50 KB; cache isi file asli agar inspect
+// menjangkau seluruh file. Gagal atau bukan teks berarti pakai output tool.
+async function readFullFileForCache(cwd: string, path: string): Promise<string | undefined> {
+  try {
+    const target = resolve(cwd, path.replace(/^@/, ""));
+    const metadata = await stat(target);
+    if (!metadata.isFile() || metadata.size > MAX_INSPECT_FILE_BYTES) return undefined;
+    const text = await readFile(target, "utf8");
+    return text.includes("\uFFFD") ? undefined : text;
+  } catch {
+    return undefined;
+  }
+}
+
+// Pertahankan details asli tool bawaan; contextManager ditambahkan di atasnya.
+function mergeContextManagerDetails(event: unknown, contextManager: Record<string, unknown>): Record<string, unknown> {
+  const prevDetails = (event as { details?: unknown }).details;
+  if (prevDetails !== null && typeof prevDetails === "object" && !Array.isArray(prevDetails)) {
+    return { ...(prevDetails as Record<string, unknown>), contextManager };
+  }
+  return prevDetails !== undefined ? { originalDetails: prevDetails, contextManager } : { contextManager };
+}
 
 // config cache: baca sync tiap tool_result/context blokir loop; cache 2s + invalidate on save/reset
 let cachedConfig: ContextManagerConfig | null = null;
@@ -109,7 +141,7 @@ function formatCommandPreview(script: unknown): string {
 }
 
 function formatConfig(config: ContextManagerConfig): string {
-  return `Threshold: ${config.outputCharThreshold.toLocaleString("id-ID")} karakter / ${config.outputLineThreshold.toLocaleString("id-ID")} baris; budget output tool: ${config.contextBudgetPercent}% context window.`;
+  return `Threshold: ${config.outputCharThreshold.toLocaleString("id-ID")} karakter / ${config.outputLineThreshold.toLocaleString("id-ID")} baris; budget output tool: ${config.toolOutputBudgetTokens.toLocaleString("id-ID")} token (maks ${config.contextBudgetPercent}% context window).`;
 }
 
 function formatConfigValue(label: string, config: ContextManagerConfig): string {
@@ -117,6 +149,7 @@ function formatConfigValue(label: string, config: ContextManagerConfig): string 
   if (label === "Threshold baris") return `${config.outputLineThreshold.toLocaleString("id-ID")} baris`;
   if (label === "Budget output tool") return `${config.contextBudgetPercent}%`;
   if (label === "Budget context") return `${config.contextBudgetPercent}%`;
+  if (label === "Budget token output tool") return `${config.toolOutputBudgetTokens.toLocaleString("id-ID")} token`;
   return "";
 }
 
@@ -199,6 +232,8 @@ export default function (pi: ExtensionAPI) {
     outputCache.setProjectDir(ctx.cwd, sessionDir ? join(sessionDir, "context-manager-cache") : undefined);
     outputCache.setSessionId(persistentSessionId);
     outputCache.resetSession();
+    cachedToolResults.clear();
+    prunedToolResults.clear();
     // Rekonstruksi activeIds dari branch agar resume tidak kehilangan referensi (reference-kept)
     try {
       const branch: any[] = (ctx.sessionManager as any).getBranch?.() ?? [];
@@ -216,12 +251,15 @@ export default function (pi: ExtensionAPI) {
         const oid = m?.message?.details?.contextManager?.outputId ?? m?.details?.contextManager?.outputId;
         if (typeof tcId === "string" && typeof oid === "string" && !cachedToolResults.has(tcId)) {
           const txt = typeof m?.message?.content === "string" ? m.message.content : Array.isArray(m?.message?.content) ? m.message.content.filter((p:any)=>p?.type==="text").map((p:any)=>p.text).join("\n") : "";
-          if (txt) cachedToolResults.set(tcId, { outputId: oid, text: txt.slice(0, 8000), priority: 1 });
+          if (txt) cachedToolResults.set(tcId, { outputId: oid, text: txt, priority: 1 });
+        }
+        // Pulihkan keputusan pruning agar payload setelah resume sama dengan sebelumnya.
+        if (m?.type === "custom" && m?.customType === PRUNE_ENTRY_TYPE && Array.isArray(m?.data?.toolCallIds)) {
+          for (const id of m.data.toolCallIds) if (typeof id === "string") prunedToolResults.add(id);
         }
       }
     } catch {}
     void outputCache.cleanup();
-    prunedToolResults.clear();
     reminderState.level = "unknown";
     updateContextReminder(ctx, reminderState);
   });
@@ -328,9 +366,6 @@ export default function (pi: ExtensionAPI) {
         ? { displayOutputPreview: collectOutputPreview(raw) }
         : {};
       const config = currentContextManagerConfig();
-      if (raw.length >= config.outputCharThreshold || raw.split(/\r?\n/).length >= config.outputLineThreshold) {
-        notify(ctx, "[Context Manager] output besar dari execute diringkas.");
-      }
       const status = cancelled
         ? "cancelled"
         : result.timedOut
@@ -338,25 +373,37 @@ export default function (pi: ExtensionAPI) {
           : result.exitCode === 0
             ? "success"
             : `failed (exit ${result.exitCode ?? "unknown"})`;
-      const summary = formatSummary(
-        summarizeOutput(raw, 2),
-        `dari execute (${runtime})`,
-        `Gunakan inspect dengan outputId "${outputId}" dan query untuk mengambil raw output yang relevan.`,
-      );
       const signalInfo = result.signal ? `; signal: ${sanitizeTerminalOutput(result.signal)}` : "";
-      const header = `[context-manager] Status: ${status}; durasi: ${formatElapsed(result.durationMs)}${signalInfo}. | outputId: "${outputId}" | inspect: { outputId: "${outputId}", query: "<kata>" }`;
+      const statusLine = `[context-manager] Status: ${status}; durasi: ${formatElapsed(result.durationMs)}${signalInfo}. | outputId: "${outputId}"`;
       const maxOutputChars = Math.max(
         1_000,
         Math.min(params.maxOutputChars ?? DEFAULT_EXECUTION_OUTPUT_CHARS, MAX_EXECUTION_OUTPUT_CHARS),
       );
-      // header pinned: jangan potong baris pertama agar outputId selalu ada
-      const bodyMax = Math.max(200, maxOutputChars - header.length - 80);
-      const boundedBody = summary.length > bodyMax
-        ? `${summary.slice(0, bodyMax)}\n[context-manager] Summary dipotong; gunakan outputId untuk detail.`
-        : summary;
-      const output = [header, boundedBody].join("\n");
-      const boundedOutput = output;
-      recordSummary(stats, raw, boundedOutput);
+      // Output kecil dikirim utuh: ringkasan + inspect susulan justru menambah
+      // satu round-trip yang mengirim ulang seluruh context.
+      const rawBody = raw.trimEnd();
+      const passthrough = rawBody.length < config.outputCharThreshold
+        && rawBody.length <= maxOutputChars - statusLine.length - 1
+        && rawBody.split(/\r?\n/).length < config.outputLineThreshold;
+      let boundedOutput: string;
+      if (passthrough) {
+        boundedOutput = `${statusLine}\n${rawBody}`;
+      } else {
+        notify(ctx, "[Context Manager] output besar dari execute diringkas.");
+        const summary = formatSummary(
+          summarizeOutput(raw, 2),
+          `dari execute (${runtime})`,
+          `Gunakan inspect dengan outputId "${outputId}" dan query untuk mengambil raw output yang relevan.`,
+        );
+        const header = `${statusLine} | inspect: { outputId: "${outputId}", query: "<kata>" }`;
+        // header pinned: jangan potong baris pertama agar outputId selalu ada
+        const bodyMax = Math.max(200, maxOutputChars - header.length - 80);
+        const boundedBody = summary.length > bodyMax
+          ? `${summary.slice(0, bodyMax)}\n[context-manager] Summary dipotong; gunakan outputId untuk detail.`
+          : summary;
+        boundedOutput = [header, boundedBody].join("\n");
+        recordSummary(stats, raw, boundedOutput);
+      }
       cachedToolResults.set(toolCallId, {
         outputId,
         text: boundedOutput,
@@ -734,44 +781,55 @@ export default function (pi: ExtensionAPI) {
     const raw = textFromContent(event.content);
     const lineCount = raw.split(/\r?\n/).length;
     const config = currentContextManagerConfig();
-    const contextPercent = ctx.getContextUsage()?.percent;
+    const usage = ctx.getContextUsage();
+    const contextPercent = usage?.percent;
     if (contextPercent !== null && contextPercent !== undefined && contextPercent > 80) recordHighContext(stats);
-    const mode = selectCompressionMode(contextPercent);
+    const mode = selectCompressionMode(contextPercent, usage?.tokens);
 
     updateContextReminder(ctx, reminderState);
 
-    if (raw.length < config.outputCharThreshold && lineCount < config.outputLineThreshold) return;
+    const readInput = event as unknown as { input?: { path?: string; command?: string; offset?: number; limit?: number } };
+    const command = readInput.input?.command ?? "";
+    const priority = /\bgit\s+(?:status|diff)\b|\b(?:test|lint|typecheck|type-check|build)\b/i.test(command) ? 2 : 1;
+    const isLarge = raw.length >= config.outputCharThreshold || lineCount >= config.outputLineThreshold;
+    // read dengan offset/limit adalah permintaan sengaja (biasanya untuk edit); jangan diringkas.
+    const explicitReadRange = event.toolName === "read"
+      && (readInput.input?.offset !== undefined || readInput.input?.limit !== undefined);
+    const fullReadSource = async (): Promise<string | undefined> => {
+      if (event.toolName !== "read" || explicitReadRange || !readInput.input?.path) return undefined;
+      return readFullFileForCache(ctx.cwd, readInput.input.path);
+    };
 
-    const readInput = event as unknown as { input?: { path?: string; command?: string } };
+    if (!isLarge || mode === "preserve" || explicitReadRange) {
+      // Tetap utuh di context, tapi output sedang ikut didaftarkan agar bisa
+      // dipangkas oleh budget saat sudah tua.
+      if (raw.length < PRUNE_TRACK_MIN_CHARS) return;
+      const outputId = await outputCache.save(isLarge ? await fullReadSource() ?? raw : raw);
+      cachedToolResults.set(event.toolCallId, { outputId, text: raw, priority });
+      if (isLarge) recordSummary(stats, raw, raw);
+      // outputId disimpan di details agar hasil ini tetap terlacak setelah resume.
+      return { details: mergeContextManagerDetails(event, { outputId, originalChars: raw.length }) };
+    }
+
     const source = event.toolName === "read" && readInput.input?.path
       ? `dari ${readInput.input.path}`
       : `dari tool ${event.toolName}`;
-
-    if (mode === "preserve") {
-      const outputId = await outputCache.save(raw);
-      const command = readInput.input?.command ?? "";
-      const text = raw;
-      cachedToolResults.set(event.toolCallId, {
-        outputId,
-        text,
-        priority: /\bgit\s+(?:status|diff)\b|\b(?:test|lint|typecheck|type-check|build)\b/i.test(command) ? 2 : 1,
-      });
-      recordSummary(stats, raw, text);
-      return;
-    }
-
-    const outputId = await outputCache.save(raw);
+    // Ringkasan dan cache memakai isi file utuh bila read bawaan sudah memotongnya.
+    const sourceRaw = await fullReadSource() ?? raw;
+    const outputId = await outputCache.save(sourceRaw);
     notify(ctx, `[Context Manager] output besar dari ${event.toolName} diringkas.`);
     // Kebijakan per jenis output: log→error+lokasi dominan, diff→hunk, kode→chunk. Fallback generic.
-    const isDiff = /\bdiff\b|\b(git diff|show)\b|^diff --git/m.test(raw.slice(0, 4000)) || /\.diff\b/i.test(readInput.input?.path ?? "");
-    const looksLog = /\b(error|failed|exception|traceback)\b/i.test(raw);
+    const isDiff = /\bdiff\b|\b(git diff|show)\b|^diff --git/m.test(sourceRaw.slice(0, 4000)) || /\.diff\b/i.test(readInput.input?.path ?? "");
+    const looksLog = /\b(error|failed|exception|traceback)\b/i.test(sourceRaw);
     const previewSize = isDiff ? 2 : looksLog ? 1 : 3;
     const cuplikanNote = "[cuplikan — bukan bacaan lengkap; gunakan inspect untuk bagian spesifik]";
     const headerPinned = `[context-manager] outputId: "${outputId}" | inspect: { outputId: "${outputId}", query: "<kata>" } ${cuplikanNote}`;
     let body = formatSummary(
-      summarizeOutput(raw, previewSize),
+      summarizeOutput(sourceRaw, previewSize),
       source,
-      `Gunakan inspect dengan outputId "${outputId}" dan query untuk mengambil snippet yang relevan.`,
+      event.toolName === "read"
+        ? `Gunakan read dengan offset/limit, atau inspect dengan outputId "${outputId}" dan query, untuk bagian yang relevan.`
+        : `Gunakan inspect dengan outputId "${outputId}" dan query untuk mengambil snippet yang relevan.`,
     );
     // pinned header: body boleh dipotong compaction (2000 char) tapi header tetap di atas
     if (mode === "compact") {
@@ -783,22 +841,10 @@ export default function (pi: ExtensionAPI) {
     const truncatedBody = body.length > bodyMax ? `${body.slice(0, bodyMax)}\n[context-manager] Ringkasan dipotong; gunakan outputId.` : body;
     let summarized = `${headerPinned}\n${truncatedBody}`;
     recordSummary(stats, raw, summarized);
-    const command = readInput.input?.command ?? "";
-    cachedToolResults.set(event.toolCallId, {
-      outputId,
-      text: summarized,
-      priority: /\bgit\s+(?:status|diff)\b|\b(?:test|lint|typecheck|type-check|build)\b/i.test(command) ? 2 : 1,
-    });
-    // pertahankan details asli: merge contextManager tanpa menghilangkan field dari tool bawaan
-    const prevDetails = (event as unknown as { details?: unknown }).details;
-    const mergedDetails = prevDetails !== null && typeof prevDetails === "object" && !Array.isArray(prevDetails)
-      ? { ...(prevDetails as Record<string, unknown>), contextManager: { outputId, originalChars: raw.length } }
-      : prevDetails !== undefined
-        ? { originalDetails: prevDetails, contextManager: { outputId, originalChars: raw.length } }
-        : { contextManager: { outputId, originalChars: raw.length } };
+    cachedToolResults.set(event.toolCallId, { outputId, text: summarized, priority });
     return {
       content: [{ type: "text", text: summarized }],
-      details: mergedDetails,
+      details: mergeContextManagerDetails(event, { outputId, originalChars: raw.length }),
     };
   });
 
@@ -811,10 +857,15 @@ export default function (pi: ExtensionAPI) {
     )];
     const usage = ctx.getContextUsage();
     if (usage?.percent !== null && usage?.percent !== undefined && usage.percent > 80) recordHighContext(stats);
-    const budgetPercent = currentContextManagerConfig().contextBudgetPercent;
-    const budgetTokens = usage?.contextWindow
-      ? Math.floor(usage.contextWindow * budgetPercent / 100)
-      : 6_000; // ponytail: fallback 6000 bila contextWindow null (belum ada usage); ganti ke estimator berbasis pesan bila perlu presisi.
+    const budgetTokens = resolveToolOutputBudgetTokens(currentContextManagerConfig(), usage?.contextWindow);
+    // Hysteresis: pruning mengubah prefix dan membatalkan prompt cache, jadi
+    // baru dilakukan saat budget terlampaui, lalu sekaligus turun ke low-watermark.
+    const liveTokens = cachedToolCallIds
+      .filter((toolCallId) => !prunedToolResults.has(toolCallId))
+      .reduce((sum, toolCallId) => sum + estimateTokens(cachedToolResults.get(toolCallId)!.text), 0);
+    const keepLimit = liveTokens > budgetTokens
+      ? Math.floor(budgetTokens * PRUNE_LOW_WATERMARK)
+      : Number.POSITIVE_INFINITY;
     const preservedToolCallIds = new Set<string>();
     let usedTokens = 0;
     let protectedCount = 0;
@@ -825,7 +876,7 @@ export default function (pi: ExtensionAPI) {
       const tokens = estimateTokens(cached.text);
       const mustKeep = preservedToolCallIds.size === 0
         || (cached.priority >= 2 && protectedCount < 5);
-      if (mustKeep || usedTokens + tokens <= budgetTokens) {
+      if (mustKeep || usedTokens + tokens <= keepLimit) {
         preservedToolCallIds.add(toolCallId);
         usedTokens += tokens;
         if (cached.priority >= 2) protectedCount += 1;
@@ -854,6 +905,9 @@ export default function (pi: ExtensionAPI) {
     });
     if (prunedInThisTurn > 0) {
       lastPrunePrefixDirty = true;
+      try {
+        pi.appendEntry(PRUNE_ENTRY_TYPE, { toolCallIds: [...prunedToolResults] });
+      } catch { /* appendEntry tidak tersedia di harness test */ }
       notify(ctx, `[Context Manager] ${prunedInThisTurn} output lama dipangkas dari context. Detail tetap tersedia via inspect.`, "warning");
     }
 
@@ -867,13 +921,16 @@ export default function (pi: ExtensionAPI) {
         ? "Context saat ini: belum tersedia"
         : `Context saat ini: ${formatContextPercent(usage.percent)} (${usage.tokens?.toLocaleString("id-ID") ?? "?"}/${usage.contextWindow.toLocaleString("id-ID")} token)`;
       const config = currentContextManagerConfig();
-      const budgetTokens = usage?.contextWindow ? Math.floor(usage.contextWindow * config.contextBudgetPercent / 100) : null;
+      const budgetTokens = resolveToolOutputBudgetTokens(config, usage?.contextWindow);
       let badge = "";
       try {
         let keptTokens = 0; let protectedTokens = 0;
-        for (const v of cachedToolResults.values()) { const t = estimateTokens(v.text); keptTokens += t; if (v.priority >= 2) protectedTokens += t; }
-        if (budgetTokens !== null && keptTokens > budgetTokens) {
-          badge = `\n⚠ Budget output tool ${config.contextBudgetPercent}% (~${budgetTokens.toLocaleString("id-ID")} token) terlampaui: kept ~${keptTokens.toLocaleString("id-ID")} token (protected ~${protectedTokens.toLocaleString("id-ID")}).`;
+        for (const [toolCallId, v] of cachedToolResults) {
+          if (prunedToolResults.has(toolCallId)) continue;
+          const t = estimateTokens(v.text); keptTokens += t; if (v.priority >= 2) protectedTokens += t;
+        }
+        if (keptTokens > budgetTokens) {
+          badge = `\n⚠ Budget output tool (~${budgetTokens.toLocaleString("id-ID")} token) terlampaui: kept ~${keptTokens.toLocaleString("id-ID")} token (protected ~${protectedTokens.toLocaleString("id-ID")}).`;
         }
         if (lastPrunePrefixDirty) badge += "\n↻ Prefix berubah setelah pruning. Teks lebih sedikit belum tentu lebih murah karena cache hit dapat berkurang.";
       } catch {}
@@ -896,6 +953,7 @@ export default function (pi: ExtensionAPI) {
       const menu = [
         "Threshold karakter",
         "Threshold baris",
+        "Budget token output tool",
         "Budget output tool",
         "Reset ke default",
         "Selesai",
@@ -904,7 +962,7 @@ export default function (pi: ExtensionAPI) {
       while (true) {
         const choice = await ctx.ui.select(
           "Context Manager Config",
-          menu.map((item) => ["Threshold karakter", "Threshold baris", "Budget output tool"].includes(item)
+          menu.map((item) => ["Threshold karakter", "Threshold baris", "Budget token output tool", "Budget output tool"].includes(item)
             ? `${item} (${formatConfigValue(item, config)})`
             : item),
         );
@@ -924,17 +982,20 @@ export default function (pi: ExtensionAPI) {
 
         const isChars = choice.startsWith("Threshold karakter");
         const isLines = choice.startsWith("Threshold baris");
+        const isBudgetTokens = choice.startsWith("Budget token output tool");
         const isBudget = choice.startsWith("Budget output tool") || choice.startsWith("Budget context");
-        if (!isChars && !isLines && !isBudget) continue;
+        if (!isChars && !isLines && !isBudgetTokens && !isBudget) continue;
 
-        const label = isChars ? "threshold karakter" : isLines ? "threshold baris" : "budget output tool (%)";
+        const label = isChars ? "threshold karakter" : isLines ? "threshold baris" : isBudgetTokens ? "budget token output tool" : "batas budget output tool (% context window)";
         const currentValue = isChars
           ? config.outputCharThreshold
           : isLines
             ? config.outputLineThreshold
-            : config.contextBudgetPercent;
-        const min = isChars ? MIN_OUTPUT_CHAR_THRESHOLD : isLines ? MIN_OUTPUT_LINE_THRESHOLD : MIN_CONTEXT_BUDGET_PERCENT;
-        const max = isChars ? MAX_OUTPUT_CHAR_THRESHOLD : isLines ? MAX_OUTPUT_LINE_THRESHOLD : MAX_CONTEXT_BUDGET_PERCENT;
+            : isBudgetTokens
+              ? config.toolOutputBudgetTokens
+              : config.contextBudgetPercent;
+        const min = isChars ? MIN_OUTPUT_CHAR_THRESHOLD : isLines ? MIN_OUTPUT_LINE_THRESHOLD : isBudgetTokens ? MIN_TOOL_OUTPUT_BUDGET_TOKENS : MIN_CONTEXT_BUDGET_PERCENT;
+        const max = isChars ? MAX_OUTPUT_CHAR_THRESHOLD : isLines ? MAX_OUTPUT_LINE_THRESHOLD : isBudgetTokens ? MAX_TOOL_OUTPUT_BUDGET_TOKENS : MAX_CONTEXT_BUDGET_PERCENT;
         const input = await ctx.ui.input(
           `Atur ${label}`,
           `Nilai saat ini ${currentValue.toLocaleString("id-ID")}; rentang ${min.toLocaleString("id-ID")}–${max.toLocaleString("id-ID")}`,
@@ -951,6 +1012,7 @@ export default function (pi: ExtensionAPI) {
           ...config,
           ...(isChars ? { outputCharThreshold: value } : {}),
           ...(isLines ? { outputLineThreshold: value } : {}),
+          ...(isBudgetTokens ? { toolOutputBudgetTokens: value } : {}),
           ...(isBudget ? { contextBudgetPercent: value } : {}),
         };
         try {

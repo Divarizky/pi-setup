@@ -16,6 +16,12 @@ test("selectCompressionMode uses compact mode above 60 percent", () => {
   assert.equal(selectCompressionMode(undefined), "moderate");
 });
 
+test("selectCompressionMode stops preserving once absolute tokens are large", () => {
+  assert.equal(selectCompressionMode(10, 5_000), "preserve");
+  // 10% dari window 1M tetap 100k token yang ditagih penuh.
+  assert.equal(selectCompressionMode(10, 100_000), "moderate");
+});
+
 test("formatContextPercent handles known and unknown usage", () => {
   assert.equal(formatContextPercent(62.4), "62%");
   assert.equal(formatContextPercent(null), "tidak diketahui");

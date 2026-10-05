@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -392,7 +392,10 @@ test("execute streams live output into the partial tool renderer", async () => {
 
     const finalModelText = result.content[0]?.type === "text" ? result.content[0].text : "";
     assert.match(finalModelText, /\[context-manager\] Status: success/);
-    assert.match(finalModelText, /inspect:/);
+    // Output kecil dikirim utuh, tanpa ringkasan atau instruksi inspect.
+    assert.match(finalModelText, /live-start/);
+    assert.match(finalModelText, /live-end/);
+    assert.doesNotMatch(finalModelText, /inspect:|diringkas/);
     const cachedOutput = await new OutputCache().get(outputId!);
     assert.match(cachedOutput ?? "", /live-start/);
     assert.match(cachedOutput ?? "", /stderr-live/);
@@ -422,6 +425,150 @@ test("execute streams live output into the partial tool renderer", async () => {
     assert.match(renderedExpanded, /stderr-live/);
     assert.match(renderedExpanded, /live-end/);
     assert.match(renderedExpanded, /Full output/);
+  } finally {
+    if (outputId) await new OutputCache().remove(outputId);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("execute summarizes large output and points to inspect", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cm-large-output-"));
+  const execute = createExecuteTool();
+  let outputId: string | undefined;
+  try {
+    const result = await execute.execute(
+      "large-output-test",
+      { runtime: "javascript", script: "for (let i = 0; i < 2000; i++) console.log('line ' + i + ' ' + 'x'.repeat(20))" },
+      undefined,
+      undefined,
+      { cwd, hasUI: false } as any,
+    );
+    outputId = result.details?.contextManager?.outputId;
+    const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+    assert.match(text, /Status: success/);
+    assert.match(text, /inspect: \{ outputId:/);
+    assert.match(text, /diringkas/);
+    assert.ok(text.length <= 5_000);
+    assert.match(await new OutputCache().get(outputId!) ?? "", /line 1999/);
+  } finally {
+    if (outputId) await new OutputCache().remove(outputId);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("context pruning waits for budget overflow, then prunes down to low watermark", async () => {
+  const { handlers } = createExecuteHarness();
+  const toolResult = handlers.get("tool_result")!;
+  const context = handlers.get("context")!;
+  const ctx = {
+    hasUI: false,
+    getContextUsage: () => ({ tokens: 50_000, percent: 25, contextWindow: 200_000 }),
+  };
+  const messages: any[] = [];
+  const outputIds = new Set<string>();
+  // Output sedang: di bawah threshold ringkasan, tetap utuh tapi ikut budget.
+  const addResult = async (index: number) => {
+    const content = [{ type: "text", text: `result-${index}
+${"y".repeat(5_000)}` }];
+    const event = { toolName: "bash", toolCallId: `call-${index}`, input: { command: "cat x" }, content, isError: false };
+    const patch = await toolResult(event, ctx);
+    // Konten tetap utuh; hanya details yang ditambah agar terlacak setelah resume.
+    assert.equal(patch.content, undefined);
+    assert.match(patch.details.contextManager.outputId, /^output-[a-f0-9]{8}$/);
+    messages.push({ role: "toolResult", toolCallId: `call-${index}`, content });
+  };
+  const prunedCount = (result: any) => result.messages.filter((message: any) => {
+    const text = message.content[0].text as string;
+    const match = text.match(/outputId "(output-[a-f0-9]{8})"/);
+    if (match) outputIds.add(match[1]!);
+    return text.includes("Output lama dikeluarkan");
+  }).length;
+
+  try {
+    // 19 x ~1.250 token masih di bawah budget default 24.000: tidak ada pruning.
+    for (let i = 0; i < 19; i++) await addResult(i);
+    assert.equal(prunedCount(context({ messages }, ctx)), 0);
+
+    // Melewati budget: dipangkas sekaligus sampai <= 50% budget.
+    await addResult(19);
+    const afterOverflow = prunedCount(context({ messages }, ctx));
+    assert.ok(afterOverflow >= 10, `pruned ${afterOverflow}`);
+
+    // Output baru berikutnya tidak memicu pruning tambahan (prefix stabil).
+    await addResult(20);
+    assert.equal(prunedCount(context({ messages }, ctx)), afterOverflow);
+  } finally {
+    await Promise.all([...outputIds].map((id) => new OutputCache().remove(id)));
+  }
+});
+
+test("pruning decisions survive session resume", async () => {
+  const appended: any[] = [];
+  const handlers = new Map<string, (event: any, ctx: any) => any>();
+  const createExtension = () => {
+    handlers.clear();
+    contextManagerExtension({
+      on(event: string, handler: (event: any, ctx: any) => any) { handlers.set(event, handler); },
+      registerTool() {},
+      registerCommand() {},
+      appendEntry(customType: string, data: unknown) { appended.push({ type: "custom", customType, data }); },
+    } as any);
+  };
+  const ctx = {
+    hasUI: false,
+    getContextUsage: () => ({ tokens: 50_000, percent: 25, contextWindow: 200_000 }),
+  };
+  const messages: any[] = [];
+  const outputIds = new Set<string>();
+  const prunedIds = (result: any) => result.messages
+    .filter((message: any) => message.content[0].text.includes("Output lama dikeluarkan"))
+    .map((message: any) => message.toolCallId);
+
+  try {
+    createExtension();
+    for (let i = 0; i < 20; i++) {
+      const content = [{ type: "text", text: `result-${i}\n${"y".repeat(5_000)}` }];
+      const event = { toolName: "bash", toolCallId: `call-${i}`, input: { command: "cat x" }, content, isError: false };
+      const patch = await handlers.get("tool_result")!(event, ctx);
+      outputIds.add(patch.details.contextManager.outputId);
+      messages.push({ role: "toolResult", toolCallId: `call-${i}`, content, details: patch.details });
+    }
+    const before = prunedIds(handlers.get("context")!({ messages }, ctx));
+    assert.ok(before.length > 0);
+    assert.equal(appended.length, 1);
+
+    // Resume: instance baru, state hanya dari branch sesi.
+    createExtension();
+    const branch = [...messages.map((message) => ({ type: "message", message })), ...appended];
+    await handlers.get("session_start")!({}, {
+      ...ctx,
+      cwd: process.cwd(),
+      sessionManager: { getBranch: () => branch },
+    });
+    const after = prunedIds(handlers.get("context")!({ messages }, ctx));
+    assert.deepEqual(after, before);
+  } finally {
+    await Promise.all([...outputIds].map((id) => new OutputCache().remove(id)));
+  }
+});
+
+test("read summary and cache use the full file when built-in read truncated it", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "cm-read-full-"));
+  const { handlers, inspect } = createExecuteHarness();
+  let outputId: string | undefined;
+  try {
+    const full = Array.from({ length: 1_200 }, (_, i) => i === 1_099 ? "const LATE_MARKER = 1;" : `line ${i + 1} ${"z".repeat(50)}`).join("\n");
+    writeFileSync(join(cwd, "big.ts"), full);
+    // Simulasi read bawaan yang terpotong di tengah file.
+    const truncated = `${full.split("\n").slice(0, 800).join("\n")}\n\n[Showing lines 1-800 of 1200 (50.0KB limit). Use offset=801 to continue.]`;
+    const ctx = { cwd, hasUI: false, getContextUsage: () => ({ tokens: 50_000, percent: 40, contextWindow: 200_000 }) };
+    const patch = await handlers.get("tool_result")!({
+      toolName: "read", toolCallId: "read-1", input: { path: "big.ts" }, content: [{ type: "text", text: truncated }], isError: false,
+    }, ctx);
+    outputId = patch.details.contextManager.outputId;
+    assert.match(patch.content[0].text, /1200 baris/);
+    const found = await inspect.execute("inspect-1", { outputId, query: "LATE_MARKER" }, undefined, undefined, ctx);
+    assert.match(found.content[0].text, /1100: const LATE_MARKER = 1;/);
   } finally {
     if (outputId) await new OutputCache().remove(outputId);
     rmSync(cwd, { recursive: true, force: true });
