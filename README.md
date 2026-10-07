@@ -7,7 +7,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 **Extensions (11)**
 
 - `agent-memory` — Injeksi read-only `memory brief` ke system prompt dari vault Obsidian bersama (via skill `agent-memory`)
-- `provider-gateway` — Unified provider gateway (9Router, OpenCode Zen, Claude Pro/Max CLI, Antigravity, OpenAI Codex) dengan auto-deteksi CLI dan dukungan `node:sqlite`
+- `provider-gateway` — Unified provider gateway (9Router, OpenCode Zen, ZenRoute, Claude Pro/Max CLI, Antigravity, OpenAI Codex) dengan auto-deteksi CLI dan dukungan `node:sqlite`
 - `ask-user` — Multiple choice questions for the model
 - `context-manager` — Session context tracking, large-output caching/pruning, output-frame, dan execute/inspect tools
 - `copy-all` — Copy conversation to clipboard
