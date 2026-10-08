@@ -11,7 +11,7 @@
 // Login = `claude login` sekali di terminal. Tanpa token di auth.json.
 
 import { exec, execFile } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -744,7 +744,22 @@ async function runClaudeQuery(
     ...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
   };
   let wasAborted = false;
-  const sdkQuery = queryImpl({ prompt: promptStream.stream, options: queryOptions });
+  let sdkQuery: ReturnType<typeof queryImpl>;
+  try {
+    sdkQuery = queryImpl({ prompt: promptStream.stream, options: queryOptions });
+  } catch (error) {
+    promptStream.fail(error instanceof Error ? error : new Error(String(error)));
+    if (queryCtx.turnOutput) {
+      queryCtx.turnOutput.stopReason = "error";
+      queryCtx.turnOutput.errorMessage = error instanceof Error ? error.message : String(error);
+    }
+    const s = queryCtx.currentPiStream;
+    s?.push({ type: "error", reason: "error", error: queryCtx.turnOutput! });
+    markStreamComplete(s);
+    s?.end();
+    queryCtx.currentPiStream = null;
+    return;
+  }
   queryCtx.activeQuery = sdkQuery;
   activeQueryContexts.add(queryCtx);
   const abortCtx = queryCtx;
@@ -852,23 +867,31 @@ async function runIsolatedSummary(
     const cwd = process.cwd();
     const claudeExecutable = resolveClaudeExecutable();
     const cliModel = claudeCodeModelId(model, longContextSettings);
-    sdkQuery = queryImpl({
-      prompt: promptText,
-      options: {
-        cwd,
-        env: { ...process.env, ...CC_CHILD_ENV },
-        settings: { autoMemoryEnabled: false },
-        tools: [],
-        strictMcpConfig: true,
-        settingSources: [],
-        skills: [],
-        persistSession: false,
-        systemPrompt: context.systemPrompt,
-        model: cliModel,
-        maxTurns: 1,
-        ...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
-      },
-    });
+    try {
+      sdkQuery = queryImpl({
+        prompt: promptText,
+        options: {
+          cwd,
+          env: { ...process.env, ...CC_CHILD_ENV },
+          settings: { autoMemoryEnabled: false },
+          tools: [],
+          strictMcpConfig: true,
+          settingSources: [],
+          skills: [],
+          persistSession: false,
+          systemPrompt: context.systemPrompt,
+          model: cliModel,
+          maxTurns: 1,
+          ...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
+        },
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error.message : String(error);
+      stream.push({ type: "error", reason: "error", error: newAssistantOutput(model, "", "error", err) });
+      markStreamComplete(stream);
+      stream.end();
+      return;
+    }
     if (options?.signal) {
       if (options.signal.aborted) onAbort();
       else options.signal.addEventListener("abort", onAbort, { once: true });
@@ -914,21 +937,56 @@ async function runIsolatedSummary(
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
 
+function isRealExecutable(filePath: string): boolean {
+  try {
+    if (!existsSync(filePath)) return false;
+    const stat = statSync(filePath);
+    if (stat.size < 1024) return false;
+    if (process.platform === "win32") {
+      const fd = openSync(filePath, "r");
+      const buf = Buffer.alloc(2);
+      readSync(fd, buf, 0, 2, 0);
+      closeSync(fd);
+      return buf[0] === 0x4d && buf[1] === 0x5a;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Path absolut claude.exe global (npm i -g @anthropic-ai/claude-code). Dipakai
 // sebagai fallback saat PATH proses Pi tidak memuat %APPDATA%\npm (execFile
 // spawn langsung tanpa shell -> shim .cmd tidak bisa dieksekusi, ENOENT).
+// Memvalidasi binary asli (PE/MZ di Windows, bukan stub script npm ~500 byte).
 function globalClaudeExePath(): string | null {
   const appData = process.env.APPDATA;
-  if (!appData) return null;
-  const p = join(appData, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
-  return existsSync(p) ? p : null;
+  if (appData) {
+    const p = join(appData, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+    if (isRealExecutable(p)) return p;
+  }
+  const ext = process.platform === "win32" ? ".exe" : "";
+  const sdkPkgBinary = join(
+    homedir(),
+    ".pi",
+    "agent",
+    "npm",
+    "node_modules",
+    "@anthropic-ai",
+    `claude-agent-sdk-${process.platform}-${process.arch}`,
+    `claude${ext}`,
+  );
+  if (isRealExecutable(sdkPkgBinary)) return sdkPkgBinary;
+  return null;
 }
 
 // Satu-satunya path CLI yang dipakai query() SDK. Urutan: setting user
 // (claude-gateway.json pathToClaudeCodeExecutable) -> claude.exe global ->
 // biarkan SDK resolve biner bawaannya sendiri (undefined).
 function resolveClaudeExecutable(): string | undefined {
-  if (providerSettings.pathToClaudeCodeExecutable) return providerSettings.pathToClaudeCodeExecutable;
+  if (providerSettings.pathToClaudeCodeExecutable && isRealExecutable(providerSettings.pathToClaudeCodeExecutable)) {
+    return providerSettings.pathToClaudeCodeExecutable;
+  }
   return globalClaudeExePath() ?? undefined;
 }
 

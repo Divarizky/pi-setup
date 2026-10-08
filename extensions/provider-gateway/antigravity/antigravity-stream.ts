@@ -209,10 +209,13 @@ function isValidThoughtSignature(signature?: string): boolean {
 
 function geminiRequiresThoughtSignature(runtimeModel: string): boolean {
   if (!runtimeModel.startsWith("gemini-")) return false;
-  const match = runtimeModel.match(/^gemini-(\d+)/);
+  const match = runtimeModel.match(/^gemini-(\d+)(?:\.(\d+))?/);
   if (match) {
     const major = Number.parseInt(match[1], 10);
-    return major >= 3;
+    const minor = match[2] ? Number.parseInt(match[2], 10) : 0;
+    if (major > 2) return true;
+    if (major === 2 && minor >= 5) return true;
+    return false;
   }
   return true;
 }
