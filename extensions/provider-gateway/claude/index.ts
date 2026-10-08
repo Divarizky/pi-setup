@@ -10,8 +10,8 @@
 // Request keluar dari CLI first-party -> memotong kuota Pro/Max, bukan Extra Usage.
 // Login = `claude login` sekali di terminal. Tanpa token di auth.json.
 
-import { exec, execFile } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync } from "node:fs";
+import { exec, execFile, execFileSync } from "node:child_process";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -719,6 +719,26 @@ async function runClaudeQuery(
   const mcpServers = buildMcpServers(mcpTools, queryCtx);
   const strictMcpConfigEnabled = providerSettings.strictMcpConfig !== false;
   const claudeExecutable = resolveClaudeExecutable();
+  if (!claudeExecutable) {
+    // Jangan panggil SDK tanpa executable valid: SDK akan spawn buta dan
+    // gagal di jalur async internal-nya sebagai uncaughtException
+    // (spawn UNKNOWN/ENOENT) yang mematikan proses Pi.
+    const cmdHint = globalClaudeCmdPath()
+      ? ` Terdeteksi shim ${globalClaudeCmdPath()} — reinstall claude-code global atau set pathToClaudeCodeExecutable di claude-gateway.json ke binary asli.`
+      : " Install dulu via `npm i -g @anthropic-ai/claude-code`, lalu `claude login`.";
+    const err = new Error(`Claude CLI tidak bisa dijalankan dari proses Pi.${cmdHint}`);
+    promptStream.fail(err);
+    if (queryCtx.turnOutput) {
+      queryCtx.turnOutput.stopReason = "error";
+      queryCtx.turnOutput.errorMessage = err.message;
+    }
+    const s0 = queryCtx.currentPiStream;
+    s0?.push({ type: "error", reason: "error", error: queryCtx.turnOutput! });
+    markStreamComplete(s0);
+    s0?.end();
+    queryCtx.currentPiStream = null;
+    return;
+  }
   const mapped = options?.reasoning ? model.thinkingLevelMap?.[options.reasoning] : undefined;
   const effort = options?.reasoning
     ? mapped === undefined
@@ -741,10 +761,25 @@ async function runClaudeQuery(
     ...(effort ? { effort } : {}),
     ...(mcpServers ? { mcpServers } : {}),
     ...(resumeSessionId ? { resume: resumeSessionId } : {}),
-    ...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
+    pathToClaudeCodeExecutable: claudeExecutable,
   };
   let wasAborted = false;
-  const sdkQuery = queryImpl({ prompt: promptStream.stream, options: queryOptions });
+  let sdkQuery: ReturnType<typeof queryImpl>;
+  try {
+    sdkQuery = queryImpl({ prompt: promptStream.stream, options: queryOptions });
+  } catch (error) {
+    promptStream.fail(error instanceof Error ? error : new Error(String(error)));
+    if (queryCtx.turnOutput) {
+      queryCtx.turnOutput.stopReason = "error";
+      queryCtx.turnOutput.errorMessage = error instanceof Error ? error.message : String(error);
+    }
+    const s = queryCtx.currentPiStream;
+    s?.push({ type: "error", reason: "error", error: queryCtx.turnOutput! });
+    markStreamComplete(s);
+    s?.end();
+    queryCtx.currentPiStream = null;
+    return;
+  }
   queryCtx.activeQuery = sdkQuery;
   activeQueryContexts.add(queryCtx);
   const abortCtx = queryCtx;
@@ -851,24 +886,38 @@ async function runIsolatedSummary(
     if (!promptText) throw new Error("runIsolatedSummary: one-off summary without a user prompt");
     const cwd = process.cwd();
     const claudeExecutable = resolveClaudeExecutable();
+    if (!claudeExecutable) {
+      stream.push({ type: "error", reason: "error", error: newAssistantOutput(model, "", "error", "Claude CLI tidak bisa dijalankan dari proses Pi. Install via `npm i -g @anthropic-ai/claude-code`, lalu `claude login`.") });
+      markStreamComplete(stream);
+      stream.end();
+      return;
+    }
     const cliModel = claudeCodeModelId(model, longContextSettings);
-    sdkQuery = queryImpl({
-      prompt: promptText,
-      options: {
-        cwd,
-        env: { ...process.env, ...CC_CHILD_ENV },
-        settings: { autoMemoryEnabled: false },
-        tools: [],
-        strictMcpConfig: true,
-        settingSources: [],
-        skills: [],
-        persistSession: false,
-        systemPrompt: context.systemPrompt,
-        model: cliModel,
-        maxTurns: 1,
-        ...(claudeExecutable ? { pathToClaudeCodeExecutable: claudeExecutable } : {}),
-      },
-    });
+    try {
+      sdkQuery = queryImpl({
+        prompt: promptText,
+        options: {
+          cwd,
+          env: { ...process.env, ...CC_CHILD_ENV },
+          settings: { autoMemoryEnabled: false },
+          tools: [],
+          strictMcpConfig: true,
+          settingSources: [],
+          skills: [],
+          persistSession: false,
+          systemPrompt: context.systemPrompt,
+          model: cliModel,
+          maxTurns: 1,
+          pathToClaudeCodeExecutable: claudeExecutable,
+        },
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error.message : String(error);
+      stream.push({ type: "error", reason: "error", error: newAssistantOutput(model, "", "error", err) });
+      markStreamComplete(stream);
+      stream.end();
+      return;
+    }
     if (options?.signal) {
       if (options.signal.aborted) onAbort();
       else options.signal.addEventListener("abort", onAbort, { once: true });
@@ -914,22 +963,106 @@ async function runIsolatedSummary(
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
 
-// Path absolut claude.exe global (npm i -g @anthropic-ai/claude-code). Dipakai
-// sebagai fallback saat PATH proses Pi tidak memuat %APPDATA%\npm (execFile
-// spawn langsung tanpa shell -> shim .cmd tidak bisa dieksekusi, ENOENT).
-function globalClaudeExePath(): string | null {
-  const appData = process.env.APPDATA;
-  if (!appData) return null;
-  const p = join(appData, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
-  return existsSync(p) ? p : null;
+function isRealExecutable(filePath: string): boolean {
+  try {
+    if (!existsSync(filePath)) return false;
+    const stat = statSync(filePath);
+    if (stat.size < 1024) return false;
+    if (process.platform === "win32") {
+      const fd = openSync(filePath, "r");
+      const buf = Buffer.alloc(2);
+      readSync(fd, buf, 0, 2, 0);
+      closeSync(fd);
+      return buf[0] === 0x4d && buf[1] === 0x5a;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-// Satu-satunya path CLI yang dipakai query() SDK. Urutan: setting user
+// Kandidat path absolut CLI claude, sesuai urutan prioritas:
+// 1. claude.exe global (npm i -g @anthropic-ai/claude-code). Catatan: di
+//    Windows path ini sering hanya shim npm ~500 byte (bukan PE asli) yang
+//    tidak bisa di-spawn langsung tanpa shell -> ditolak isRealExecutable.
+// 2. Shim .cmd global — valid, tapi HANYA lewat shell (cmd.exe).
+// 3. Binary bawaan SDK (claude-agent-sdk-<platform>-<arch>/claude.exe).
+// Prioritas ini penting: shim global bisa lebih baru dari binary SDK,
+// tapi spawn tanpa shell wajib path PE asli. Dipakai sebagai fallback saat
+// PATH proses Pi tidak memuat %APPDATA%\npm.
+function globalClaudeExePath(): string | null {
+  const appData = process.env.APPDATA;
+  if (appData) {
+    const p = join(appData, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+    if (isRealExecutable(p)) return p;
+  }
+  const ext = process.platform === "win32" ? ".exe" : "";
+  const sdkPkgBinary = join(
+    homedir(),
+    ".pi",
+    "agent",
+    "npm",
+    "node_modules",
+    "@anthropic-ai",
+    `claude-agent-sdk-${process.platform}-${process.arch}`,
+    `claude${ext}`,
+  );
+  if (isRealExecutable(sdkPkgBinary)) return sdkPkgBinary;
+  return null;
+}
+
+// Shim .cmd global (npm). Tidak bisa di-spawn langsung tanpa shell
+// (spawn UNKNOWN/ENOENT), tapi valid dipakai dengan shell: true.
+function globalClaudeCmdPath(): string | null {
+  const appData = process.env.APPDATA;
+  if (process.platform === "win32" && appData) {
+    const p = join(appData, "npm", "claude.cmd");
+    try {
+      if (existsSync(p) && statSync(p).size >= 10) return p;
+    } catch { /* abaikan */ }
+  }
+  return null;
+}
+
+// Verifikasi satu spawn nyata (`--version`, timeout singkat). Binary yang
+// lolos cek file tapi gagal di-spawn (mis. rusak/terblokir, kasus
+// spawn UNKNOWN yang men-crash Pi) terdeteksi di sini, bukan saat turn.
+function probeExecutable(filePath: string, shell: boolean): boolean {
+  try {
+    execFileSync(filePath, ["--version"], {
+      timeout: 15_000,
+      stdio: ["ignore", "ignore", "ignore"],
+      shell: shell ? true : undefined,
+      windowsHide: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Satu-satunya resolver CLI yang dipakai query() SDK. Urutan: setting user
 // (claude-gateway.json pathToClaudeCodeExecutable) -> claude.exe global ->
-// biarkan SDK resolve biner bawaannya sendiri (undefined).
+// binary bawaan SDK. Hasil di-cache setelah satu probe spawn nyata
+// (`--version`); kandidat yang gagal di-spawn tidak dipakai agar turn tidak
+// men-crash Pi dengan spawn UNKNOWN/ENOENT. Kalau tidak ada yang valid,
+// kembalikan undefined dan biarkan pemanggil menolak turn dengan pesan
+// error ramah — jangan biarkan SDK spawn buta.
+let cachedClaudeExecutable: string | null | undefined;
 function resolveClaudeExecutable(): string | undefined {
-  if (providerSettings.pathToClaudeCodeExecutable) return providerSettings.pathToClaudeCodeExecutable;
-  return globalClaudeExePath() ?? undefined;
+  if (providerSettings.pathToClaudeCodeExecutable && isRealExecutable(providerSettings.pathToClaudeCodeExecutable)) {
+    return providerSettings.pathToClaudeCodeExecutable;
+  }
+  if (cachedClaudeExecutable !== undefined) return cachedClaudeExecutable ?? undefined;
+  const direct = globalClaudeExePath();
+  if (direct && probeExecutable(direct, false)) {
+    cachedClaudeExecutable = direct;
+    return direct;
+  }
+  // Shim .cmd tidak bisa dipakai SDK (spawn tanpa shell) — jangan kembalikan
+  // sebagai executable; hanya catat agar pesan error menyebutkannya.
+  cachedClaudeExecutable = null;
+  return undefined;
 }
 
 async function runClaudeCli(args: string[]): Promise<string> {

@@ -70,7 +70,7 @@ import {
  * Providers:
  *   9router    -> API key, OpenAI-compatible (kode dipindah dari 9router.ts)
  *   opencode-zen -> API key opsional, model gratis (kode dipindah dari 9router.ts)
- *   zenroute    -> API key (zr_...), gateway lokal port 20120
+ *   zenith      -> API key (zr_...), gateway lokal port 20120 (id auth lama "zenroute" masih dibaca)
  *   claude     -> Pro/Max via CLI resmi + Agent SDK (login = `claude login`)
  *   antigravity -> OAuth Google + model Gemini/Claude/GPT (vendored dari
  *     pi-antigravity v0.8.1 ke ./antigravity/*, boleh uninstall
@@ -83,10 +83,12 @@ const NINEROUTER_URL =
   process.env.NINEROUTER_URL ?? "http://localhost:20128";
 const ROUTER_PROVIDER_ID = "9router";
 const ROUTER_PROVIDER_NAME = "9Router";
-const ZENROUTE_URL =
-  process.env.ZENROUTE_URL ?? "http://127.0.0.1:20120";
-const ZENROUTE_PROVIDER_ID = "zenroute";
-const ZENROUTE_PROVIDER_NAME = "ZenRoute";
+const ZENITH_URL =
+  process.env.ZENITH_URL ?? process.env.ZENROUTE_URL ?? "http://127.0.0.1:20120";
+const ZENITH_PROVIDER_ID = "zenith";
+const ZENITH_PROVIDER_NAME = "Zenith Router";
+// ID auth lama "zenroute" tetap dibaca sebagai cadangan supaya key lama tidak hilang.
+const LEGACY_ZENROUTE_PROVIDER_ID = "zenroute";
 const OPENCODE_AUTH_ID = "opencode-zen";
 // ID provider OAuth direct lama — hanya untuk bersih-bersih sisa kredensial.
 const ANTHROPIC_PROVIDER_ID = "anthropic";
@@ -200,6 +202,10 @@ async function getApiKeyEntry(providerId: string): Promise<string | null> {
   return entry.type === "api_key" && typeof entry.key === "string" && entry.key.trim()
     ? entry.key.trim()
     : null;
+}
+
+async function getRouterApiKey(): Promise<string | null> {
+  return (await getApiKeyEntry(ZENITH_PROVIDER_ID)) ?? getApiKeyEntry(LEGACY_ZENROUTE_PROVIDER_ID);
 }
 
 function hasOAuthEntry(auth: AuthFile, providerId: string): boolean {
@@ -496,8 +502,8 @@ function registerRouterProvider(pi: ExtensionAPI, apiKey: string, models: Router
   pi.registerProvider(ROUTER_PROVIDER_ID, config);
 }
 
-async function getZenrouteModels(apiKey: string): Promise<RouterModel[]> {
-  const response = await fetch(`${ZENROUTE_URL}/v1/models`, {
+async function getZenithModels(apiKey: string): Promise<RouterModel[]> {
+  const response = await fetch(`${ZENITH_URL}/v1/models`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
   });
   if (!response.ok) {
@@ -508,20 +514,20 @@ async function getZenrouteModels(apiKey: string): Promise<RouterModel[]> {
   return json.data ?? [];
 }
 
-function registerZenrouteProvider(pi: ExtensionAPI, apiKey: string, models: RouterModel[]): void {
+function registerZenithProvider(pi: ExtensionAPI, apiKey: string, models: RouterModel[]): void {
   let lastModels: ProviderModelConfig[] | undefined;
   const config: ProviderConfig = {
-    name: ZENROUTE_PROVIDER_NAME,
-    baseUrl: `${ZENROUTE_URL}/v1`,
+    name: ZENITH_PROVIDER_NAME,
+    baseUrl: `${ZENITH_URL}/v1`,
     apiKey,
     authHeader: true,
     api: "openai-completions",
     models: toRouterModelDefs(models),
     async refreshModels(): Promise<ProviderModelConfig[]> {
-      const key = await getApiKeyEntry(ZENROUTE_PROVIDER_ID);
+      const key = await getRouterApiKey();
       if (!key) return lastModels ?? [];
       try {
-        const models = await getZenrouteModels(key);
+        const models = await getZenithModels(key);
         lastModels = toRouterModelDefs(models);
         return lastModels;
       } catch {
@@ -530,7 +536,7 @@ function registerZenrouteProvider(pi: ExtensionAPI, apiKey: string, models: Rout
     },
   };
   lastModels = config.models;
-  pi.registerProvider(ZENROUTE_PROVIDER_ID, config);
+  pi.registerProvider(ZENITH_PROVIDER_ID, config);
 }
 
 // --- Claude Pro/Max via Agent SDK (pengganti OAuth direct) ---
@@ -545,7 +551,7 @@ function registerZenrouteProvider(pi: ExtensionAPI, apiKey: string, models: Rout
 
 const CHOICE_ROUTER = "9Router (API key)";
 const CHOICE_ZEN = "OpenCode Zen (API key, opsional)";
-const CHOICE_ZENROUTE = "ZenRoute (API key)";
+const CHOICE_ZENITH = "Zenith Router (API key)";
 const CHOICE_CLAUDE = "Claude Pro/Max (CLI)";
 const CHOICE_ANTIGRAVITY = "Antigravity / Gemini (Google OAuth)";
 const CHOICE_OPENAI_CODEX = "OpenAI Codex (ChatGPT OAuth)";
@@ -558,7 +564,7 @@ async function gatewayLogin(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pro
   const choice = await ctx.ui.select("Pilih provider untuk login:", [
     CHOICE_ROUTER,
     CHOICE_ZEN,
-    CHOICE_ZENROUTE,
+    CHOICE_ZENITH,
     CHOICE_CLAUDE,
     CHOICE_ANTIGRAVITY,
     CHOICE_OPENAI_CODEX,
@@ -566,19 +572,20 @@ async function gatewayLogin(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pro
   if (!choice) return;
 
   try {
-    if (choice === CHOICE_ZENROUTE) {
-      const value = await ctx.ui.input("ZenRoute API key (zr_...):");
+    if (choice === CHOICE_ZENITH) {
+      const value = await ctx.ui.input("Zenith Router API key (zr_...):");
       if (!value?.trim()) {
-        ctx.ui.notify("ZenRoute API key update cancelled.", "warning");
+        ctx.ui.notify("Zenith Router API key update cancelled.", "warning");
         return;
       }
       const apiKey = value.trim();
-      const models = await getZenrouteModels(apiKey);
+      const models = await getZenithModels(apiKey);
       const auth = await readAuthFile();
-      auth[ZENROUTE_PROVIDER_ID] = { type: "api_key", key: apiKey };
+      auth[ZENITH_PROVIDER_ID] = { type: "api_key", key: apiKey };
+      delete auth[LEGACY_ZENROUTE_PROVIDER_ID];
       await writeAuthFile(auth);
-      registerZenrouteProvider(pi, apiKey, models);
-      ctx.ui.notify(`ZenRoute connected. Models: ${models.length}`, "info");
+      registerZenithProvider(pi, apiKey, models);
+      ctx.ui.notify(`Zenith Router connected. Models: ${models.length}`, "info");
       return;
     }
 
@@ -648,7 +655,7 @@ async function gatewayStatus(ctx: ExtensionCommandContext): Promise<void> {
   const auth = await readAuthFile();
   const routerKey = await getApiKeyEntry(ROUTER_PROVIDER_ID);
   const zenKey = await getApiKeyEntry(OPENCODE_AUTH_ID);
-  const zenrouteKey = await getApiKeyEntry(ZENROUTE_PROVIDER_ID);
+  const zenithKey = await getRouterApiKey();
   let claudeDetail = "CLI (claude login)";
   let claudeConnected = false;
   try {
@@ -673,7 +680,7 @@ async function gatewayStatus(ctx: ExtensionCommandContext): Promise<void> {
   const items = [
     { name: "9Router", connected: Boolean(routerKey), detail: routerKey ? maskApiKey(routerKey) : "" },
     { name: "OpenCode Zen", connected: Boolean(zenKey), detail: zenKey ? maskApiKey(zenKey) : "" },
-    { name: "ZenRoute", connected: Boolean(zenrouteKey), detail: zenrouteKey ? maskApiKey(zenrouteKey) : "" },
+    { name: "Zenith Router", connected: Boolean(zenithKey), detail: zenithKey ? maskApiKey(zenithKey) : "" },
     { name: "Claude Pro/Max", connected: claudeConnected, detail: claudeDetail },
     { name: "Antigravity", connected: antigravityOAuth, detail: antigravityDetail },
     { name: "OpenAI Codex", connected: openaiCodexOAuth, detail: openaiCodexOAuth ? "oauth" : "" },
@@ -704,7 +711,7 @@ async function gatewayLogout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pr
   const choice = await ctx.ui.select("Pilih kredensial untuk logout:", [
     CHOICE_ROUTER,
     CHOICE_ZEN,
-    CHOICE_ZENROUTE,
+    CHOICE_ZENITH,
     CHOICE_CLAUDE,
     CHOICE_ANTIGRAVITY,
     CHOICE_OPENAI_CODEX,
@@ -716,10 +723,11 @@ async function gatewayLogout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pr
     delete auth[ROUTER_PROVIDER_ID];
     await writeAuthFile(auth);
     pi.unregisterProvider(ROUTER_PROVIDER_ID);
-  } else if (choice === CHOICE_ZENROUTE) {
-    delete auth[ZENROUTE_PROVIDER_ID];
+  } else if (choice === CHOICE_ZENITH) {
+    delete auth[ZENITH_PROVIDER_ID];
+    delete auth[LEGACY_ZENROUTE_PROVIDER_ID];
     await writeAuthFile(auth);
-    try { pi.unregisterProvider(ZENROUTE_PROVIDER_ID); } catch { /* belum terdaftar */ }
+    try { pi.unregisterProvider(ZENITH_PROVIDER_ID); } catch { /* belum terdaftar */ }
   } else if (choice === CHOICE_ZEN) {
     delete auth[OPENCODE_AUTH_ID];
     await writeAuthFile(auth);
@@ -873,12 +881,12 @@ export default function (pi: ExtensionAPI): void {
         if (merged) registerRouterProvider(pi, apiKey, merged);
       }
 
-      const zenrouteApiKey = await getApiKeyEntry(ZENROUTE_PROVIDER_ID);
-      if (zenrouteApiKey) {
+      const zenithApiKey = await getRouterApiKey();
+      if (zenithApiKey) {
         try {
-          const models = await getZenrouteModels(zenrouteApiKey);
-          registerZenrouteProvider(pi, zenrouteApiKey, models);
-        } catch { /* zenroute belum jalan; snapshot kosong. */ }
+          const models = await getZenithModels(zenithApiKey);
+          registerZenithProvider(pi, zenithApiKey, models);
+        } catch { /* Zenith Router belum jalan; snapshot kosong. */ }
       }
 
       if (refreshTimer) clearInterval(refreshTimer);

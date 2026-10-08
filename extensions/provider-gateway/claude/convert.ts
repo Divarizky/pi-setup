@@ -39,18 +39,26 @@ export function sanitizeToolId(id: string, cache: Map<string, string>): string {
  *    same names for the same reason (piToolNameFor in index.ts).
  *  - **Without a map — the AskClaude path.** CC runs its own tools there, so
  *    builtin names are real, matching mapToolName in the other direction.
+ *
+ *  A blank name — an upstream model that emitted a tool call with no function
+ *  name — becomes UNKNOWN_TOOL_NAME. Anthropic rejects tool_use.name shorter
+ *  than one character (400 messages.N.content.N.tool_use.name), so returning
+ *  "" here would fail the whole rebuilt history on every subsequent turn.
  */
+export const UNKNOWN_TOOL_NAME = "unknown_tool";
+
 export function mapPiToolNameToSdk(name: string, customToolNameToSdk?: Map<string, string>): string {
-	if (!name) return "";
-	const normalized = name.toLowerCase();
+	const trimmed = typeof name === "string" ? name.trim() : "";
+	if (!trimmed) return UNKNOWN_TOOL_NAME;
+	const normalized = trimmed.toLowerCase();
 	// Pi history holds pi tool names. Our own SDK prefix can only reach here by
 	// feeding already-converted names back through the conversion, and prefixing
 	// twice invents a tool nobody serves.
 	if (normalized.startsWith(MCP_TOOL_PREFIX)) {
-		throw new Error(`mapPiToolNameToSdk: "${name}" is already an SDK tool name — pi history holds pi tool names`);
+		throw new Error(`mapPiToolNameToSdk: "${trimmed}" is already an SDK tool name — pi history holds pi tool names`);
 	}
-	if (!customToolNameToSdk) return PI_TO_SDK_TOOL_NAME[normalized] ?? pascalCase(name);
-	return customToolNameToSdk.get(name) ?? customToolNameToSdk.get(normalized) ?? `${MCP_TOOL_PREFIX}${name}`;
+	if (!customToolNameToSdk) return (PI_TO_SDK_TOOL_NAME[normalized] ?? pascalCase(trimmed)) || UNKNOWN_TOOL_NAME;
+	return customToolNameToSdk.get(trimmed) ?? customToolNameToSdk.get(normalized) ?? `${MCP_TOOL_PREFIX}${trimmed}`;
 }
 
 export function messageContentToText(
