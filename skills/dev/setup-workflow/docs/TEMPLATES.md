@@ -3,27 +3,25 @@
 Sumber tunggal bentuk semua file yang dilahirkan `setup-workflow`. Nama section dikunci — skill lain membaca struktur ini. Aturan umum:
 
 - Section bertanda `<!-- auto -->` boleh di-refresh; section tanpa marker = manual, `--refresh` tidak menyentuh
-- Target PROJECT.md ≤ ~100 baris; lebih → pindahkan isi ke CONTEXT.md (Aturan Split)
-- `--no-context`: section detail CONTEXT.md disisipkan ke PROJECT.md sebagai section tambahan tanpa marker
+- Target managed block AGENTS.md ≤ ~100 baris; lebih → pindahkan isi detail ke CONTEXT.md (Aturan Split)
+- `--no-context`: detail ringkas disisipkan ke managed block AGENTS.md sebagai section tambahan tanpa marker `<!-- auto -->`
 
 ---
 
-## PROJECT.md
+## AGENTS.md
 
-Path: `.workspace/context/PROJECT.md`
+Path: `AGENTS.md` (root project). Profil project dan quick reference untuk agent (otomatis dibaca oleh Pi dan Codex).
+Managed block dibatasi oleh `<!-- workflow:start -->` dan `<!-- workflow:end -->`. Isi manual user di luar blok tidak boleh disentuh. Target isi blok ≤ ~100 baris.
 
 ```markdown
+<!-- workflow:start -->
+# <project-name>
 
-# PROJECT — <name>
-
-Quick reference untuk agent — baca sebelum eksekusi skill di project ini.
-Precedence: instruksi user saat ini > file ini > CONTEXT.md > asumsi.
+Quick reference dan profil project untuk agent.
+Precedence: instruksi user saat ini > file ini > .workspace/context/CONTEXT.md > asumsi.
 
 ## Commands <!-- auto -->
 - <build/test/run — 1 baris per command>
-
-## File Map <!-- auto -->
-- <path> — <fungsi, 1 baris>
 
 ## Core Terms <!-- auto -->
 - <istilah> — <definisi ≤1 baris>
@@ -31,8 +29,43 @@ Precedence: instruksi user saat ini > file ini > CONTEXT.md > asumsi.
 ## Conventions <!-- auto -->
 - <pola/status yang sering dicek>
 
-## Advanced Details
-Domain/pattern/gotcha → `CONTEXT.md` · Security → `SECURITY.md` · Style → `CODE_STYLE.md` · Data → `DATABASE.md` · Endpoints → `API.md` · Requirement baseline → `SRS.md` · Work aktif → `work/F-<id>.md` · Progres → `TRACKER.md` · Keputusan final → `ADR.md`
+## Context & Details
+Domain/file map/pattern/gotcha → `.workspace/context/CONTEXT.md` · Security → `.workspace/context/SECURITY.md` · Style → `.workspace/context/CODE_STYLE.md` · Data → `.workspace/context/DATABASE.md` · Endpoints → `.workspace/context/API.md` · Requirement baseline → `.workspace/context/SRS.md` · Work aktif → `.workspace/work/F-<id>.md` · Progres → `.workspace/context/TRACKER.md` · Keputusan final → `.workspace/context/ADR.md`
+<!-- workflow:end -->
+```
+
+### Variasi `--no-context` (Project Kecil)
+Saat flag `--no-context` aktif, `.workspace/context/CONTEXT.md` dan stack docs detail tidak dibuat. Detail ringkas disisipkan langsung sebagai section tambahan tanpa marker `<!-- auto -->` di dalam managed block:
+
+```markdown
+<!-- workflow:start -->
+# <project-name>
+
+Quick reference dan profil project untuk agent.
+Precedence: instruksi user saat ini > file ini > asumsi.
+
+## Commands <!-- auto -->
+- <build/test/run — 1 baris per command>
+
+## Core Terms <!-- auto -->
+- <istilah> — <definisi ≤1 baris>
+
+## Conventions <!-- auto -->
+- <pola/status yang sering dicek>
+
+## Project Details
+- <domain, teknis, atau catatan ringkas — tanpa marker auto>
+<!-- workflow:end -->
+```
+
+---
+
+## CLAUDE.md
+
+Path: `CLAUDE.md` (root project). Pointer untuk Claude Code agar merujuk ke AGENTS.md yang sama tanpa duplikasi. Hanya dibuat jika `CLAUDE.md` belum ada di root.
+
+```markdown
+@AGENTS.md
 ```
 
 ---
@@ -44,7 +77,10 @@ Path: `.workspace/context/CONTEXT.md`
 ```markdown
 # CONTEXT — <name>
 
-Pengetahuan domain dan teknis project — lazy-load saat perlu. Quick ref ada di PROJECT.md.
+Pengetahuan domain dan teknis project — lazy-load saat perlu. Profil dan quick ref ada di `AGENTS.md`.
+
+## File Map <!-- auto -->
+- <path> — <fungsi dan peran file/folder dalam codebase>
 
 ## Domain Model <!-- auto -->
 ### <konsep>
@@ -71,7 +107,7 @@ Pengetahuan domain dan teknis project — lazy-load saat perlu. Quick ref ada di
 - <link eksternal / template / sample>
 ```
 
-Aturan: `CONTEXT.md` hanya berisi fakta domain, integrasi, pola kode, peta test, dan gotcha. Requirement normatif masuk SRS; keputusan final masuk ADR; progres masuk TRACKER. Setiap fakta penting menyebutkan `Source`. Definisi yang muat satu baris naikkan ke PROJECT.md (Aturan Split).
+Aturan: `CONTEXT.md` berisi pengetahuan teknis lengkap, file map, domain model, integrasi, pola kode, peta test, gotcha, dan keputusan historis. Requirement normatif masuk SRS; keputusan final masuk ADR; progres masuk TRACKER. Setiap fakta penting menyebutkan `Source`. Quick ref ringkas masuk ke managed block `AGENTS.md` (Aturan Split).
 
 ---
 

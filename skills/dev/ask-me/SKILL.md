@@ -45,7 +45,7 @@ Urutan prioritas:
 | "kerjakan task X", "lanjut task berikutnya", "implement task dari work card" | `implement` |
 | "error", "bug", "crash", "gagal", "lambat", stack trace | `bug-diagnosis` |
 | "resolve conflict", "ada conflict", "CONFLICT", "konflik merge" | `merge-conflict` |
-| "buat requirements", "buat PRD", "dokumentasikan fitur ini", "tulis spec" | `to-requirements` |
+| "buat requirements", "tulis spec", "dokumentasikan requirement fitur ini", "susun requirement fitur ini" | `to-requirements` |
 | "pecah jadi task", "breakdown plan ini", "buat daftar task" | `to-tasks` |
 | "refactor", "kode susah dibaca", "modul berantakan" (same project) | `improve-architecture` |
 | "migrasi", "pindah project lama", "port ke project baru" | `setup-workflow` → `project-migration` |
@@ -110,10 +110,10 @@ Tidak ada file atau artifact workflow yang dibuat oleh General Grill.
 
 Permintaan eksplisit **Grill Dalam** melewati General Grill setelah topik tersedia. Untuk topik non-dev, gunakan pertanyaan domain, tujuan, constraint, dependency, dan opsi tindakan yang relevan; jangan memaksakan routing ke skill dev. Untuk topik coding/project, lanjutkan dengan Dev Grill berikut:
 
-Gunakan Context Resolver. Baca `PROJECT.md`, `CONTEXT.md`, dan `ADR.md` hanya jika tersedia. Dalam Universal mode, gunakan context percakapan dan file project relevan; jangan membuat atau memperbarui context artifact. Tanya satu per satu, skip yang jelas:
+Gunakan Context Resolver. Baca `AGENTS.md` (root), `CONTEXT.md`, dan `ADR.md` hanya jika tersedia. Dalam Universal mode, gunakan context percakapan dan file project relevan; jangan membuat atau memperbarui context artifact. Tanya satu per satu, skip yang jelas:
 
 1. **Behavior** — "Apa yang harus terjadi dari sisi user?"
-2. **Terminologi** — "Istilah baru atau sinonim existing?" — validasi vs PROJECT.md
+2. **Terminologi** — "Istilah baru atau sinonim existing?" — validasi vs AGENTS.md/CONTEXT.md
 3. **Scope** — "Satu modul atau lintas modul?"
 4. **Constraint** — "Batasan teknis/bisnis?"
 5. **Priority** — "MUST (critical path) atau NICE?"
@@ -123,7 +123,7 @@ Istilah baru → Project mode: update file inline mengikuti **Aturan Split** di 
 ### Deep Grill (large scope / ambiguous / new project)
 
 **Mode Sharpen** (existing project, scope besar/ambigu):
-1. Domain model — "Istilah kunci? Bentrok PROJECT.md?"
+1. Domain model — "Istilah kunci? Bentrok AGENTS.md/CONTEXT.md?"
 2. Keputusan arsitektur — "Hard to reverse?" → ADR kalau lolos 3 filter
 3. Validasi kode — "Klaim cocok kode existing?" → eksplorasi codebase
 4. Dependency — "Bergantung ke apa? Ada seam?"
@@ -133,10 +133,10 @@ Istilah baru → Project mode: update file inline mengikuti **Aturan Split** di 
 - Interview loop: 1 pertanyaan/giliran, rekomendasi jawaban
 - **Max 15 pertanyaan** → tanya "Lanjut? (y/n)"
 - Fokus: terminology inti, konsep, hubungan entitas, batasan sistem, dan pilihan stack/konvensi
-- Project mode: output ke PROJECT.md (quick) + CONTEXT.md (detail) + ADR pertama — ikuti **Aturan Split**. Tulis stack linter/bahasa ke `CODE_STYLE.md`; kebutuhan awal auth/data/API dicatat sebagai Global Requirements SRS (`GR-xx`) atau rencana di CONTEXT.md, bukan spekulasi final di `SECURITY/DATABASE/API.md` (file stack docs dibuat lazy saat fitur approved via `to-requirements`).
+- Project mode: output ke managed block AGENTS.md (quick) + CONTEXT.md (detail) + ADR pertama — ikuti **Aturan Split**. Tulis stack linter/bahasa ke `CODE_STYLE.md`; kebutuhan awal auth/data/API dicatat sebagai Global Requirements SRS (`GR-xx`) atau rencana di CONTEXT.md, bukan spekulasi final di `SECURITY/DATABASE/API.md` (file stack docs dibuat lazy saat fitur approved via `to-requirements`).
 - Universal mode: tampilkan hasil domain model di chat dan catat statusnya di respons; jangan membuat file
 
-Aturan kedua mode: eksplorasi codebase dulu kalau bisa jawab. Tulis ke PROJECT.md/CONTEXT.md hanya dalam Project mode; Universal mode tetap chat-only.
+Aturan kedua mode: eksplorasi codebase dulu kalau bisa jawab. Tulis ke AGENTS.md/CONTEXT.md hanya dalam Project mode; Universal mode tetap chat-only.
 
 ### Determine Route
 

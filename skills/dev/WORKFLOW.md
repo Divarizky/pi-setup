@@ -24,7 +24,7 @@ Mode default jika `.workspace/project-meta.md` tidak tersedia, atau user secara 
 
 Mode otomatis jika `.workspace/project-meta.md` tersedia dan user tidak meminta Universal mode.
 
-- Konteks: percakapan aktif ditambah `.workspace/context/PROJECT.md`, `CONTEXT.md`, `SRS.md`, dan `ADR.md` bila tersedia.
+- Konteks: percakapan aktif ditambah `AGENTS.md` (root, otomatis), `.workspace/context/CONTEXT.md`, `SRS.md`, dan `ADR.md` bila tersedia.
 - Persist state ke `.workspace/` sesuai ownership artifact.
 - Gunakan work card `.workspace/work/F-<id>.md`, SRS, tracker, dan handoff untuk lintas sesi. Work card boleh dihapus setelah requirement approved tersimpan di SRS dan task selesai.
 - Artifact yang sudah ada dibaca sebelum membuat atau memperbaruinya.
@@ -43,11 +43,13 @@ Ketiadaan project metadata bukan alasan untuk menghentikan workflow biasa. Skill
 Aturan operasional ada di [shared/COMMON.md#context-resolver](shared/COMMON.md#context-resolver). Baca sumber dalam urutan berikut, hanya jika tersedia:
 
 1. Instruksi dan keputusan dari percakapan aktif.
-2. File project yang relevan di current directory.
-3. Git status, diff, dan history bila tersedia.
-4. `.workspace/context/PROJECT.md`, `CONTEXT.md`, `ADR.md`, dan `.workspace/context/SRS.md`.
-5. Stack docs conditional (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`) bila relevan dengan scope pekerjaan.
-6. Artifact workflow lain yang relevan (work card, handoff, migration meta).
+2. `AGENTS.md` (root) — profil project dan quick reference (sudah dimuat otomatis).
+3. `.workspace/context/CONTEXT.md` — domain model, file map, integrasi, pattern, testing map, gotchas.
+4. `.workspace/context/SRS.md` — baseline requirement global dan requirement fitur approved.
+5. `.workspace/context/ADR.md` — constraint dan keputusan arsitektur final.
+6. Stack docs conditional (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`) bila relevan dengan scope pekerjaan.
+7. File project dan Git status/diff bila relevan.
+8. Artifact workflow lain yang relevan (work card `work/F-<id>.md`, tracker, handoff).
 
 Jangan mengarang isi context yang tidak tersedia. Nyatakan keterbatasannya bila ada stack docs yang belum aktif (`has_*: false`).
 
@@ -59,8 +61,8 @@ ask-me
   ├─ fitur besar → to-requirements → to-tasks → implement → code-review → git-commit
   ├─ bug sulit → bug-diagnosis → code-review → git-commit
   ├─ merge conflict → merge-conflict → git-commit
-  ├─ desain belum jelas → prototype → to-tasks / implement
-  ├─ arsitektur → improve-architecture → implement
+  ├─ desain belum jelas → prototype (project mode: work card via to-requirements pattern dulu) → to-tasks / implement
+  ├─ arsitektur → improve-architecture → to-tasks / implement (refactor satu langkah boleh langsung implement)
   └─ migrasi → setup-workflow → project-migration → implement / bug-diagnosis
 ```
 

@@ -45,7 +45,7 @@ Catat keputusan ke `meta.md`.
 
 ## Step 3 — Context Intake
 
-Lihat `docs/CONTEXT-SCAN.md`. Scan struktur folder, dependency, pattern arsitektur project **lama** (pakai `migration_source` path). Baca `.workspace/context/PROJECT.md` (quick) + `.workspace/context/CONTEXT.md` (detail) + `.workspace/context/ADR.md` project baru — jangan re-litigasi keputusan final tanpa alasan kuat.
+Lihat `docs/CONTEXT-SCAN.md`. Scan struktur folder, dependency, pattern arsitektur project **lama** (pakai `migration_source` path). Baca `AGENTS.md` (root) + `.workspace/context/CONTEXT.md` (detail) + `.workspace/context/ADR.md` project baru — jangan re-litigasi keputusan final tanpa alasan kuat.
 
 ## Step 4 — Risk Register
 
@@ -68,7 +68,7 @@ Sebelum ubah kode: belum ada test di area disentuh → tulis characterization te
 
 ## Step 7 — Migrate
 
-Eksekusi slice sesuai Step 5. Update `.workspace/context/PROJECT.md` inline kalau modul dinamai konsep baru.
+Eksekusi slice sesuai Step 5. Update `AGENTS.md` (managed block) / `.workspace/context/CONTEXT.md` inline kalau modul dinamai konsep baru.
 
 Jika slice migrasi memperkenalkan atau mengubah model data, endpoint contract, konfigurasi auth/secrets, atau stack konvensi di project baru:
 - Sinkronkan perubahan faktual ke section `<!-- auto -->` pada stack doc terkait (`DATABASE.md`, `API.md`, `SECURITY.md`, `CODE_STYLE.md`).

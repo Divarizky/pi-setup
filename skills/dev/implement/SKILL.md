@@ -31,7 +31,7 @@ Sebelum mencari input atau mengubah state:
 
 ## Step 1 — Find Input (priority)
 
-1. **Konteks percakapan** — behavior jelas dari grill `ask-me` / diskusi → langsung Step 3 (TDD), skip Step 2.
+1. **Konteks percakapan** — behavior jelas dari grill `ask-me` / diskusi → tulis mini-spec 2–3 baris (behavior + minimal 2 Done criteria) inline di respons, lalu langsung Step 3 (TDD), skip Step 2. Mini-spec ini menjadi `Ref`/`Done` untuk `code-review` Step 4.
 2. **Task persisted** — cari work card di path yang sudah disepakati atau `.workspace/work/F-<id>.md` jika Project mode. Ambil task eligible di `## Tasks` → `### Queue` (Depends sudah `[x]` di `### Done`).
    - ≥2 task bertanda `Parallel: yes` → jadikan kandidat batch (maks 3), lalu lakukan preflight Step 2b **sebelum** memindahkan status di Step 2. Penanda lama bukan keputusan final.
    - Jika tidak ada batch yang lolos preflight, lanjut Step 2 untuk satu task eligible dan jalankan Step 3 sequential.
@@ -79,7 +79,7 @@ Adjust by type:
 
 ### Implementation Notes
 
-- Gunakan vocabulary dari `PROJECT.md`/`CONTEXT.md` bila tersedia, dan hormati `ADR.md` bila ada
+- Gunakan vocabulary dari `AGENTS.md` (root)/`CONTEXT.md` bila tersedia, dan hormati `ADR.md` bila ada
 - Baca stack docs relevan (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`) jika aktif:
   - Patuhi aturan `SECURITY.md`: dilarang mematikan auth, membypass otorisasi, atau memasukkan secret di kode/`.md`
   - Patuhi `CODE_STYLE.md`: ikuti konvensi penamaan dan jalankan checklist verifikasi sebelum selesai
@@ -91,11 +91,11 @@ Adjust by type:
 
 ### Stage Changes
 
-Implement tidak otomatis men-stage apa pun — file baru maupun edit tetap unstaged sampai `git add` eksplisit. Sebelum review, tampilkan daftar file yang akan di-stage dan scope-nya. Jalankan `git add <path>` hanya setelah user mengonfirmasi jika staging belum diminta secara spesifik. Bukan repo git → skip. Jangan stage file di luar scope task; file untracked yang tidak dikenal biarkan user putuskan. Setelah staging, verifikasi `git status` dan `git diff --staged` hanya untuk memastikan target yang disetujui masuk.
+Implement tidak otomatis men-stage apa pun — file baru maupun edit tetap unstaged sampai `git add` eksplisit. Sebelum review, tampilkan daftar file yang akan di-stage dan scope-nya. Konfirmasi staging boleh dilewati bila semua file berada dalam scope task yang sudah di-approve dan tidak ada file untracked yang tidak dikenal; jika ada file di luar scope atau untracked asing, wajib konfirmasi user dulu. Jalankan `git add <path>` eksplisit per file. Bukan repo git → skip. Jangan stage file di luar scope task; file untracked yang tidak dikenal biarkan user putuskan. Setelah staging, verifikasi `git status` dan `git diff --staged` hanya untuk memastikan target yang disetujui masuk.
 
 ### Delegate to `code-review`
 
-Pass spec (work card `Detail` + `Ref` + `Done` criteria atau grill behavior+terminologi) sebagai text inline. **Sertakan Ref dan Done criteria**. Sumber diff: `staged` — `code-review` menjalankan pre-check kelengkapan staged sendiri di Step 1.
+Pass spec (work card `Detail` + `Ref` + `Done` criteria, atau mini-spec Step 1 untuk input percakapan) sebagai text inline dalam paket chain [Chain Pattern](../shared/COMMON.md#chain-pattern). **Sertakan Ref dan Done criteria**. Catat `Reviewed Snapshot` dari output review agar `git-commit` bisa memakai ulang verdict `PASS`. Sumber diff: `staged` — `code-review` menjalankan pre-check kelengkapan staged sendiri di Step 1.
 
 `code-review` `disable-model-invocation: true` → **baca `code-review/SKILL.md`, jalankan Step 1-5 manual** di sesi yang sama.
 

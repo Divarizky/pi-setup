@@ -38,7 +38,7 @@ Sebelum write pertama, tampilkan preview target, file yang akan disentuh, dan da
 
 ## Before Starting
 
-Gunakan Context Resolver dari `../shared/COMMON.md`. Baca `.workspace/context/PROJECT.md`, `CONTEXT.md`, dan `ADR.md` hanya jika tersedia. Universal mode memakai percakapan, file project, dan Git yang tersedia; jangan membuat context artifact.
+Gunakan Context Resolver dari `../shared/COMMON.md`. Baca `AGENTS.md` (root), `CONTEXT.md`, dan `ADR.md` hanya jika tersedia. Universal mode memakai percakapan, file project, dan Git yang tersedia; jangan membuat context artifact.
 
 Project mode tidak memiliki artifact diagnosis khusus. Jangan membuat atau memperbarui artifact workflow kecuali ada kontrak ownership yang eksplisit; Universal mode selalu chat-only.
 
@@ -134,6 +134,8 @@ Status: <complete | partial | blocked | cancelled>
 Risks/Limitations: <none atau daftar singkat>
 Next Step: <aksi yang disarankan, tanpa auto-apply>
 ```
+
+Rantai: jika diagnosis mengubah file, Next Step = `code-review` (sumber diff eksplisit) lalu `git-commit`. Jika diagnosis-only, Next Step = aksi perbaikan yang disarankan.
 
 ## AFK
 

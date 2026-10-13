@@ -47,7 +47,7 @@ Prioritaskan critical path + logic kompleks, bukan coverage.
 ## Other
 
 Mode dan context:
-- Project: gunakan istilah dari `.workspace/context/PROJECT.md` jika tersedia.
+- Project: gunakan istilah dari `AGENTS.md` (root) / `.workspace/context/CONTEXT.md` jika tersedia.
 - Universal: gunakan istilah dari percakapan, source code, atau spec yang user
   berikan; jangan membuat context artifact.
 

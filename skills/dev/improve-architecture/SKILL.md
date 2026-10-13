@@ -29,7 +29,7 @@ Cari tanda shallow (lihat [Vocabulary](../shared/VOCABULARY.md#architecture)):
 - Modul bocor lintas seam
 - Konsep butuh buka banyak file buat dipahami
 
-Kandidat pakai istilah domain dari `PROJECT.md` (+ `CONTEXT.md` untuk detail) jika tersedia: "Deepen the Order intake module", bukan "refactor FooBarHandler". Jika tidak tersedia, gunakan istilah yang terlihat dari source code dan nyatakan keterbatasannya.
+Kandidat pakai istilah domain dari `AGENTS.md` root (+ `CONTEXT.md` untuk detail) jika tersedia: "Deepen the Order intake module", bukan "refactor FooBarHandler". Jika tidak tersedia, gunakan istilah yang terlihat dari source code dan nyatakan keterbatasannya.
 
 ## Report, Then Interview
 
@@ -65,7 +65,7 @@ Klasifikasi dependency (dasar solusi):
 
 Gunakan Context Resolver dan baca `.workspace/context/ADR.md` hanya jika tersedia — jangan re-litigasi keputusan lama. Munculkan konflik ADR cuma kalau friksi nyata cukup dipertimbangkan ulang.
 
-Setelah laporan → berhenti, tanya kandidat mana mau di-interview. User pilih satu → interview: constraint, apa di balik seam, test apa yang bertahan. Project mode: update `.workspace/context/PROJECT.md` inline jika modul dinamai konsep baru. Universal mode: tampilkan definisi/keputusan di chat, jangan menulis context artifact. Tawarkan ADR kalau user tolak kandidat dengan alasan load-bearing.
+Setelah laporan → berhenti, tanya kandidat mana mau di-interview. User pilih satu → interview: constraint, apa di balik seam, test apa yang bertahan. Project mode: update `AGENTS.md` (managed block) / `CONTEXT.md` inline jika modul dinamai konsep baru. Universal mode: tampilkan definisi/keputusan di chat, jangan menulis context artifact. Tawarkan ADR kalau user tolak kandidat dengan alasan load-bearing.
 
 **Escape hatch**: interview >8 pertanyaan masih bergulir → sarankan `handoff` ke sesi baru. Jangan paksa selesai 1 sesi.
 
@@ -73,7 +73,7 @@ Setelah laporan → berhenti, tanya kandidat mana mau di-interview. User pilih s
 
 ## Where It Fits
 
-**Periodic maintenance** — tiap beberapa hari, bukan step dalam chain.
+**Periodic maintenance** — tiap beberapa hari, bukan step dalam chain. Kandidat yang disetujui dan butuh lebih dari satu langkah → `to-tasks`; refactor satu langkah → langsung `implement`.
 
 Kombinasi relevan:
 - `bug-diagnosis` — temuan arsitektur saat debug jadi kandidat

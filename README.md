@@ -36,6 +36,45 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `to-requirements` — Synthesize approved requirements into SRS and feature work cards
 - `to-tasks` — Break approved feature work into vertical-slice tasks
 
+### Dev Workflow Architecture
+
+```mermaid
+flowchart TD
+    classDef gate fill:#f97316,stroke:#c2410c,stroke-width:2px,color:#fff;
+    classDef review fill:#8b5cf6,stroke:#6d28d9,stroke-width:2px,color:#fff;
+    classDef build fill:#0284c7,stroke:#0369a1,stroke-width:2px,color:#fff;
+    classDef context fill:#059669,stroke:#047857,stroke-width:2px,color:#fff;
+
+    USER([Developer Request]) --> ASK[ask-me<br/><i>Intent Router + Grill 3-5 Qs</i>]:::gate
+
+    %% Cabang Alur
+    ASK -->|Fitur Besar| REQ[to-requirements<br/><i>EARS + Work Card F-id</i>]:::build
+    ASK -->|Fitur Kecil| IMP[implement<br/><i>TDD Red-Green-Refactor</i>]:::build
+    ASK -->|Bug Sulit| BUG[bug-diagnosis<br/><i>Vertical Repro + RCA</i>]:::build
+    ASK -->|Desain Ragu| PROTO[prototype<br/><i>LOGIC / UI Spike</i>]:::build
+    ASK -->|Debt / Coupling| ARCH[improve-architecture<br/><i>Audit & Refactor Scan</i>]:::build
+    ASK -->|Conflict Aktif| CONF[merge-conflict<br/><i>Guided Hunk Resolution</i>]:::build
+    ASK -->|Migrasi Codebase| SETUP[setup-workflow<br/><i>Init AGENTS + Context</i>]:::context
+
+    %% Pipeline Spec & Plan
+    REQ -->|Approval Gate| TASK[to-tasks<br/><i>Vertical Slices + TRACKER</i>]:::build
+    TASK --> IMP
+    PROTO -->|Keputusan Solid| IMP
+    ARCH -->|Kandidat Terpilih| IMP
+    SETUP --> MIG[project-migration<br/><i>State di .workspace/migration</i>]:::context
+    MIG --> IMP
+
+    %% Pipeline Verifikasi & Delivery
+    IMP -->|Diff Ready| REV[code-review<br/><i>Spec + Style + Security</i>]:::review
+    BUG -->|Fix Ready| REV
+    
+    REV -->|REVISE| IMP
+    REV -->|PASS Verdict| COMMIT[git-commit<br/><i>Snapshot Reuse + Gitleaks</i>]:::gate
+    CONF -->|Resolved| COMMIT
+    
+    COMMIT --> DONE([Clean Repo State]):::gate
+```
+
 **Themes (3)**
 
 - `catppuccin-mocha` — tema Mocha

@@ -23,6 +23,19 @@ Nama file: timestamp (`YYYY-MM-DD-HHmm`) + slug deskriptif singkat — jam menit
 
 ## Step 2 — Fill Handoff
 
+Dokumen Project wajib diawali frontmatter berikut agar `status` dan sesi berikutnya bisa lanjut deterministik:
+
+```yaml
+---
+feature: F-<id> | none
+task: TASK-<id> | none
+phase: <requirements | tasks | implement | review | commit | diagnosis | prototype>
+next_skill: <salah satu Suggested Skills>
+branch: <nama branch>
+head: <hash HEAD saat handoff>
+---
+```
+
 Isi berikut berlaku untuk dokumen Project maupun ringkasan chat Universal:
 
 - Ringkasan progres saat ini

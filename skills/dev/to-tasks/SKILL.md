@@ -51,7 +51,7 @@ Universal mode: tentukan existing/new dari current directory dan file yang terli
 
 **Existing** (`status: existing`):
 - Eksplorasi codebase terfokus — 5 file atau 3 menit. Cari layer stack dari struktur folder
-- Judul & deskripsi pakai vocabulary `PROJECT.md` (+ `CONTEXT.md` untuk detail), respect `ADR.md`
+- Judul & deskripsi pakai vocabulary `AGENTS.md` (root) (+ `CONTEXT.md` untuk detail), respect `ADR.md`
 
 **New** (`status: new` / greenfield):
 - Tidak perlu eksplorasi — belum ada kode

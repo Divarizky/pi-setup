@@ -68,14 +68,16 @@ Ikuti aturan [WORKFLOW.md](../WORKFLOW.md#mode-selection):
 
 ### 3. Read Sources Conditionally
 
-Gunakan sumber sesuai jenis informasinya, bukan satu urutan global:
+Gunakan sumber sesuai jenis informasinya, dengan urutan resolusi context berikut bila dibutuhkan:
 
-- **Instruksi user saat ini** — prioritas tertinggi untuk tujuan dan aksi sesi ini.
-- **ADR** — constraint dan keputusan arsitektur final; jangan ubah tanpa alasan eksplisit.
-- **AGENT/CONTEXT** — vocabulary, konvensi, pola, dan detail project.
-- **File project dan Git** — fakta aktual tentang kode, perubahan, dan struktur.
-- **Artifact workflow** — status requirements, task, handoff, dan keputusan yang sudah dipersist.
-- **Stack docs conditional (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`)** — aturan proteksi, style, data model, dan endpoint contract; baca hanya jika relevan dengan tugas.
+1. **Instruksi user saat ini** — prioritas tertinggi untuk tujuan dan aksi sesi ini.
+2. **AGENTS.md** (root) — profil project, command cheatsheet, konvensi, istilah inti, dan pointer (otomatis dimuat per turn oleh Pi/Codex).
+3. **CONTEXT.md** (`.workspace/context/CONTEXT.md`) — domain model, file map, integrasi, pattern kode, peta test, gotcha, dan riwayat keputusan teknis (lazy-load saat perlu).
+4. **SRS.md** (`.workspace/context/SRS.md`) — baseline requirement global dan requirement fitur approved.
+5. **ADR.md** (`.workspace/context/ADR.md`) — constraint dan keputusan arsitektur final; jangan ubah tanpa alasan eksplisit.
+6. **Stack docs conditional (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`)** — aturan proteksi, style, data model, dan endpoint contract; baca hanya jika relevan dengan tugas.
+7. **File project dan Git** — fakta aktual tentang kode, perubahan, dan struktur.
+8. **Artifact workflow** — status requirements, task (`work/F-<id>.md`), tracker (`TRACKER.md`), handoff, dan keputusan yang sudah dipersist.
 
 ### Protocol Missing Stack Docs
 
@@ -85,6 +87,7 @@ Jika suatu stack doc belum ada (`has_<doc>: false` atau file tidak ditemukan di 
 - **to-requirements**: Wajib menyertakan minimal 1 Acceptance Criteria bootstrap (misal: migrasi skema berhasil, endpoint base terpasang, aturan auth/env aktif). Saat requirement di-approve, `to-requirements` membuat file doc terkait dari skeleton template, mengisinya HANYA dengan item yang di-approve, dan memperbarui flag di `project-meta.md` menjadi `true`.
 - **to-tasks**: Slice pertama wajib berupa vertical slice bootstrap yang menembus layer baru tersebut (bukan sekadar UI tanpa data).
 - **implement**: Periksa kode nyata terlebih dahulu; jika infrastruktur belum ada, bangun melalui alur resmi (misal migration runner); dilarang hardcode kredensial atau mereset database. Setelah review pass, sinkronkan perubahan aktual ke file stack doc (hanya section `<!-- auto -->`).
+- **Aturan Source**: setiap bullet di section `<!-- auto -->` wajib mencantumkan `Source: <path relatif dari work_root>` yang benar-benar ada dan diverifikasi isinya. Klaim tanpa Source yang terverifikasi dilarang — tulis sebagai `Proposed:` di work card, bukan sebagai fakta di stack doc. Pengecualian: item yang sudah approved tapi belum dibangun (lazy generation `to-requirements`) memakai `Source: .workspace/work/F-<id>.md (planned)`; `implement` menggantinya dengan path kode nyata setelah review pass.
 - **Universal mode**: Karena Universal mode tidak menulis file, usulkan kontrak/model di chat dan sarankan `setup-workflow` jika user membutuhkan persistence dokumen antar sesi.
 
 Aturan baca:
@@ -148,6 +151,8 @@ Setelah maks **3 siklus gagal** (hypothesis→instrument→gagal, atau RED→GRE
 Skill target `disable-model-invocation: true` → tidak auto-invoke.
 **Baca `target/SKILL.md`, jalankan Step 1-N manual** di sesi yang sama.
 Pass context via inline text (spec, diff range, done criteria) — bukan file path.
+
+Setiap pemanggil wajib menyertakan paket chain berikut (inline, bukan path): `mode:` (universal/project), `F-id:` bila ada, `TASK-id:` bila ada, `Ref:` (AC/GR yang relevan), `Done:` (kriteria selesai), `snapshot:` (`EXPECTED_PARENT` + `EXPECTED_TREE`) bila index sudah direview, `next_skill:` yang disarankan. Skill penerima memakai paket ini sebagai input Step 1 dan tidak menebak konteks yang hilang — yang hilang ditanyakan atau ditandai eksplisit.
 ```
 
 ---

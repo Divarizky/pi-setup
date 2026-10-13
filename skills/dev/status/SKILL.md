@@ -42,7 +42,7 @@ File ada tapi format tidak parse → laporkan: "F-<id>: work card format tidak d
 ### 3. Latest Handoff
 Project: cari file terbaru di `.workspace/handoffs/` — `ls -t .workspace/handoffs/*.md 2>/dev/null | head -1` (sort by mtime, bukan string filename).
 Universal: gunakan handoff yang ditempelkan atau dirujuk user.
-Ambil 1 baris ringkasan (biasanya baris pertama setelah judul). Jangan baca seluruh file.
+Baca frontmatter (`feature`, `task`, `phase`, `next_skill`, `branch`, `head`) lalu 1 baris ringkasan setelah judul. Jangan baca seluruh file. Bandingkan `head` frontmatter dengan `git rev-parse HEAD` saat ini untuk tahu apakah repo bergerak sejak handoff. Handoff lama tanpa frontmatter: ambil baris pertama setelah judul dan tandai `format: legacy`.
 Folder tidak ada/kosong → skip.
 
 ## Step 2 — Summarise

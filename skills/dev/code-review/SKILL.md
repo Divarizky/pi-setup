@@ -62,7 +62,7 @@ Universal mode tidak mengasumsikan `.workspace`; gunakan inline spec/path user, 
 
 ## Step 3 — Find Standards Source
 
-Gunakan Context Resolver. Cari file dokumentasi coding style (`CODING_STANDARDS.md`, `CONTRIBUTING.md`, dll) jika tersedia.
+Gunakan Context Resolver. Cari file dokumentasi coding style (`CODING_STANDARDS.md`, `CONTRIBUTING.md`, dll) jika tersedia. Project mode: baca `.workspace/context/CODE_STYLE.md` bila flag `has_code_style: true` dan kirim ke sub-agent Standards sebagai standar utama; baca `.workspace/context/SECURITY.md` bila flag `has_security: true` dan kirim ke sub-agent Correctness/Safety sebagai baseline keamanan project.
 
 **Smell baseline** (selalu bawa, Fowler *Refactoring* ch.3):
 - Speculative Generality → hapus, inline sampai kebutuhan nyata

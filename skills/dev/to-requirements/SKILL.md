@@ -14,7 +14,7 @@ Kalau input percakapan sudah cukup (hasil grill/diskusi), tulis draf requirement
 
 ## Invocation
 
-Dipanggil eksplisit atau melalui route `ask-me`: "buat requirements", "buat PRD", "tulis spec", "dokumentasikan fitur ini", "sintesis jadi requirements". "PRD" = alias lama untuk requirements — perlakukan sama.
+Dipanggil eksplisit atau melalui route `ask-me`: "buat requirements", "tulis spec", "dokumentasikan requirement fitur ini", "susun requirement fitur ini", "sintesis jadi requirements".
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ Dipanggil eksplisit atau melalui route `ask-me`: "buat requirements", "buat PRD"
 
 Jangan eksplorasi codebase dulu. Gunakan Context Resolver dari `../shared/COMMON.md`.
 
-1. Baca context project hanya jika tersedia: `PROJECT.md` untuk quick reference, `CONTEXT.md` untuk detail, `ADR.md` untuk keputusan arsitektur, `.workspace/context/SRS.md` untuk baseline requirements/Feature Registry, dan conditional stack docs (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`) bila relevan.
+1. Baca context project hanya jika tersedia: `AGENTS.md` (root) untuk quick reference, `CONTEXT.md` (`.workspace/context/`) untuk detail, `ADR.md` untuk keputusan arsitektur, `.workspace/context/SRS.md` untuk baseline requirements/Feature Registry, dan conditional stack docs (`SECURITY.md`, `CODE_STYLE.md`, `DATABASE.md`, `API.md`) bila relevan.
 2. Jika ada stack doc yang belum aktif (`has_*: false`) tetapi fitur baru membutuhkannya (misal fitur butuh DB tapi `DATABASE.md` belum ada), ikuti **Protocol Missing Stack Docs** di `../shared/COMMON.md`: catat model/endpoint/konvensi sebagai `Proposed` di `Implementation Decisions → Open`, dan siapkan AC bootstrap.
 3. Project mode: cari feature berdasarkan `F-<id>` di Feature Registry dan baca `.workspace/work/F-<id>.md` jika tersedia.
 4. Universal mode: gunakan keputusan dari percakapan dan file project relevan yang dapat diakses.
@@ -179,23 +179,24 @@ Draft work card: ditampilkan di chat, v<version>
 [ringkasan — Problem + Solution + Acceptance Criteria]
 
 Status sekarang: draft
-Approve? (y/n)
+Pilih: [1] Approve saja  [2] Approve + lanjut to-tasks  [3] Revisi
 ```
 
-- **y** → Project: update `status: approved` di frontmatter, jalankan Step 6 (sinkronisasi SRS). Universal: catat `status: approved` di respons + kontribusi SRS di chat. Lanjut **chain to-tasks** (lihat bawah).
-- **n** / revisi → update work card (Project) atau context sesi (Universal). Increment version minor, `status` tetap `draft`. Jika feature sebelumnya approved, tandai baseline SRS sebagai draft dan minta approval ulang. Tanya lagi sampai approve.
+- **[1]** → Project: update `status: approved` di frontmatter, jalankan Step 6 (sinkronisasi SRS). Universal: catat `status: approved` di respons + kontribusi SRS di chat. Beri tahu cara invoke `to-tasks` kapan saja.
+- **[2]** → lakukan [1], lalu langsung **chain to-tasks** (lihat bawah) tanpa pertanyaan tambahan.
+- **[3]** / revisi → update work card (Project) atau context sesi (Universal). Increment version minor, `status` tetap `draft`. Jika feature sebelumnya approved, tandai baseline SRS sebagai draft dan minta approval ulang. Tanya lagi sampai approve.
 - **Perubahan besar** → tulis ulang section relevan, bump version, present ulang.
 - **Supersede** → jangan hapus entry SRS; tandai feature dan requirement terkait `superseded`, isi `supersedes` dengan ID/version pengganti bila ada.
 
 ### Chain to To-Tasks
 
-Setelah requirements approved, tanya:
+Hanya dipakai bila user memilih [1] di Step 5 lalu belakangan meminta breakdown. Tanya sekali:
 
 > requirements sudah approved. Lanjut breakdown ke task via `to-tasks`? (y/n)
 
 - **Tidak** → Project: beri tahu path work card. Universal: beri tahu work card hanya tersedia di context sesi. Keduanya menyarankan invoke `to-tasks` kapan saja.
 - **Ya** → **jangan auto-invoke `to-tasks`**. Jalankan manual di sesi yang sama dengan requirement sebagai input inline.
-  1. Baca `to-tasks/SKILL.md`.
+  1. Baca `to-tasks/SKILL.md`. Kirim paket chain sesuai [Chain Pattern](../shared/COMMON.md#chain-pattern).
   2. Jalankan proposal dan iterasi vertical slice.
   3. Project: tulis task ke section `## Tasks` pada work card dan update tracker.
   4. Universal: tampilkan checklist task di chat dan catat status breakdown di respons.

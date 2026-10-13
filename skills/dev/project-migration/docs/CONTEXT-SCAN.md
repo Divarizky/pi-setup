@@ -4,7 +4,7 @@ Dipakai di dua tempat: `setup-workflow` Step 3 (versi ringan, existing project) 
 
 ## Lightweight Version (setup-workflow)
 
-Tujuan: isi awal `.workspace/context/PROJECT.md` (quick) + `.workspace/context/CONTEXT.md` (detail), bukan analisis mendalam. Ikuti **Aturan Split** di `setup-workflow`: temuan 1-baris → PROJECT.md, penjelasan/pattern/edge case → CONTEXT.md. `--no-context` → semua ke PROJECT.md.
+Tujuan: isi awal managed block `AGENTS.md` (quick) + `.workspace/context/CONTEXT.md` (detail), bukan analisis mendalam. Ikuti **Aturan Split** di `setup-workflow`: temuan 1-baris → AGENTS.md, penjelasan/pattern/edge case → CONTEXT.md. `--no-context` → detail ringkas disisipkan ke managed block AGENTS.md.
 
 Scan:
 - Struktur folder top-level + pattern arsitektur yang kelihatan (MVC, MVVM, layered, dll)
