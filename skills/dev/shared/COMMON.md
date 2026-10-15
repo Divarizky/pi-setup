@@ -152,7 +152,7 @@ Skill target `disable-model-invocation: true` → tidak auto-invoke.
 **Baca `target/SKILL.md`, jalankan Step 1-N manual** di sesi yang sama.
 Pass context via inline text (spec, diff range, done criteria) — bukan file path.
 
-Setiap pemanggil wajib menyertakan paket chain berikut (inline, bukan path): `mode:` (universal/project), `F-id:` bila ada, `TASK-id:` bila ada, `Ref:` (AC/GR yang relevan), `Done:` (kriteria selesai), `snapshot:` (`EXPECTED_PARENT` + `EXPECTED_TREE`) bila index sudah direview, `next_skill:` yang disarankan. Skill penerima memakai paket ini sebagai input Step 1 dan tidak menebak konteks yang hilang — yang hilang ditanyakan atau ditandai eksplisit.
+Setiap pemanggil wajib menyertakan paket chain berikut (inline, bukan path): `mode:` (universal/project), `F-id:` bila ada, `TASK-id:` bila ada, `Ref:` (AC/GR yang relevan), `Done:` (kriteria selesai), `snapshot:` (`EXPECTED_PARENTS` + `EXPECTED_TREE`; parents kosong = root commit, dua hash = merge) bila index sudah direview, `next_skill:` yang disarankan. Skill penerima memakai paket ini sebagai input Step 1 dan tidak menebak konteks yang hilang — yang hilang ditanyakan atau ditandai eksplisit.
 ```
 
 ---

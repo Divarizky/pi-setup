@@ -16,9 +16,12 @@ import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } fr
 
 export const ICON_FILLED = "◼";
 export const ICON_HOLLOW = "◻";
+export const ICON_CHECKED = "✓";
 
 function iconFor(status: TaskStatus): string {
-	return status === "pending" ? ICON_HOLLOW : ICON_FILLED;
+	if (status === "pending") return ICON_HOLLOW;
+	if (status === "completed") return ICON_CHECKED;
+	return ICON_FILLED;
 }
 
 export const STATUS_COLOR: Record<TaskStatus, "dim" | "warning" | "success" | "muted"> = {
@@ -38,9 +41,10 @@ export const ACTION_GLYPH: Record<TaskAction, string> = {
 };
 
 /** Format a single task row for the persistent overlay. When `allDone` is
- * true (no pending/in_progress visible) the whole row renders dim. */
+ * true (no pending/in_progress visible) the row text renders dim; the
+ * completed icon stays green regardless. */
 export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean, allDone = false): string {
-	const iconColor = allDone ? "dim" : STATUS_COLOR[t.status];
+	const iconColor = STATUS_COLOR[t.status];
 	const glyph = theme.fg(iconColor, iconFor(t.status));
 	let subject = theme.fg(allDone ? "dim" : "text", t.subject);
 	if (t.status === "completed" || t.status === "deleted") {

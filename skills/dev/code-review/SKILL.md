@@ -48,7 +48,7 @@ Periksa `git status --porcelain=v1`. Pada setiap record, dua kolom awal adalah s
 - Jika caller `git-commit` sudah mendapat persetujuan eksplisit untuk `staged-only`, lanjutkan review **index saja** dan sebutkan file di luar scope. Jangan stage file.
 - Selain itu tampilkan daftar file dan minta pilihan: stage manual lalu jalankan ulang, lanjut review staged-only, atau batal. Pilihan staged-only harus eksplisit; jangan stage otomatis karena file untracked mungkin berisi secret.
 
-Setelah pilihan scope selesai, untuk source `staged` rekam `HEAD` (`git rev-parse HEAD`) dan index tree (`git write-tree`); bila caller mengirim snapshot, pastikan cocok. Setelah review, cek keduanya lagi. Jika berubah, verdict `BLOCKED`. Cantumkan ID snapshot itu di output.
+Setelah pilihan scope selesai, untuk source `staged` rekam parents dan index tree (`git write-tree`). Parents = `HEAD` dan `MERGE_HEAD` bila ada, dipisah spasi; kosong bila belum ada commit (root commit). Gunakan `git rev-parse -q --verify HEAD || true` dan `git rev-parse -q --verify MERGE_HEAD || true`, jangan `git rev-parse HEAD` polos (gagal di root commit). Bila caller mengirim snapshot, bandingkan string parents utuh dan tree; satu hash parent saja tidak cukup untuk snapshot merge. Setelah review, cek keduanya lagi. Jika berubah atau tidak cocok, verdict `BLOCKED`. Cantumkan parents dan tree itu di output. Pada mode merge (`MERGE_HEAD` ada), diff `staged` dihitung terhadap parent pertama (`HEAD`); sebutkan batas itu di laporan.
 
 ## Step 2 — Find Spec Sources
 
@@ -104,7 +104,7 @@ Output contract (tampilkan hasil lengkap di chat; jangan menulis artifact workfl
 Mode: Universal | Project
 Persistence: chat-only
 Verdict: PASS | CHANGES_REQUESTED | BLOCKED
-Reviewed Snapshot: <parent/tree dari caller | ref/range | file list>
+Reviewed Snapshot: <parents (kosong = root, dua hash = merge) + tree dari caller | ref/range | file list>
 Blocking findings: <jumlah dan daftar singkat>
 Non-blocking findings: <jumlah dan daftar singkat>
 Spec: available | no spec available | required but unavailable
