@@ -113,25 +113,66 @@ export function parseStandardQuotaHeaders(
   return { usage, limit: limitEntry };
 }
 
-const PREFIX_PROVIDER_ALIASES: Record<string, string> = {
-  ag: "antigravity",
-  oc: "opencode",
-  ollama: "ollama",
-  openrouter: "openrouter",
-  gemini: "gemini",
+/**
+ * Alias prefix model router -> provider upstream yang dipakai sumber kuota.
+ * 9Router memakai aliasnya sendiri; Zenith memakai alias pertama dari
+ * registry-nya (`zenith-router/src/providers/registry/*.js`), mis.
+ * `cx/gpt-6.1-sol` -> provider `codex`.
+ */
+const ROUTER_PREFIX_ALIASES: Record<string, Record<string, string>> = {
+  "9router": {
+    ag: "antigravity",
+    oc: "opencode",
+    ollama: "ollama",
+    openrouter: "openrouter",
+    gemini: "gemini",
+  },
+  zenith: {
+    ag: "antigravity",
+    bzl: "bazaarlink",
+    cc: "claude",
+    cf: "cloudflare-ai",
+    cl: "cline",
+    cmc: "commandcode",
+    copilot: "github",
+    cx: "codex",
+    fb: "freebuff",
+    gh: "github",
+    kc: "kilocode",
+    kr: "kiro",
+    l7: "llm7",
+    mis: "mistral",
+    mistralai: "mistral",
+    nv: "nvidia",
+    ol: "ollama",
+    "ollama-cloud": "ollama",
+    or: "openrouter",
+    ovh: "ovhcloud",
+    tg: "together",
+    xkr: "xkiro",
+    zai: "glm",
+  },
+};
+
+/** ID transport router -> kunci tabel alias; id auth lama dinormalkan. */
+const ROUTER_TRANSPORT_ALIASES: Record<string, string> = {
+  "9router": "9router",
+  zenith: "zenith",
+  zenroute: "zenith",
 };
 
 /**
- * Resolve a provider-level quota name for the active Pi model.
- * 9Router model ids are prefixed with the upstream alias, e.g.
- * `ag/claude-sonnet-4-6` or `ollama/gpt-oss:120b`.
+ * Resolve a provider-level quota name for the active Pi model. Router model ids
+ * are prefixed with the upstream alias, e.g. `ag/claude-sonnet-4-6` (9Router)
+ * atau `cx/gpt-6.1-sol` (Zenith).
  */
 export function quotaProviderId(model: QuotaModelRef): string {
-  if (model.provider !== "9router") return model.provider;
+  const transport = ROUTER_TRANSPORT_ALIASES[model.provider];
+  if (!transport) return model.provider;
   const separator = model.id.indexOf("/");
   if (separator <= 0) return model.provider;
   const prefix = model.id.slice(0, separator).toLowerCase();
-  return PREFIX_PROVIDER_ALIASES[prefix] ?? prefix;
+  return ROUTER_PREFIX_ALIASES[transport]?.[prefix] ?? prefix;
 }
 
 function normalizeModelName(name: string): string {
@@ -139,7 +180,7 @@ function normalizeModelName(name: string): string {
 }
 
 /**
- * For 9Router connections like Antigravity where quota limits are keyed per
+ * For router connections like Antigravity where quota limits are keyed per
  * model (e.g. `claude-sonnet-4-6`), prioritize the matching model limit.
  */
 export function findMatchingLimit(
@@ -232,7 +273,8 @@ function formatReset(resetAt: Date | undefined, now: Date): string | undefined {
   return `${minutes}m`;
 }
 
-function formatAge(since: Date | undefined, now: Date): string | undefined {
+/** Umur snapshot kuota, mis. `2h 5m`. Dipakai quota bar dan baris dashboard. */
+export function quotaAge(since: Date | undefined, now: Date): string | undefined {
   if (!since || !Number.isFinite(since.getTime())) return undefined;
   const minutes = Math.max(0, Math.floor((now.getTime() - since.getTime()) / 60_000));
   const hours = Math.floor(minutes / 60);
@@ -256,14 +298,14 @@ export function renderQuotaBar(
   borderColor: (text: string) => string = (text) => theme.fg("borderMuted", text),
 ): string[] {
   const safeWidth = Math.max(1, width);
-  // Use the provider returned by the quota source. For 9Router this is the
-  // upstream provider (e.g. antigravity), not the transport name "9router".
+  // Use the provider returned by the quota source. For a router this is the
+  // upstream provider (e.g. antigravity), not the transport name ("9router").
   const providerLabel = matched.usage.provider;
   const usedPercent = Math.max(0, Math.min(100, matched.limit.usedPercent));
   const percent = `${usedPercent.toFixed(0)}% used`;
   const reset = formatReset(matched.limit.resetsAt, now);
   const base = reset ? `${percent} · reset ${reset}` : percent;
-  const age = matched.usage.stale ? formatAge(matched.usage.updatedAt, now) : undefined;
+  const age = matched.usage.stale ? quotaAge(matched.usage.updatedAt, now) : undefined;
   const suffix = age ? `${base} · stale ${age}` : base;
 
   // Fill every column between the provider and the quota information.

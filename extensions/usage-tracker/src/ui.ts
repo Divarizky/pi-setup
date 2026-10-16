@@ -1,7 +1,8 @@
 import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type TUI } from "@earendil-works/pi-tui";
-import type { ProviderId, ProviderUsage, UsageLimit, UsageTotals } from "./providers.ts";
+import type { ProviderUsage, UsageLimit, UsageTotals } from "./providers.ts";
 import { providerName } from "./providers.ts";
+import { quotaAge } from "./quota-bar.ts";
 
 export interface UsageTrackerViewData {
   readonly providers: readonly ProviderUsage[];
@@ -132,7 +133,7 @@ function quotaLineLayout(limits: readonly UsageLimit[], width: number): QuotaLin
 }
 
 function providerStatus(usage: ProviderUsage): { label: string; color: "success" | "accent" | "warning" } {
-  if (usage.source === "9Router lokal" && usage.status === "ok") {
+  if (usage.origin === "local-router" && usage.status === "ok" && !usage.limits?.length) {
     return { label: "Lokal", color: "accent" };
   }
   if (usage.status !== "ok" || !usage.limits?.length) {
@@ -154,14 +155,18 @@ function providerRows(theme: Theme, usage: ProviderUsage, width: number, now: Da
   const titleWidth = Math.max(1, inner - visibleWidth(`● ${providerStatusValue.label}`) - 1);
   const title = theme.fg("accent", theme.bold(truncateToWidth(titleText, titleWidth)));
   const rows = [line(theme, title, status, inner)];
-  if (usage.source === "9Router quota API" || usage.source === "9Router lokal") {
+  if (usage.origin === "local-router") {
     rows.push(...wrapPlain(`Sumber: ${usage.source}`, inner).map((value) => theme.fg("dim", value)));
+  }
+  if (usage.stale) {
+    const age = quotaAge(usage.updatedAt, now);
+    rows.push(theme.fg("dim", age ? `Snapshot kuota berumur ${age}` : "Snapshot kuota dari cache"));
   }
   if (usage.limits?.length) {
     if (usage.quota) {
       rows.push(line(theme, theme.fg("muted", "Plan"), theme.fg("text", usage.quota), inner));
     }
-    // Codex dan 9Router memakai kolom yang sama. Dengan layout bersama ini,
+    // Codex dan router lokal memakai kolom yang sama. Dengan layout bersama ini,
     // nama model, bar, dan persentase tetap sejajar untuk setiap limit.
     const layout = quotaLineLayout(usage.limits, inner);
     rows.push(...usage.limits.flatMap((limit) => limitLines(theme, limit, inner, now, layout)));
@@ -170,7 +175,7 @@ function providerRows(theme: Theme, usage: ProviderUsage, width: number, now: Da
     rows.push(
       line(
         theme,
-        theme.fg("muted", usage.source?.startsWith("9Router") ? "Status koneksi" : "Quota / saldo"),
+        theme.fg("muted", usage.origin === "local-router" ? "Status koneksi" : "Quota / saldo"),
         theme.fg(usage.quota || usage.balance ? "text" : "warning", usage.quota ?? usage.balance ?? "data tidak tersedia"),
         inner,
       ),
@@ -283,9 +288,14 @@ export class UsageTrackerDashboard {
     this.scrollOffset = offset;
 
     if (overflow) {
-      const viewport = content.slice(offset, offset + visibleContentRows);
-      if (offset > 0) viewport[0] = this.theme.fg("dim", "↑ Gulir ke atas");
-      if (offset < maxOffset) viewport[viewport.length - 1] = this.theme.fg("dim", "↓ Gulir ke bawah");
+      const hintTop = offset > 0;
+      const hintBottom = offset < maxOffset;
+      const hintRows = (hintTop ? 1 : 0) + (hintBottom ? 1 : 0);
+      // Sisakan baris untuk hint agar tidak menimpa konten yang sedang digulir.
+      const viewport = content.slice(offset, offset + Math.max(1, visibleContentRows - hintRows));
+      while (viewport.length < visibleContentRows) viewport.push("");
+      if (hintTop) viewport[0] = this.theme.fg("dim", "↑ Gulir ke atas");
+      if (hintBottom) viewport[viewport.length - 1] = this.theme.fg("dim", "↓ Gulir ke bawah");
       content = viewport;
     } else {
       while (content.length < visibleContentRows) content.push("");
@@ -302,8 +312,4 @@ export class UsageTrackerDashboard {
   invalidate(): void {
     this.tui.requestRender();
   }
-}
-
-export function providerOrder(providers: readonly ProviderUsage[]): readonly ProviderId[] {
-  return providers.map((provider) => provider.provider);
 }

@@ -12,8 +12,10 @@ import { UsageTrackerDashboard, type UsageTrackerViewData } from "./src/ui.ts";
 import { CLAUDE_RATE_LIMIT_CHANNEL } from "./src/claude-usage.ts";
 import {
   fetchNineRouterQuotas,
-  readNineRouterUsage,
+  readNineRouterLocalData,
+  type NineRouterLocalData,
 } from "./src/ninerouter.ts";
+import { fetchZenithQuotas, isZenithProvider } from "./src/zenith.ts";
 import {
   findQuotaForModel,
   parseStandardQuotaHeaders,
@@ -26,7 +28,9 @@ import {
 const REQUEST_TIMEOUT_MS = 20_000;
 const QUOTA_WIDGET_KEY = "usage-tracker-quota-bar";
 const QUOTA_REFRESH_INTERVAL_MS = 45_000;
-const QUOTA_RENDER_INTERVAL_MS = 1_000;
+// Countdown reset hanya tampil dalam satuan menit, jadi 1 detik terlalu sering
+// dan membuat TUI re-render terus-menerus selama window mingguan masih aktif.
+const QUOTA_RENDER_INTERVAL_MS = 30_000;
 // /usage-tracker boleh memakai cache usage Claude yang lebih baru dari quota bar.
 const COMMAND_CLAUDE_MAX_AGE_MS = 60_000;
 type ThinkingLevel = NonNullable<ExtensionContext["thinkingLevel"]>;
@@ -110,16 +114,16 @@ async function loadUsage(ctx: ExtensionContext): Promise<UsageTrackerViewData> {
     const routerEntry = configured.some(({ provider }) => provider === "9router");
     let routerProviders: ProviderUsage[] = [];
     if (routerEntry) {
-      let localProviders: ProviderUsage[] = [];
+      let localData: NineRouterLocalData | undefined;
       try {
-        localProviders = [...(await readNineRouterUsage())];
+        localData = await readNineRouterLocalData();
       } catch {
         // Quota API tetap dicoba; DB dapat gagal dibaca secara terpisah.
       }
 
       const liveQuotaProviders = await fetchNineRouterQuotas(
-        localProviders,
-        { signal: controller.signal },
+        localData?.usage ?? [],
+        { signal: controller.signal, localData },
       );
       // Hanya provider dengan quota bar resmi yang ditampilkan
       routerProviders = liveQuotaProviders.filter(
@@ -127,12 +131,25 @@ async function loadUsage(ctx: ExtensionContext): Promise<UsageTrackerViewData> {
       );
     }
 
+    // Zenith Router menyimpan kuota terakhir setiap koneksi di SQLite-nya, jadi
+    // satu request `/api/quota` sudah berisi semua kuota tanpa memanggil
+    // provider upstream. Koneksi bersaldo tetap ikut walau tanpa bar persentase.
+    // Pembacaan kuota tidak digantung pada provider `zenith` yang terdaftar di
+    // Pi: endpoint kuotanya hanya loopback dan tidak butuh kredensial.
+    let zenithProviders: ProviderUsage[] = [];
+    try {
+      zenithProviders = [...(await fetchZenithQuotas({ signal: controller.signal }))];
+    } catch {
+      // fetchZenithQuotas tidak melempar; ini hanya sabuk pengaman.
+    }
+
     // Hanya provider dengan session usage/rate-limit yang masuk dashboard,
-    // ditambah provider yang usage-nya dibaca dari database lokal 9Router.
+    // ditambah provider yang dibaca dari gateway lokal (9Router, Zenith).
     // API key biasa tidak memiliki endpoint quota subscription yang setara.
     const providers = [
       ...fetched.filter((provider) => provider.limits && provider.limits.length > 0),
       ...routerProviders,
+      ...zenithProviders,
     ];
     const emptyMessage = configured.length === 0
       ? "Belum ada provider terhubung. Jalankan /login untuk OAuth."
@@ -171,16 +188,20 @@ async function fetchActiveQuota(
     return findQuotaForModel(model, [usage]);
   }
 
+  if (isZenithProvider(model.provider)) {
+    return findQuotaForModel(model, await fetchZenithQuotas({ signal }));
+  }
+
   if (model.provider !== "9router") return undefined;
 
-  let localProviders: ProviderUsage[] = [];
+  let localData: NineRouterLocalData | undefined;
   try {
-    localProviders = [...(await readNineRouterUsage())];
+    localData = await readNineRouterLocalData();
   } catch {
     // Live quota tetap dapat dipakai tanpa agregat usage lokal.
   }
 
-  const liveProviders = await fetchNineRouterQuotas(localProviders, { signal });
+  const liveProviders = await fetchNineRouterQuotas(localData?.usage ?? [], { signal, localData });
   return findQuotaForModel(model, liveProviders);
 }
 
@@ -285,6 +306,7 @@ function createQuotaBarRuntime(
   const isManagedProvider = (providerId: string): boolean =>
     providerId === "openai-codex" ||
     providerId === "9router" ||
+    isZenithProvider(providerId) ||
     providerId === "antigravity" ||
     providerId === "anthropic" ||
     providerId === "claude";

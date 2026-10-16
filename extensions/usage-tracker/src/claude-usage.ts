@@ -18,6 +18,12 @@ import type { UsageLimit } from "./providers.ts";
  * rate_limit_event memakai pecahan 0-1 dan reset dalam detik epoch.
  */
 
+/**
+ * Harus sama dengan `CLAUDE_RATE_LIMIT_CHANNEL` di
+ * provider-gateway/claude/rate-limit.ts (producer). Ubah keduanya bersamaan.
+ * Import lintas-extension tidak dipakai karena file di luar extension ini
+ * dibaca TypeScript sebagai CommonJS dan menggagalkan `npm run check`.
+ */
 export const CLAUDE_RATE_LIMIT_CHANNEL = "claude:rate-limit";
 
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
@@ -134,7 +140,12 @@ function writeJsonAtomic(path: string, value: unknown): void {
 
 function readUsageCache(path: string): UsageCacheFile {
   const parsed = asRecord(readJson(path));
-  return parsed?.version === 1 ? (parsed as unknown as UsageCacheFile) : { version: 1 };
+  if (parsed?.version !== 1) return { version: 1 };
+  const cache = parsed as unknown as UsageCacheFile;
+  // Windows tanpa fetchedAt tidak bisa diberi tanggal. Perlakukan sebagai kosong
+  // supaya updatedAt tidak pernah menjadi NaN atau Invalid Date.
+  if (cache.windows && cache.fetchedAt === undefined) return { ...cache, windows: undefined };
+  return cache;
 }
 
 interface ClaudeCredentials {
@@ -346,7 +357,7 @@ export async function getClaudeUsage(options: ClaudeUsageOptions = {}): Promise<
     const usedPercent = eventNewer && event.usedPercent !== undefined ? event.usedPercent : base?.usedPercent;
     if (usedPercent === undefined) continue;
     let resetsAt = eventNewer && event.resetsAt !== undefined ? event.resetsAt : base?.resetsAt;
-    const observedAt = eventNewer ? event.observedAt : cache.fetchedAt!;
+    const observedAt = eventNewer ? event.observedAt : cache.fetchedAt ?? now;
     updatedAt = Math.max(updatedAt ?? 0, observedAt);
     // Window yang sudah reset dimulai lagi dari 0%.
     const expired = resetsAt !== undefined && resetsAt <= now;

@@ -39,6 +39,8 @@ export interface ProviderUsage {
   readonly provider: ProviderId;
   readonly label?: string;
   readonly source?: string;
+  /** Sumbernya router/gateway lokal, bukan endpoint kuota provider langsung. */
+  readonly origin?: "local-router";
   readonly status: UsageStatus;
   readonly today: ProviderPeriodUsage;
   readonly billing: ProviderPeriodUsage;
@@ -93,79 +95,17 @@ function asRecord(value: unknown): JsonRecord | undefined {
     : undefined;
 }
 
-function number(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function sumField(records: readonly JsonRecord[], ...keys: string[]): number {
-  return records.reduce(
-    (total, record) =>
-      total + keys.reduce((subtotal, key) => subtotal + number(record[key]), 0),
-    0,
-  );
-}
-
-function resultRecords(payload: unknown): JsonRecord[] {
-  const root = asRecord(payload);
-  if (!root) return [];
-  const buckets = Array.isArray(root.data) ? root.data : [];
-  const results: JsonRecord[] = [];
-  for (const bucket of buckets) {
-    const bucketRecord = asRecord(bucket);
-    if (!bucketRecord) continue;
-    const bucketResults = Array.isArray(bucketRecord.results)
-      ? bucketRecord.results
-      : [bucketRecord];
-    for (const result of bucketResults) {
-      const record = asRecord(result);
-      if (record) results.push(record);
-    }
-  }
-  return results;
-}
-
-function parseTokenTotals(payload: unknown, provider: ProviderId): UsageTotals {
-  const records = resultRecords(payload);
-  const input = provider === "anthropic"
-    ? sumField(records, "uncached_input_tokens", "input_tokens")
-    : sumField(records, "input_tokens");
-  const output = sumField(records, "output_tokens");
-  const cached = provider === "anthropic"
-    ? sumField(records, "cache_read_input_tokens", "cache_creation_input_tokens")
-    : sumField(records, "input_cached_tokens", "cached_input_tokens");
-
-  return { input, output, cached, total: input + output + cached };
-}
-
-function parseCost(payload: unknown): number | undefined {
-  const records = resultRecords(payload);
-  let found = false;
-  const total = records.reduce((sum, record) => {
-    const amount = asRecord(record.amount);
-    const value = amount?.value ?? record.value;
-    if (typeof value !== "number" || !Number.isFinite(value)) return sum;
-    found = true;
-    return sum + value;
-  }, 0);
-  return found ? total : undefined;
-}
-
-function authHeaders(provider: ProviderId, auth: AuthResult): Record<string, string> {
+function authHeaders(auth: AuthResult): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const [key, value] of Object.entries(auth.auth.headers ?? {})) {
     if (typeof value === "string") headers[key] = value;
   }
 
-  if (provider === "anthropic") {
-    headers["anthropic-version"] ??= "2023-06-01";
-    if (auth.auth.apiKey && !headers["x-api-key"] && !headers.authorization) {
-      headers["x-api-key"] = auth.auth.apiKey;
-    }
-  } else if (auth.auth.apiKey && !headers.authorization) {
+  if (auth.auth.apiKey && !headers.authorization) {
     headers.authorization = `Bearer ${auth.auth.apiKey}`;
   }
 
@@ -181,78 +121,6 @@ async function getJson(
   const response = await fetchImpl(url, { headers, signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json();
-}
-
-function query(params: Record<string, string | number>): string {
-  return new URLSearchParams(
-    Object.entries(params).map(([key, value]) => [key, String(value)]),
-  ).toString();
-}
-
-function seconds(date: Date): number {
-  return Math.floor(date.getTime() / 1000);
-}
-
-async function fetchOpenAI(
-  auth: AuthResult,
-  period: UsagePeriod,
-  fetchImpl: typeof fetch,
-  signal?: AbortSignal,
-): Promise<ProviderPeriodUsage> {
-  const common = query({
-    start_time: seconds(period.from),
-    end_time: seconds(period.to),
-    bucket_width: "1d",
-    limit: 31,
-  });
-  const headers = authHeaders("openai", auth);
-  const [usageResult, costResult] = await Promise.allSettled([
-    getJson(`https://api.openai.com/v1/organization/usage/completions?${common}`, headers, fetchImpl, signal),
-    getJson(`https://api.openai.com/v1/organization/costs?${common}`, headers, fetchImpl, signal),
-  ]);
-  const usage = usageResult.status === "fulfilled" ? usageResult.value : undefined;
-  const cost = costResult.status === "fulfilled" ? costResult.value : undefined;
-  if (!usage && !cost) return { period: period.label, status: "unavailable", message: "data tidak tersedia" };
-
-  const totals = parseTokenTotals(usage, "openai");
-  const parsedCost = parseCost(cost);
-  return {
-    period: period.label,
-    status: "ok",
-    totals: parsedCost === undefined ? totals : { ...totals, cost: parsedCost },
-    message: cost ? undefined : "usage tersedia, biaya tidak tersedia",
-  };
-}
-
-async function fetchAnthropic(
-  auth: AuthResult,
-  period: UsagePeriod,
-  fetchImpl: typeof fetch,
-  signal?: AbortSignal,
-): Promise<ProviderPeriodUsage> {
-  const common = query({
-    starting_at: period.from.toISOString(),
-    ending_at: period.to.toISOString(),
-    bucket_width: "1d",
-    limit: 31,
-  });
-  const headers = authHeaders("anthropic", auth);
-  const [usageResult, costResult] = await Promise.allSettled([
-    getJson(`https://api.anthropic.com/v1/organizations/usage_report/messages?${common}`, headers, fetchImpl, signal),
-    getJson(`https://api.anthropic.com/v1/organizations/cost_report?${common}`, headers, fetchImpl, signal),
-  ]);
-  const usage = usageResult.status === "fulfilled" ? usageResult.value : undefined;
-  const cost = costResult.status === "fulfilled" ? costResult.value : undefined;
-  if (!usage && !cost) return { period: period.label, status: "unavailable", message: "data tidak tersedia" };
-
-  const totals = parseTokenTotals(usage, "anthropic");
-  const parsedCost = parseCost(cost);
-  return {
-    period: period.label,
-    status: "ok",
-    totals: parsedCost === undefined ? totals : { ...totals, cost: parsedCost },
-    message: cost ? undefined : "usage tersedia, biaya tidak tersedia",
-  };
 }
 
 function decodeJwtPayload(token: string): JsonRecord | undefined {
@@ -285,7 +153,7 @@ function codexAccountId(auth: AuthResult): string | undefined {
 function formatWindowLabel(secondsValue: number | undefined): string {
   if (!secondsValue || secondsValue <= 0) return "Usage window";
   const minutes = Math.round(secondsValue / 60);
-  if (minutes % (60 * 24 * 7) === 0) return `${minutes / (60 * 24 * 7)} hari`;
+  if (minutes % (60 * 24 * 7) === 0) return `${minutes / (60 * 24 * 7)} minggu`;
   if (minutes % (60 * 24) === 0) return `${minutes / (60 * 24)} hari`;
   if (minutes % 60 === 0) return `${minutes / 60} jam`;
   return `${minutes} menit`;
@@ -336,7 +204,7 @@ async function fetchCodex(
   const accountId = codexAccountId(auth);
   if (!token || !accountId) throw new Error("Codex OAuth metadata tidak tersedia");
 
-  const headers = authHeaders("openai-codex", auth);
+  const headers = authHeaders(auth);
   headers["chatgpt-account-id"] = accountId;
   headers.originator ??= "pi";
   const payload = await getJson(
@@ -695,16 +563,15 @@ export async function fetchProviderUsage(
       }
     }
 
-    const [today, billing] = await Promise.all(
-      periods.map((period) => fetchAnthropic(auth!, period, fetchImpl, options.signal).catch(() => unavailablePeriod(period, "data tidak tersedia"))),
-    );
+    // API key biasa tidak punya endpoint session usage; dashboard hanya
+    // menampilkan provider dengan limit, jadi tidak ada data yang hilang.
     return {
       provider,
       source: auth.source,
-      status: today.status === "ok" || billing.status === "ok" ? "ok" : "unavailable",
-      today,
-      billing,
-      message: today.status === "ok" || billing.status === "ok" ? undefined : "data tidak tersedia",
+      status: "unavailable",
+      today: unavailablePeriod(periods[0], "API key Anthropic tidak menyediakan session usage"),
+      billing: unavailablePeriod(periods[1], "API key Anthropic tidak menyediakan session usage"),
+      message: "data tidak tersedia",
     };
   }
 
@@ -733,26 +600,12 @@ export async function fetchProviderUsage(
     }
   }
 
-  if (provider !== "openai") {
-    return {
-      provider,
-      source: auth.source,
-      status: "unavailable",
-      today: unavailablePeriod(periods[0], "session usage belum didukung untuk provider ini"),
-      billing: unavailablePeriod(periods[1], "session usage belum didukung untuk provider ini"),
-      message: "data tidak tersedia",
-    };
-  }
-
-  const [today, billing] = await Promise.all(
-    periods.map((period) => fetchOpenAI(auth!, period, fetchImpl, options.signal).catch(() => unavailablePeriod(period, "data tidak tersedia"))),
-  );
   return {
     provider,
     source: auth.source,
-    status: today.status === "ok" || billing.status === "ok" ? "ok" : "unavailable",
-    today,
-    billing,
-    message: today.status === "ok" || billing.status === "ok" ? undefined : "data tidak tersedia",
+    status: "unavailable",
+    today: unavailablePeriod(periods[0], "session usage belum didukung untuk provider ini"),
+    billing: unavailablePeriod(periods[1], "session usage belum didukung untuk provider ini"),
+    message: "data tidak tersedia",
   };
 }

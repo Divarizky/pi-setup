@@ -37,10 +37,6 @@ type SqlJsModule = {
   Database: new (data?: Uint8Array) => SqlJsDatabase;
 };
 type SqlJsInitializer = () => Promise<SqlJsModule>;
-type SqliteDriver =
-  | { kind: "better-sqlite3"; path: string }
-  | { kind: "sql.js"; path: string };
-
 const NINEROUTER_PROVIDER = "9router";
 const DEFAULT_SOURCE = "9Router lokal";
 
@@ -166,6 +162,7 @@ export function parseNineRouterUsage(
       return {
         provider,
         source: DEFAULT_SOURCE,
+        origin: "local-router",
         status: "ok",
         today: period("today", totals.today),
         billing: period("billing", totals.billing),
@@ -188,22 +185,21 @@ function dataDirCandidates(): readonly string[] {
   return [join(process.env.XDG_CONFIG_HOME ?? join(home, ".config"), "9router"), join(home, ".9router")];
 }
 
-function sqliteDriverPath(dataDir: string): SqliteDriver | undefined {
-  const betterSqlite3Candidates = [
-    join(dataDir, "runtime", "node_modules", "better-sqlite3"),
-    join(dataDir, "node_modules", "better-sqlite3"),
-    join(dataDir, "resources", "app.asar.unpacked", "node_modules", "better-sqlite3"),
-  ];
-  const betterSqlite3Path = betterSqlite3Candidates.find((candidate) => existsSync(candidate));
-  if (betterSqlite3Path) return { kind: "better-sqlite3", path: betterSqlite3Path };
+function firstExistingPath(candidates: readonly string[]): string | undefined {
+  return candidates.find((candidate) => existsSync(candidate));
+}
 
-  const sqlJsCandidates = [
-    join(dataDir, "runtime", "node_modules", "sql.js"),
-    join(dataDir, "node_modules", "sql.js"),
-    join(dataDir, "resources", "app.asar.unpacked", "node_modules", "sql.js"),
+/** Kandidat modul per direktori, supaya sql.js tetap tersedia saat better-sqlite3 gagal dimuat. */
+function sqliteDriverPaths(dataDir: string): { betterSqlite3?: string; sqlJs?: string } {
+  const moduleDirs = [
+    join(dataDir, "runtime", "node_modules"),
+    join(dataDir, "node_modules"),
+    join(dataDir, "resources", "app.asar.unpacked", "node_modules"),
   ];
-  const sqlJsPath = sqlJsCandidates.find((candidate) => existsSync(candidate));
-  return sqlJsPath ? { kind: "sql.js", path: sqlJsPath } : undefined;
+  return {
+    betterSqlite3: firstExistingPath(moduleDirs.map((dir) => join(dir, "better-sqlite3"))),
+    sqlJs: firstExistingPath(moduleDirs.map((dir) => join(dir, "sql.js"))),
+  };
 }
 
 function wrapSqlJsDatabase(database: SqlJsDatabase): SqliteDatabase {
@@ -234,20 +230,26 @@ function cliToken(dataDir: string): string {
 async function openDatabase(): Promise<{ database: SqliteDatabase; dataDir: string }> {
   const dataDir = dataDirCandidates().find((candidate) => existsSync(join(candidate, "db", "data.sqlite")));
   if (!dataDir) throw new Error("database 9Router tidak ditemukan");
-  const driver = sqliteDriverPath(dataDir);
-  if (!driver) throw new Error("modul database 9Router tidak ditemukan");
 
   const databaseFile = join(dataDir, "db", "data.sqlite");
+  const drivers = sqliteDriverPaths(dataDir);
   const require = createRequire(import.meta.url);
-  if (driver.kind === "better-sqlite3") {
-    const Database = require(driver.path) as SqliteConstructor;
-    return {
-      database: new Database(databaseFile, { readonly: true }),
-      dataDir,
-    };
+
+  if (drivers.betterSqlite3) {
+    try {
+      const Database = require(drivers.betterSqlite3) as SqliteConstructor;
+      return {
+        database: new Database(databaseFile, { readonly: true }),
+        dataDir,
+      };
+    } catch {
+      // Binary better-sqlite3 biasanya dikompilasi untuk ABI Electron sehingga
+      // gagal dimuat di Node Pi. Jangan menyerah di sini: pakai sql.js.
+    }
   }
 
-  const initSqlJs = require(driver.path) as SqlJsInitializer;
+  if (!drivers.sqlJs) throw new Error("modul database 9Router tidak ditemukan");
+  const initSqlJs = require(drivers.sqlJs) as SqlJsInitializer;
   const SQL = await initSqlJs();
   return {
     database: wrapSqlJsDatabase(new SQL.Database(readFileSync(databaseFile))),
@@ -262,6 +264,33 @@ async function readNineRouterConnections(): Promise<{ rows: NineRouterConnection
       rows: database.prepare(
         "SELECT id, provider, name, isActive, data FROM providerConnections",
       ).all(),
+      dataDir,
+    };
+  } finally {
+    database.close();
+  }
+}
+
+export interface NineRouterLocalData {
+  readonly usage: readonly ProviderUsage[];
+  readonly connections: readonly NineRouterConnectionRow[];
+  readonly dataDir: string;
+}
+
+/**
+ * Baca agregat usage harian dan daftar koneksi dari satu pembukaan database,
+ * supaya pemanggil tidak membuka SQLite dua kali untuk data yang sama.
+ */
+export async function readNineRouterLocalData(now = new Date()): Promise<NineRouterLocalData> {
+  const { database, dataDir } = await openDatabase();
+  try {
+    const dailyRows = database.prepare("SELECT dateKey, data FROM usageDaily").all();
+    const connectionRows = database.prepare(
+      "SELECT id, provider, name, isActive, data FROM providerConnections",
+    ).all();
+    return {
+      usage: parseNineRouterUsage(dailyRows, connectionRows, now),
+      connections: connectionRows,
       dataDir,
     };
   } finally {
@@ -328,6 +357,7 @@ function parseNineRouterQuota(
     provider,
     label: `${provider}${name}`,
     source: "9Router quota API",
+    origin: "local-router",
     status: "ok",
     today: local?.today ?? { period: "today", status: "unavailable", message: "usage lokal tidak tersedia" },
     billing: local?.billing ?? { period: "billing", status: "unavailable", message: "usage lokal tidak tersedia" },
@@ -339,14 +369,18 @@ function parseNineRouterQuota(
 
 export async function fetchNineRouterQuotas(
   localUsage: readonly ProviderUsage[],
-  options: { signal?: AbortSignal; fetchImpl?: typeof fetch } = {},
+  options: { signal?: AbortSignal; fetchImpl?: typeof fetch; localData?: NineRouterLocalData } = {},
 ): Promise<readonly ProviderUsage[]> {
   const fetchImpl = options.fetchImpl ?? fetch;
   let connectionInfo: { rows: NineRouterConnectionRow[]; dataDir: string };
-  try {
-    connectionInfo = await readNineRouterConnections();
-  } catch {
-    return [];
+  if (options.localData) {
+    connectionInfo = { rows: [...options.localData.connections], dataDir: options.localData.dataDir };
+  } else {
+    try {
+      connectionInfo = await readNineRouterConnections();
+    } catch {
+      return [];
+    }
   }
 
   let token: string;
@@ -385,34 +419,4 @@ export async function fetchNineRouterQuotas(
       seenProviders.add(value.provider);
       return value;
     });
-}
-
-export async function readNineRouterUsage(now = new Date()): Promise<readonly ProviderUsage[]> {
-  const { database } = await openDatabase();
-  try {
-    const dailyRows = database.prepare("SELECT dateKey, data FROM usageDaily").all();
-    const connectionRows = database.prepare(
-      "SELECT provider, name, isActive, data FROM providerConnections",
-    ).all();
-    return parseNineRouterUsage(dailyRows, connectionRows, now);
-  } finally {
-    database.close();
-  }
-}
-
-export function unavailableNineRouterUsage(message: string): ProviderUsage {
-  const unavailable = (label: "today" | "billing"): ProviderPeriodUsage => ({
-    period: label,
-    status: "unavailable",
-    message,
-  });
-  return {
-    provider: NINEROUTER_PROVIDER,
-    source: DEFAULT_SOURCE,
-    status: "unavailable",
-    today: unavailable("today"),
-    billing: unavailable("billing"),
-    message: `Usage lokal 9Router tidak tersedia: ${message}`,
-    quota: "data tidak tersedia",
-  };
 }
