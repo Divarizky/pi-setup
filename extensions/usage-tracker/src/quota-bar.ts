@@ -230,6 +230,67 @@ export function findMatchingLimit(
   return primaryQuotaLimit(usage);
 }
 
+function bareModelId(id: string): string {
+  return id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
+}
+
+/**
+ * Segmen tier yang teramati pada bucket Zenith (`gemini-4-argon-low`,
+ * `gemini-3.5-flash-extra-low`, `gemini-3-flash-agent`). Suffix hanya diterima
+ * jika semua segmennya ada di sini. Tanpa daftar ini, `gemini-3.8-flash` ikut
+ * menangkap `gemini-3.8-flash-lite-high`, yang merupakan model lain.
+ * Tier baru yang belum ada di sini tidak menghasilkan bar, tetapi tetap tampil
+ * di dashboard. Tambahkan segmennya di sini setelah dipastikan.
+ */
+const TIER_TOKENS: ReadonlySet<string> = new Set(["extra", "low", "medium", "high", "thinking", "agent"]);
+
+/**
+ * Peringkat kecocokan bucket per model; angka lebih kecil lebih spesifik.
+ * 0: key sama dengan id model (`gemini-4-argon`).
+ * 1: key berupa id model dengan suffix tier yang dikenali (`gemini-4-argon-low`).
+ * Label tampilan sengaja tidak dipakai: satu key bisa punya nama yang tidak
+ * sesuai dengan model induknya.
+ */
+function bucketRank(model: QuotaModelRef, limit: UsageLimit): number | undefined {
+  if (!limit.key) return undefined;
+  const bare = bareModelId(model.id).toLowerCase();
+  const key = limit.key.toLowerCase();
+  if (key === bare) return 0;
+  if (!key.startsWith(`${bare}-`)) return undefined;
+  const tokens = key.slice(bare.length + 1).split("-");
+  return tokens.every((token) => TIER_TOKENS.has(token)) ? 1 : undefined;
+}
+
+/**
+ * Bucket per model (mis. Zenith untuk antigravity): setiap akun melaporkan
+ * bucket untuk tiap model. Bucket yang tidak cocok dengan model tidak pernah
+ * dipakai sebagai pengganti. Jika tidak ada bucket yang cocok, hasilnya kosong.
+ *
+ * Di antara yang cocok, bucket yang sudah 100% terpakai dilewati selama ada
+ * akun lain dengan sisa. Ini estimasi, bukan perilaku router yang diverifikasi.
+ */
+function findModelBucket(
+  model: QuotaModelRef,
+  usages: readonly ProviderUsage[],
+): MatchedQuota | undefined {
+  const hits: Array<MatchedQuota & { readonly rank: number }> = [];
+  for (const usage of usages) {
+    for (const limit of usage.limits ?? []) {
+      const rank = bucketRank(model, limit);
+      if (rank !== undefined) hits.push({ usage, limit, rank });
+    }
+  }
+  if (hits.length === 0) return undefined;
+
+  const routable = hits.filter((hit) => hit.limit.usedPercent < 100);
+  const pool = routable.length > 0 ? routable : hits;
+  const bestRank = Math.min(...pool.map((hit) => hit.rank));
+  const best = pool
+    .filter((hit) => hit.rank === bestRank)
+    .reduce((selected, hit) => (hit.limit.usedPercent > selected.limit.usedPercent ? hit : selected));
+  return { usage: best.usage, limit: best.limit };
+}
+
 export function findQuotaForModel(
   model: QuotaModelRef,
   usages: readonly ProviderUsage[],
@@ -238,6 +299,9 @@ export function findQuotaForModel(
   const candidates = usages.filter(
     (usage) => usage.provider.toLowerCase() === provider.toLowerCase() && Boolean(usage.limits?.length),
   );
+
+  const modelKeyed = candidates.filter((usage) => usage.perModelBuckets);
+  if (modelKeyed.length > 0) return findModelBucket(model, modelKeyed);
 
   for (const candidate of candidates) {
     const limit = findMatchingLimit(model, candidate);

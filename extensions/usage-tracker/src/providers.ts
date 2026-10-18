@@ -30,6 +30,8 @@ export interface ProviderPeriodUsage {
 
 export interface UsageLimit {
   readonly label: string;
+  /** Kunci bucket dari sumber, mis. id model di Zenith. Dipakai untuk mencocokkan model. */
+  readonly key?: string;
   readonly usedPercent: number;
   readonly limitWindowSeconds?: number;
   readonly resetsAt?: Date;
@@ -52,6 +54,8 @@ export interface ProviderUsage {
   readonly updatedAt?: Date;
   /** Data limit berasal dari cache yang sudah lewat masa segarnya. */
   readonly stale?: boolean;
+  /** Bucket dikunci per model. Model tanpa bucket yang cocok tidak diberi bar. */
+  readonly perModelBuckets?: boolean;
 }
 
 export interface UsageFetchOptions {

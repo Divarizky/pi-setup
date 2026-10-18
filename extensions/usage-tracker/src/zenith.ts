@@ -29,6 +29,11 @@ const STALE_AFTER_MS = 15 * 60_000;
 const CACHE_VERSION = 1;
 const CACHE_FILE = "zenith-quota.json";
 let cacheWriteSequence = 0;
+/**
+ * Provider Zenith yang bucket kuotanya per model (key seperti `gemini-4-argon-low`),
+ * bukan per jendela waktu. Provider lain tetap memakai bucket terpakai tertinggi.
+ */
+const MODEL_KEYED_PROVIDERS: ReadonlySet<string> = new Set(["antigravity"]);
 
 export function isZenithProvider(providerId: string): boolean {
   return providerId === ZENITH_PROVIDER_ID || providerId === ZENITH_LEGACY_PROVIDER_ID;
@@ -104,6 +109,7 @@ function quotaLimit(value: unknown, label: string): UsageLimit | undefined {
   const displayName = typeof quota.displayName === "string" ? quota.displayName.trim() : "";
   return {
     label: displayName || label,
+    key: label,
     usedPercent: clampPercent(usedPercent),
     resetsAt: resetMs !== undefined ? new Date(resetMs) : undefined,
   };
@@ -179,6 +185,7 @@ function toProviderUsage(entry: unknown, now: Date, fromCache: boolean): Provide
     today: unavailable("today"),
     billing: unavailable("billing"),
     limits: limits.length > 0 ? limits : undefined,
+    perModelBuckets: MODEL_KEYED_PROVIDERS.has(provider),
     quota: plan,
     balance,
     message: error,
