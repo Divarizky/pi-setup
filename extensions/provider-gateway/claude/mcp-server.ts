@@ -41,7 +41,35 @@ export interface McpToolDef {
 	name: string;
 	description: string;
 	inputSchema: unknown;
-	handler: (toolCallId: string) => Promise<McpResult>;
+	handler: (toolCallId: string, signal?: AbortSignal) => Promise<McpResult>;
+}
+
+/** Berapa lama satu tool call boleh menggantung sebelum sisi MCP menyerah. Pi
+ *  mengirim hasil lewat tool_result biasa; turn yang berakhir tanpa hasil akan
+ *  membuat handler ini — dan turn Claude — menunggu selamanya. */
+const TOOL_CALL_TIMEOUT_MS = 15 * 60_000;
+
+async function withTimeout<T>(work: Promise<T>, signal: AbortSignal | undefined, toolName: string): Promise<T> {
+	if (signal?.aborted) throw new Error(`${toolName}: tool call cancelled before it ran`);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const timeout = new Promise<never>((_resolve, reject) => {
+		timer = setTimeout(
+			() =>
+				reject(
+					new Error(
+						`${toolName}: tool call timed out after ${TOOL_CALL_TIMEOUT_MS}ms — pi never delivered a result`,
+					),
+				),
+			TOOL_CALL_TIMEOUT_MS,
+		);
+		// Jangan tahan proses tetap hidup hanya karena timer ini.
+		(timer as { unref?: () => void }).unref?.();
+	});
+	try {
+		return await Promise.race([work, timeout]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
 }
 
 // MCP requires an object schema. Pi types tool parameters as any TypeBox schema,
@@ -69,7 +97,7 @@ export function createToolServer(name: string, tools: McpToolDef[]) {
 		})),
 	}));
 
-	server.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+	server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 		const tool = byName.get(request.params.name);
 		if (!tool) throw new Error(`Unknown tool: ${request.params.name}`);
 		const toolCallId = request.params._meta?.[TOOL_USE_ID_META];
@@ -78,7 +106,11 @@ export function createToolServer(name: string, tools: McpToolDef[]) {
 		}
 		// Narrowed deliberately: McpResult also carries `toolCallId`, which is our
 		// own bookkeeping for pairing and not part of MCP's CallToolResult.
-		const { content, isError } = await tool.handler(toolCallId);
+		const { content, isError } = await withTimeout(
+			tool.handler(toolCallId, extra?.signal),
+			extra?.signal,
+			tool.name,
+		);
 		return { content, isError };
 	});
 

@@ -13,7 +13,9 @@ export function renderSkillsBlock(skills: Skill[], readTool: SkillReadTool): str
 }
 
 export function rewriteSkillsBlock(skillsBlock: string): string {
-	return skillsBlock.replace(
+	// Replace global: kalau blok skill menyebut instruksi itu lebih dari sekali,
+	// penggantian sekali jalan meninggalkan sisa referensi read tool native.
+	return skillsBlock.replaceAll(
 		"Use the read tool to load a skill's file",
 		`Use the read tool (mcp__${MCP_SERVER_NAME}__read) to load a skill's file`,
 	);

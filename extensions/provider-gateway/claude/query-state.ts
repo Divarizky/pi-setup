@@ -81,14 +81,15 @@ export class QueryContext {
 		this.pendingResults.clear();
 	}
 
-	resetTurnState(model: Model<any>): void {
-		this.turnOutput = {
+	resetTurnState(model: Model<any>): AssistantMessage {
+		const output: AssistantMessage = {
 			role: "assistant", content: [],
 			api: model.api, provider: model.provider, model: model.id,
 			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
 			stopReason: "stop", timestamp: Date.now(),
 		};
+		this.turnOutput = output;
 		this.turnStarted = false;
 		this.turnSawStreamEvent = false;
 		this.turnSawToolCall = false;
@@ -98,6 +99,7 @@ export class QueryContext {
 		// turnToolCallIds is NOT reset — it persists across tool-result delivery
 		// callbacks within the same assistant message so results can be routed to
 		// this query while its handlers are still pending.
+		return output;
 	}
 }
 

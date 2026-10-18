@@ -28,6 +28,7 @@ import {
   type Context,
   type Model,
   type SimpleStreamOptions,
+  type ToolCall,
 } from "@earendil-works/pi-ai";
 import { getModels } from "@earendil-works/pi-ai/compat";
 import {
@@ -76,6 +77,21 @@ const DEBUG_LOG_PATH =
 if (DEBUG) {
   try { mkdirSync(dirname(DEBUG_LOG_PATH), { recursive: true }); } catch { /* abaikan */ }
 }
+// Redaction terpusat untuk log debug: API key, token OAuth, dan header auth
+// tidak boleh pernah tertulis plaintext ke claude-gateway.log.
+const SECRET_PATTERNS: Array<[RegExp, string]> = [
+  [/sk-ant-[A-Za-z0-9_-]{8,}/g, "sk-ant-***"],
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, "sk-***"],
+  [/("?(?:access|refresh|id)_token"?\s*[:=]\s*")([^"]+)(")/gi, "$1***$3"],
+  [/("?(?:api[_-]?key|apikey|authorization|password)"?\s*[:=]\s*")([^"]+)(")/gi, "$1***$3"],
+  [/\bBearer\s+[A-Za-z0-9._-]{10,}/gi, "Bearer ***"],
+  [/\bya29\.[A-Za-z0-9._-]{10,}/g, "ya29.***"],
+];
+function redactSecrets(text: string): string {
+  let out = text;
+  for (const [pattern, replacement] of SECRET_PATTERNS) out = out.replace(pattern, replacement);
+  return out;
+}
 function debug(...args: unknown[]): void {
   if (!DEBUG) return;
   const fmt = (a: unknown): string => {
@@ -83,7 +99,10 @@ function debug(...args: unknown[]): void {
     if (a instanceof Error) return `${a.name}: ${a.message}`;
     try { return JSON.stringify(a); } catch { return String(a); }
   };
-  appendFileSync(DEBUG_LOG_PATH, `[${new Date().toISOString()}] ${args.map(fmt).join(" ")}\n`);
+  const line = redactSecrets(args.map(fmt).join(" "));
+  try {
+    appendFileSync(DEBUG_LOG_PATH, `[${new Date().toISOString()}] ${line}\n`);
+  } catch { /* kegagalan logging tidak boleh menggagalkan jalur provider */ }
 }
 
 const MODELS = buildModels(getModels("anthropic"));
@@ -201,8 +220,19 @@ function markStreamComplete(stream: AssistantMessageEventStream | null): void {
   if (stream) completedStreams.add(stream as object);
 }
 function claimCurrentPiStream(stream: AssistantMessageEventStream, label: string, c: QueryContext): void {
-  if (c.currentPiStream && !completedStreams.has(c.currentPiStream as object)) {
+  const previous = c.currentPiStream;
+  if (previous && !completedStreams.has(previous as object)) {
+    // Stream turn sebelumnya belum menerima event terminal. Tutup dulu supaya
+    // consumer Pi tidak menggantung, baru lepas slot untuk turn berikutnya.
     debug(`WARNING: currentPiStream overwritten before terminal event (${label})`);
+    try {
+      finalizeCurrentStream(c, "stop");
+    } catch { /* penutupan stream lama tidak boleh menggagalkan turn baru */ }
+    if (c.currentPiStream === previous) {
+      markStreamComplete(previous);
+      try { previous.end(); } catch { /* abaikan */ }
+      c.currentPiStream = null;
+    }
   }
   c.currentPiStream = stream;
 }
@@ -364,41 +394,72 @@ function buildMcpServers(tools: NonNullable<Context["tools"]>, queryCtx: QueryCo
     name: tool.name,
     description: tool.description,
     inputSchema: tool.parameters,
-    handler: async (toolCallId: string) => {
+    handler: async (toolCallId: string, signal?: AbortSignal) => {
       if (queryCtx.pendingResults.has(toolCallId)) {
         const result = queryCtx.pendingResults.get(toolCallId)!;
         queryCtx.pendingResults.delete(toolCallId);
         return result;
       }
-      return new Promise<McpResult>((resolve) => {
+      return await new Promise<McpResult>((resolve) => {
         queryCtx.pendingToolCalls.set(toolCallId, { toolName: tool.name, resolve });
+        // Turn yang dibatalkan tidak akan pernah mengirim tool_result; lepaskan
+        // entri pending agar peta tidak tumbuh tanpa batas. Handler tetap
+        // menggantung sampai timeout MCP, yang dilaporkan sebagai error.
+        signal?.addEventListener(
+          "abort",
+          () => {
+            if (queryCtx.pendingToolCalls.get(toolCallId)?.resolve === resolve) {
+              queryCtx.pendingToolCalls.delete(toolCallId);
+            }
+          },
+          { once: true },
+        );
       });
     },
   }));
   return { [MCP_SERVER_NAME]: createToolServer(MCP_SERVER_NAME, mcpTools) };
 }
 
+/** Pi content block plus the Anthropic stream `index` tracked while a turn is
+ *  assembled. The loose view exists so block mutation during streaming does not
+ *  fight the discriminated union; the final block is converted back with
+ *  {@link toToolCall}. */
+type StreamingBlock = Record<string, any> & { index?: number };
+function streamingBlocks(output: AssistantMessage): StreamingBlock[] {
+  return output.content as unknown as StreamingBlock[];
+}
+function toToolCall(block: StreamingBlock): ToolCall {
+  return {
+    type: "toolCall",
+    id: String(block.id ?? ""),
+    name: String(block.name ?? ""),
+    arguments: (block.arguments ?? {}) as ToolCall["arguments"],
+  };
+}
+
 function processStreamEvent(message: SDKMessage, customToolNameToPi: Map<string, string>, model: Model<any>, c: QueryContext): void {
-  if (!c.currentPiStream || !c.turnOutput) return;
+  const stream = c.currentPiStream;
+  const output = c.turnOutput;
+  if (!stream || !output) return;
   c.turnSawStreamEvent = true;
   const event = (message as SDKMessage & { event: any }).event;
   if (event?.type === "message_start") {
     c.turnToolCallIds = [];
     c.turnStreamMessageId = event.message?.id;
     c.turnStreamOpen = true;
-    c.turnStreamBlockStart = (c.turnOutput.content as unknown[]).length;
-    if (event.message?.usage) updateUsage(c.turnOutput, event.message.usage, model);
+    c.turnStreamBlockStart = (output.content as unknown[]).length;
+    if (event.message?.usage) updateUsage(output, event.message.usage, model);
     return;
   }
   if (event?.type === "content_block_start") {
     ensureTurnStarted(c);
-    const blocks = c.turnOutput.content as Array<Record<string, unknown> & { index?: number }>;
+    const blocks = streamingBlocks(output);
     if (event.content_block?.type === "text") {
       blocks.push({ type: "text", text: "", index: event.index });
-      c.currentPiStream!.push({ type: "text_start", contentIndex: blocks.length - 1, partial: c.turnOutput });
+      stream.push({ type: "text_start", contentIndex: blocks.length - 1, partial: output });
     } else if (event.content_block?.type === "thinking") {
       blocks.push({ type: "thinking", thinking: "", thinkingSignature: "", index: event.index });
-      c.currentPiStream!.push({ type: "thinking_start", contentIndex: blocks.length - 1, partial: c.turnOutput });
+      stream.push({ type: "thinking_start", contentIndex: blocks.length - 1, partial: output });
     } else if (event.content_block?.type === "tool_use") {
       const piName = piToolNameFor(event.content_block.name, customToolNameToPi);
       if (!piName) { debug(`skipping unserved tool ${event.content_block.name}`); return; }
@@ -406,59 +467,58 @@ function processStreamEvent(message: SDKMessage, customToolNameToPi: Map<string,
       c.turnToolCallIds.push(event.content_block.id);
       blocks.push({ type: "toolCall", id: event.content_block.id, name: piName,
         arguments: (event.content_block.input as Record<string, unknown>) ?? {}, partialJson: "", index: event.index });
-      c.currentPiStream!.push({ type: "toolcall_start", contentIndex: blocks.length - 1, partial: c.turnOutput });
+      stream.push({ type: "toolcall_start", contentIndex: blocks.length - 1, partial: output });
     }
     return;
   }
   if (event?.type === "content_block_delta") {
-    const blocks = c.turnOutput.content as Array<Record<string, any> & { index?: number }>;
+    const blocks = streamingBlocks(output);
     const index = blocks.findIndex((b) => b.index === event.index);
     const block = blocks[index];
     if (!block) return;
     if (event.delta?.type === "text_delta" && block.type === "text") {
       block.text += event.delta.text;
-      c.currentPiStream!.push({ type: "text_delta", contentIndex: index, delta: event.delta.text, partial: c.turnOutput });
+      stream.push({ type: "text_delta", contentIndex: index, delta: event.delta.text, partial: output });
     } else if (event.delta?.type === "thinking_delta" && block.type === "thinking") {
       block.thinking += event.delta.thinking;
-      c.currentPiStream!.push({ type: "thinking_delta", contentIndex: index, delta: event.delta.thinking, partial: c.turnOutput });
+      stream.push({ type: "thinking_delta", contentIndex: index, delta: event.delta.thinking, partial: output });
     } else if (event.delta?.type === "input_json_delta" && block.type === "toolCall") {
       block.partialJson += event.delta.partial_json;
       block.arguments = parsePartialJson(block.partialJson, block.arguments);
-      c.currentPiStream!.push({ type: "toolcall_delta", contentIndex: index, delta: event.delta.partial_json, partial: c.turnOutput });
+      stream.push({ type: "toolcall_delta", contentIndex: index, delta: event.delta.partial_json, partial: output });
     } else if (event.delta?.type === "signature_delta" && block.type === "thinking") {
       block.thinkingSignature = (block.thinkingSignature ?? "") + event.delta.signature;
     }
     return;
   }
   if (event?.type === "content_block_stop") {
-    const blocks = c.turnOutput.content as Array<Record<string, any> & { index?: number }>;
+    const blocks = streamingBlocks(output);
     const index = blocks.findIndex((b) => b.index === event.index);
     const block = blocks[index];
     if (!block) return;
     delete block.index;
     if (block.type === "text") {
-      c.currentPiStream!.push({ type: "text_end", contentIndex: index, content: block.text, partial: c.turnOutput });
+      stream.push({ type: "text_end", contentIndex: index, content: block.text, partial: output });
     } else if (block.type === "thinking") {
-      c.currentPiStream!.push({ type: "thinking_end", contentIndex: index, content: block.thinking, partial: c.turnOutput });
+      stream.push({ type: "thinking_end", contentIndex: index, content: block.thinking, partial: output });
     } else if (block.type === "toolCall") {
       block.arguments = mapToolArgs(block.name, parsePartialJson(block.partialJson, block.arguments));
       delete block.partialJson;
-      c.currentPiStream!.push({ type: "toolcall_end", contentIndex: index, toolCall: block, partial: c.turnOutput });
+      stream.push({ type: "toolcall_end", contentIndex: index, toolCall: toToolCall(block), partial: output });
     }
     return;
   }
   if (event?.type === "message_delta") {
-    c.turnOutput.stopReason = mapStopReason(event.delta?.stop_reason);
-    if (event.usage) updateUsage(c.turnOutput, event.usage, model);
+    output.stopReason = mapStopReason(event.delta?.stop_reason);
+    if (event.usage) updateUsage(output, event.usage, model);
     return;
   }
   if (event?.type === "message_stop") c.turnStreamOpen = false;
   if (event?.type === "message_stop" && c.turnSawToolCall) {
-    c.turnOutput.stopReason = "toolUse";
-    const stream = c.currentPiStream;
-    stream!.push({ type: "done", reason: "toolUse", message: c.turnOutput });
+    output.stopReason = "toolUse";
+    stream.push({ type: "done", reason: "toolUse", message: output });
     markStreamComplete(stream);
-    stream!.end();
+    stream.end();
     c.currentPiStream = null;
   }
 }
@@ -471,21 +531,24 @@ function processAssistantMessage(message: SDKMessage, model: Model<any>, customT
   }
   c.turnToolCallIds = [];
   for (const block of assistantMsg.content) {
-    const blocks = c.turnOutput!.content as Array<Record<string, unknown>>;
+    const output = c.turnOutput;
+    const stream = c.currentPiStream;
+    if (!output) return;
+    const blocks = streamingBlocks(output);
     if (block.type === "text" && block.text) {
       ensureTurnStarted(c);
       blocks.push({ type: "text", text: block.text });
       const idx = blocks.length - 1;
-      c.currentPiStream?.push({ type: "text_start", contentIndex: idx, partial: c.turnOutput });
-      c.currentPiStream?.push({ type: "text_delta", contentIndex: idx, delta: block.text, partial: c.turnOutput });
-      c.currentPiStream?.push({ type: "text_end", contentIndex: idx, content: block.text, partial: c.turnOutput });
+      stream?.push({ type: "text_start", contentIndex: idx, partial: output });
+      stream?.push({ type: "text_delta", contentIndex: idx, delta: block.text, partial: output });
+      stream?.push({ type: "text_end", contentIndex: idx, content: block.text, partial: output });
     } else if (block.type === "thinking") {
       ensureTurnStarted(c);
       blocks.push({ type: "thinking", thinking: block.thinking ?? "", thinkingSignature: block.signature ?? "" });
       const idx = blocks.length - 1;
-      c.currentPiStream?.push({ type: "thinking_start", contentIndex: idx, partial: c.turnOutput });
-      if (block.thinking) c.currentPiStream?.push({ type: "thinking_delta", contentIndex: idx, delta: block.thinking, partial: c.turnOutput });
-      c.currentPiStream?.push({ type: "thinking_end", contentIndex: idx, content: block.thinking ?? "", partial: c.turnOutput });
+      stream?.push({ type: "thinking_start", contentIndex: idx, partial: output });
+      if (block.thinking) stream?.push({ type: "thinking_delta", contentIndex: idx, delta: block.thinking, partial: output });
+      stream?.push({ type: "thinking_end", contentIndex: idx, content: block.thinking ?? "", partial: output });
     } else if (block.type === "tool_use") {
       const piName = piToolNameFor(block.name, customToolNameToPi);
       if (!piName) continue;
@@ -494,8 +557,8 @@ function processAssistantMessage(message: SDKMessage, model: Model<any>, customT
       c.turnToolCallIds.push(block.id);
       blocks.push({ type: "toolCall", id: block.id, name: piName, arguments: mapToolArgs(piName, block.input) });
       const idx = blocks.length - 1;
-      c.currentPiStream?.push({ type: "toolcall_start", contentIndex: idx, partial: c.turnOutput });
-      c.currentPiStream?.push({ type: "toolcall_end", contentIndex: idx, toolCall: blocks[idx] as any, partial: c.turnOutput });
+      stream?.push({ type: "toolcall_start", contentIndex: idx, partial: output });
+      stream?.push({ type: "toolcall_end", contentIndex: idx, toolCall: toToolCall(blocks[idx]), partial: output });
     }
   }
   if (assistantMsg.usage && c.turnOutput) updateUsage(c.turnOutput, assistantMsg.usage, model);
@@ -543,12 +606,16 @@ async function consumeQuery(
         if (resultError === undefined && !queryCtx.turnSawStreamEvent && message.subtype === "success") {
           ensureTurnStarted(queryCtx);
           const text = (message as { result?: string }).result || "";
-          const blocks = queryCtx.turnOutput.content as Array<Record<string, unknown>>;
-          blocks.push({ type: "text", text });
-          const idx = blocks.length - 1;
-          queryCtx.currentPiStream?.push({ type: "text_start", contentIndex: idx, partial: queryCtx.turnOutput });
-          queryCtx.currentPiStream?.push({ type: "text_delta", contentIndex: idx, delta: text, partial: queryCtx.turnOutput });
-          queryCtx.currentPiStream?.push({ type: "text_end", contentIndex: idx, content: text, partial: queryCtx.turnOutput });
+          const output = queryCtx.turnOutput;
+          const resultStream = queryCtx.currentPiStream;
+          if (output) {
+            const blocks = streamingBlocks(output);
+            blocks.push({ type: "text", text });
+            const idx = blocks.length - 1;
+            resultStream?.push({ type: "text_start", contentIndex: idx, partial: output });
+            resultStream?.push({ type: "text_delta", contentIndex: idx, delta: text, partial: output });
+            resultStream?.push({ type: "text_end", contentIndex: idx, content: text, partial: output });
+          }
         }
         break;
       }
@@ -626,7 +693,7 @@ const CONTINUE_AFTER_REWRITE_PROMPT =
   "[Your context was compacted. What precedes this is a summary plus the most recent messages, "
   + "ending with the tool result you were waiting for. Continue the task from there.]";
 
-// streamSimple sinkron kembalikan stream (kontrak Pi, pola antigravity-stream.ts).
+// streamSimple sinkron: kembalikan stream langsung (kontrak Pi).
 function streamClaudeAgentSdk(model: Model<any>, context: Context, options?: SimpleStreamOptions): AssistantMessageEventStream {
   const stream = createAssistantMessageEventStream();
   void runClaudeQuery(model, context, options, stream);
@@ -670,9 +737,9 @@ async function runClaudeQuery(
   const lastMsg = context.messages[context.messages.length - 1];
   if (lastMsg?.role === "toolResult") {
     const c = new QueryContext();
-    c.resetTurnState(model);
+    const output = c.resetTurnState(model);
     queueMicrotask(() => {
-      stream.push({ type: "done", reason: "stop", message: c.turnOutput });
+      stream.push({ type: "done", reason: "stop", message: output });
       markStreamComplete(stream);
       stream.end();
     });
@@ -1065,9 +1132,18 @@ function resolveClaudeExecutable(): string | undefined {
   return undefined;
 }
 
+// Jalur fallback memakai shell (shim npm `claude.cmd` di Windows wajib lewat
+// shell), jadi argumen divalidasi ketat: tanpa metakarakter shell apa pun.
+const SHELL_SAFE_ARG = /^[A-Za-z0-9_@%+=:,./\\-]+$/;
+
 async function runClaudeCli(args: string[]): Promise<string> {
   const exe = resolveClaudeExecutable();
   if (exe) return (await execFileAsync(exe, args, { timeout: 20_000 })).stdout;
+  for (const arg of args) {
+    if (!SHELL_SAFE_ARG.test(arg)) {
+      throw new Error(`Argumen CLI tidak aman dijalankan lewat shell: ${JSON.stringify(arg)}`);
+    }
+  }
   // Tanpa path absolut, paksa lewat shell agar shim npm (claude.cmd) ikut
   // terresolve via PATHEXT — execFile tanpa shell tidak bisa spawn .cmd.
   return (await execAsync(`claude ${args.join(" ")}`, { timeout: 20_000 })).stdout;

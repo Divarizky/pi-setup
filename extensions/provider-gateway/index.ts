@@ -5,7 +5,7 @@ import {
   rename,
   writeFile,
 } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
@@ -17,31 +17,9 @@ import type {
   ProviderModelConfig,
 } from "@earendil-works/pi-coding-agent";
 import type {
-  OAuthCredentials,
-  OAuthLoginCallbacks,
+  ModelsStoreEntry,
+  RefreshModelsContext,
 } from "@earendil-works/pi-ai";
-// Namespace import: pola resmi pi-antigravity, registerApiProvider tidak ada
-// di Oh My Pi sehingga di-resolve saat runtime.
-import * as piAiCompat from "@earendil-works/pi-ai/compat";
-import {
-  loginAntigravity,
-  refreshAntigravityToken,
-  getApiKey as getAntigravityApiKey,
-} from "./antigravity/auth-oauth.js";
-import {
-  rememberAccount,
-  updateRememberedAccount,
-  listAccounts as listAntigravityAccounts,
-  activateAccount as activateAntigravityAccount,
-  removeAccount as removeAntigravityAccount,
-} from "./antigravity/auth-accounts.js";
-import { DEFAULT_ENDPOINT as ANTIGRAVITY_ENDPOINT } from "./antigravity/client.js";
-import {
-  ANTIGRAVITY_API as ANTIGRAVITY_API_ID,
-  streamAntigravity,
-} from "./antigravity/antigravity-stream.js";
-import { getCurrentAntigravityCatalog as getGatewayAntigravityCatalog } from "./antigravity/models-catalog.js";
-import { refreshAntigravityModels } from "./antigravity/models-discovery.js";
 import {
   registerClaudeProvider,
   unregisterClaudeProvider,
@@ -72,9 +50,6 @@ import {
  *   opencode-zen -> API key opsional, model gratis (kode dipindah dari 9router.ts)
  *   zenith      -> API key (zr_...), gateway lokal port 20120 (id auth lama "zenroute" masih dibaca)
  *   claude     -> Pro/Max via CLI resmi + Agent SDK (login = `claude login`)
- *   antigravity -> OAuth Google + model Gemini/Claude/GPT (vendored dari
- *     pi-antigravity v0.8.1 ke ./antigravity/*, boleh uninstall
- *     npm:pi-antigravity setelah ini stabil).
  *   openai-codex -> OAuth ChatGPT bawaan pi-ai (delegasi ke
  *     `/login openai-codex`, tanpa duplikasi flow).
  */
@@ -93,66 +68,48 @@ const OPENCODE_AUTH_ID = "opencode-zen";
 // ID provider OAuth direct lama — hanya untuk bersih-bersih sisa kredensial.
 const ANTHROPIC_PROVIDER_ID = "anthropic";
 const OPENCODE_ZEN_MODELS_URL = "https://opencode.ai/zen/v1/models";
-const ANTIGRAVITY_PROVIDER_ID = "antigravity";
-const ANTIGRAVITY_PROVIDER_NAME = "Antigravity";
 // Provider bawaan pi-ai — gateway hanya status/logout, OAuth milik builtin.
 const OPENAI_CODEX_PROVIDER_ID = "openai-codex";
-
-async function loginAndRememberAntigravity(
-  callbacks: OAuthLoginCallbacks,
-): Promise<OAuthCredentials> {
-  const credentials = await loginAntigravity(callbacks);
-  rememberAccount(credentials);
-  return credentials;
-}
-
-async function refreshAndRememberAntigravity(
-  credentials: OAuthCredentials,
-): Promise<OAuthCredentials> {
-  const refreshed = await refreshAntigravityToken(credentials);
-  updateRememberedAccount(credentials, refreshed);
-  return refreshed;
-}
-
-function registerCompatAntigravityApi(): void {
-  const register = (piAiCompat as {
-    registerApiProvider?: (provider: {
-      api: typeof ANTIGRAVITY_API_ID;
-      stream: typeof streamAntigravity;
-      streamSimple: typeof streamAntigravity;
-    }) => void;
-  }).registerApiProvider;
-  if (typeof register !== "function") return;
-  register({
-    api: ANTIGRAVITY_API_ID,
-    stream: streamAntigravity,
-    streamSimple: streamAntigravity,
-  });
-}
-
-function registerAntigravityProvider(pi: ExtensionAPI): void {
-  registerCompatAntigravityApi();
-  const initialCatalog = getGatewayAntigravityCatalog();
-  pi.registerProvider(ANTIGRAVITY_PROVIDER_ID, {
-    name: ANTIGRAVITY_PROVIDER_NAME,
-    baseUrl: ANTIGRAVITY_ENDPOINT,
-    api: ANTIGRAVITY_API_ID,
-    models: initialCatalog.models,
-    refreshModels: refreshAntigravityModels,
-    oauth: {
-      name: ANTIGRAVITY_PROVIDER_NAME,
-      login: loginAndRememberAntigravity,
-      refreshToken: refreshAndRememberAntigravity,
-      getApiKey: getAntigravityApiKey,
-    },
-    streamSimple: streamAntigravity,
-  });
-}
 const OPENCODE_ALWAYS_FREE_IDS = new Set(["big-pickle"]);
 const AGENT_DIR =
   process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const AUTH_FILE = join(AGENT_DIR, "auth.json");
+const MODELS_STORE_FILE = join(AGENT_DIR, "models-store.json");
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * Model yang dipersist Pi untuk satu provider, dibaca sinkron saat extension
+ * dimuat. Zenit didaftarkan di fase load agar model default di settings.json
+ * bisa di-resolve; `RefreshModelsContext.stored` belum tersedia di titik itu.
+ */
+function readStoredModelsSync(providerId: string): ProviderModelConfig[] {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(MODELS_STORE_FILE, "utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return [];
+    const entry = (parsed as Record<string, unknown>)[providerId];
+    if (typeof entry !== "object" || entry === null) return [];
+    const models = (entry as { models?: unknown }).models;
+    return Array.isArray(models) ? (models as ProviderModelConfig[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Varian sinkron dari {@link getApiKeyEntry}, untuk jalur load yang tidak boleh await. */
+function readApiKeyEntrySync(providerId: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(AUTH_FILE, "utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+    const credential = (parsed as Record<string, unknown>)[providerId];
+    if (typeof credential !== "object" || credential === null || Array.isArray(credential)) return null;
+    const entry = credential as Partial<AuthEntry>;
+    return entry.type === "api_key" && typeof entry.key === "string" && entry.key.trim()
+      ? entry.key.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 // --- auth.json store (dipindah dari 9router.ts, tambah tipe oauth) ---
 
@@ -424,11 +381,13 @@ async function getRouterModels(apiKey: string): Promise<RouterModel[]> {
   }));
 }
 
-async function getOpenCodeFreeModels(apiKey: string): Promise<RouterModel[] | null> {
+// API key OpenCode Zen bersifat opsional: endpoint daftar model memang terbuka
+// tanpa auth. Jangan pernah mengirim kredensial provider lain ke host ini.
+async function getOpenCodeFreeModels(apiKey: string | null): Promise<RouterModel[] | null> {
   try {
-    const response = await fetch(OPENCODE_ZEN_MODELS_URL, {
-      headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
-    });
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    const response = await fetch(OPENCODE_ZEN_MODELS_URL, { headers });
     if (!response.ok) return null;
     const json = await response.json() as ModelsResponse;
     return (json.data ?? [])
@@ -463,17 +422,19 @@ function toRouterModelDefs(models: RouterModel[]): ProviderModelConfig[] {
 }
 
 async function fetchMergedRouterModels(apiKey: string): Promise<RouterModel[] | null> {
-  const openCodeApiKey = await getApiKeyEntry(OPENCODE_AUTH_ID) ?? apiKey;
+  const openCodeApiKey = await getApiKeyEntry(OPENCODE_AUTH_ID);
   const [discoveredModels, officialFreeModels] = await Promise.all([
     getRouterModels(apiKey),
     getOpenCodeFreeModels(openCodeApiKey),
   ]);
-  if (officialFreeModels === null) return null;
   const connectionCount = getLocalActiveConnectionCount();
-  return mergeModels(
+  // Kegagalan sisi OpenCode Zen tidak boleh menggagalkan registrasi provider
+  // 9Router; cukup lewati model Zen-nya.
+  const merged = mergeModels(
     connectionCount === 0 ? [] : discoveredModels,
-    officialFreeModels,
+    officialFreeModels ?? [],
   );
+  return merged.length > 0 ? merged : null;
 }
 
 function registerRouterProvider(pi: ExtensionAPI, apiKey: string, models: RouterModel[]): void {
@@ -514,30 +475,52 @@ async function getZenithModels(apiKey: string): Promise<RouterModel[]> {
   return json.data ?? [];
 }
 
-function registerZenithProvider(pi: ExtensionAPI, apiKey: string, models: RouterModel[]): void {
-  let lastModels: ProviderModelConfig[] | undefined;
+function registerZenithProvider(pi: ExtensionAPI, apiKey: string, models: RouterModel[], initialModels?: ProviderModelConfig[]): void {
+  let lastModels: ProviderModelConfig[] = initialModels?.length
+    ? initialModels
+    : toRouterModelDefs(models);
+  // Snapshot dari models-store dianggap segar: tanpa ini refresh dipanggil saat
+  // startup dan saat listing model, dan fetch yang belum selesai ketika proses
+  // ditutup memicu assertion libuv di Windows (src\win\async.c:94).
+  let lastRefreshedAt = initialModels?.length ? Date.now() : 0;
   const config: ProviderConfig = {
     name: ZENITH_PROVIDER_NAME,
     baseUrl: `${ZENITH_URL}/v1`,
     apiKey,
     authHeader: true,
     api: "openai-completions",
-    models: toRouterModelDefs(models),
-    async refreshModels(): Promise<ProviderModelConfig[]> {
+    models: lastModels,
+    async refreshModels(context: RefreshModelsContext): Promise<ProviderModelConfig[]> {
+      if (!context.force && lastRefreshedAt > 0 && Date.now() - lastRefreshedAt < REFRESH_INTERVAL_MS) {
+        return lastModels;
+      }
       const key = await getRouterApiKey();
-      if (!key) return lastModels ?? [];
+      if (!key) return lastModels;
       try {
         const models = await getZenithModels(key);
         lastModels = toRouterModelDefs(models);
+        lastRefreshedAt = Date.now();
+        // Simpan snapshot ke models-store. Tanpa ini daftar model zenith hilang
+        // dari registry sebelum session_start, sehingga model default di
+        // settings.json tidak bisa di-resolve dan Pi diam-diam jatuh ke provider lain.
+        try {
+          await context.publish({
+            persist: { models: lastModels } as unknown as ModelsStoreEntry,
+          });
+        } catch { /* persist gagal: sesi tetap jalan dengan daftar live */ }
         return lastModels;
       } catch {
-        return lastModels ?? [];
+        return lastModels;
       }
     },
   };
-  lastModels = config.models;
+  zenithRegistered = true;
   pi.registerProvider(ZENITH_PROVIDER_ID, config);
 }
+
+// Provider zenith hanya boleh didaftarkan sekali: load-time memakai snapshot
+// models-store, lalu session_start me-refresh dengan daftar live.
+let zenithRegistered = false;
 
 // --- Claude Pro/Max via Agent SDK (pengganti OAuth direct) ---
 // Direct HTTP OAuth (api anthropic-messages + token sk-ant-oat) ditolak Anthropic
@@ -553,7 +536,6 @@ const CHOICE_ROUTER = "9Router (API key)";
 const CHOICE_ZEN = "OpenCode Zen (API key, opsional)";
 const CHOICE_ZENITH = "Zenith Router (API key)";
 const CHOICE_CLAUDE = "Claude Pro/Max (CLI)";
-const CHOICE_ANTIGRAVITY = "Antigravity / Gemini (Google OAuth)";
 const CHOICE_OPENAI_CODEX = "OpenAI Codex (ChatGPT OAuth)";
 
 function maskApiKey(key: string): string {
@@ -566,7 +548,6 @@ async function gatewayLogin(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pro
     CHOICE_ZEN,
     CHOICE_ZENITH,
     CHOICE_CLAUDE,
-    CHOICE_ANTIGRAVITY,
     CHOICE_OPENAI_CODEX,
   ]);
   if (!choice) return;
@@ -602,7 +583,7 @@ async function gatewayLogin(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pro
       await writeAuthFile(auth);
       const merged = mergeModels(
         getLocalActiveConnectionCount() === 0 ? [] : models,
-        await getOpenCodeFreeModels(await getApiKeyEntry(OPENCODE_AUTH_ID) ?? apiKey) ?? [],
+        await getOpenCodeFreeModels(await getApiKeyEntry(OPENCODE_AUTH_ID)) ?? [],
       );
       registerRouterProvider(pi, apiKey, merged);
       ctx.ui.notify(`9Router connected. Models: ${merged.length}`, "info");
@@ -643,9 +624,6 @@ async function gatewayLogin(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pro
       ctx.ui.notify("Jalankan `/login openai-codex` untuk menyelesaikan ChatGPT OAuth (Browser / Device code).", "info");
       return;
     }
-
-    registerAntigravityProvider(pi);
-    ctx.ui.notify("Antigravity provider terdaftar. Jalankan `/login antigravity` untuk menyelesaikan Google OAuth.", "info");
   } catch (error) {
     ctx.ui.notify(`Gateway login failed: ${error instanceof Error ? error.message : String(error)}`, "error");
   }
@@ -666,23 +644,13 @@ async function gatewayStatus(ctx: ExtensionCommandContext): Promise<void> {
     claudeConnected = false;
     claudeDetail = "CLI tidak ditemukan";
   }
-  const antigravityOAuth = hasOAuthEntry(auth, ANTIGRAVITY_PROVIDER_ID);
   const openaiCodexOAuth = hasOAuthEntry(auth, OPENAI_CODEX_PROVIDER_ID);
-
-  const antigravityCred = auth[ANTIGRAVITY_PROVIDER_ID] as Record<string, unknown> | undefined;
-  const antigravityDetail =
-    typeof antigravityCred?.email === "string" && antigravityCred.email
-      ? antigravityCred.email
-      : typeof antigravityCred?.projectId === "string" && antigravityCred.projectId
-        ? antigravityCred.projectId
-        : "oauth";
 
   const items = [
     { name: "9Router", connected: Boolean(routerKey), detail: routerKey ? maskApiKey(routerKey) : "" },
     { name: "OpenCode Zen", connected: Boolean(zenKey), detail: zenKey ? maskApiKey(zenKey) : "" },
     { name: "Zenith Router", connected: Boolean(zenithKey), detail: zenithKey ? maskApiKey(zenithKey) : "" },
     { name: "Claude Pro/Max", connected: claudeConnected, detail: claudeDetail },
-    { name: "Antigravity", connected: antigravityOAuth, detail: antigravityDetail },
     { name: "OpenAI Codex", connected: openaiCodexOAuth, detail: openaiCodexOAuth ? "oauth" : "" },
   ];
 
@@ -713,7 +681,6 @@ async function gatewayLogout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pr
     CHOICE_ZEN,
     CHOICE_ZENITH,
     CHOICE_CLAUDE,
-    CHOICE_ANTIGRAVITY,
     CHOICE_OPENAI_CODEX,
   ]);
   if (!choice) return;
@@ -743,10 +710,6 @@ async function gatewayLogout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pr
     await writeAuthFile(auth);
     unregisterClaudeProvider(pi);
     try { pi.unregisterProvider(ANTHROPIC_PROVIDER_ID); } catch { /* sisa ID lama */ }
-  } else if (choice === CHOICE_ANTIGRAVITY) {
-    delete auth[ANTIGRAVITY_PROVIDER_ID];
-    await writeAuthFile(auth);
-    pi.unregisterProvider(ANTIGRAVITY_PROVIDER_ID);
   } else if (choice === CHOICE_OPENAI_CODEX) {
     // Kredensial milik builtin pi-ai — gateway hanya hapus simpanan.
     delete auth[OPENAI_CODEX_PROVIDER_ID];
@@ -758,42 +721,9 @@ async function gatewayLogout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pr
 export default function (pi: ExtensionAPI): void {
   let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
-  pi.registerCommand("gateway-login", { description: "Login provider via gateway (9Router / Zen / Claude / Antigravity / OpenAI)", handler: async (_args, ctx) => gatewayLogin(pi, ctx) });
+  pi.registerCommand("gateway-login", { description: "Login provider via gateway (9Router / Zen / Claude / OpenAI)", handler: async (_args, ctx) => gatewayLogin(pi, ctx) });
   pi.registerCommand("gateway-status", { description: "Show gateway provider status", handler: async (_args, ctx) => gatewayStatus(ctx) });
   pi.registerCommand("gateway-logout", { description: "Remove gateway credential", handler: async (_args, ctx) => gatewayLogout(pi, ctx) });
-  pi.registerCommand("gateway-antigravity-accounts", {
-    description: "List, switch, or remove linked Antigravity Google accounts",
-    handler: async (args, ctx) => {
-      const command = (args ?? "").trim();
-      try {
-        if (command.startsWith("switch ")) {
-          const account = await activateAntigravityAccount(command.slice("switch ".length));
-          ctx.ui.notify(`Active Antigravity account: ${account.email || account.accountId}`, "info");
-          return;
-        }
-        if (command.startsWith("remove ")) {
-          const remaining = await removeAntigravityAccount(command.slice("remove ".length));
-          const next = remaining ? ` Active account is now ${remaining.email || remaining.accountId}.` : "";
-          ctx.ui.notify(`Antigravity account removed.${next}`, "info");
-          return;
-        }
-        const accounts = listAntigravityAccounts();
-        if (accounts.length === 0) {
-          ctx.ui.notify("No linked Antigravity accounts. Run /login antigravity to add one.", "warning");
-          return;
-        }
-        const lines = accounts.map(
-          (account, index) => `${account.active ? "* " : "  "}${index + 1}. ${account.email || account.accountId}`,
-        );
-        ctx.ui.notify(
-          `${lines.join("\n")}\nUse /gateway-antigravity-accounts switch <index|email> or /gateway-antigravity-accounts remove <index|email>.`,
-          "info",
-        );
-      } catch (error) {
-        ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
-      }
-    },
-  });
 
   // Prompt capture harus direkam di tiga boundary hook berikut
   // (before_agent_start/agent_start/turn_start), kalau tidak resolveOrDerive
@@ -820,7 +750,14 @@ export default function (pi: ExtensionAPI): void {
     recordSystemPrompt("turn_start", ctx.getSystemPrompt(), lastSystemPromptOptions);
   });
 
-  registerAntigravityProvider(pi);
+  // Zenith didaftarkan sedini mungkin (fase load), memakai snapshot models-store
+  // tanpa network. Model default di settings.json di-resolve sebelum
+  // session_start berjalan, jadi provider yang baru didaftarkan di sana akan
+  // gagal di-resolve dan Pi diam-diam jatuh ke provider lain.
+  const zenithKeyAtLoad = readApiKeyEntrySync(ZENITH_PROVIDER_ID) ?? readApiKeyEntrySync(LEGACY_ZENROUTE_PROVIDER_ID);
+  if (zenithKeyAtLoad) {
+    registerZenithProvider(pi, zenithKeyAtLoad, [], readStoredModelsSync(ZENITH_PROVIDER_ID));
+  }
 
   // Teruskan rewrite history (compact/tree) ke mirror sesi Claude agar query
   // parked tidak menjawab dari percakapan basi.
@@ -882,7 +819,9 @@ export default function (pi: ExtensionAPI): void {
       }
 
       const zenithApiKey = await getRouterApiKey();
-      if (zenithApiKey) {
+      // Kalau sudah didaftarkan saat load (memakai snapshot models-store), jangan
+      // daftarkan ulang — daftar live-nya diurus oleh refreshModels provider itu.
+      if (zenithApiKey && !zenithRegistered) {
         try {
           const models = await getZenithModels(zenithApiKey);
           registerZenithProvider(pi, zenithApiKey, models);

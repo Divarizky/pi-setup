@@ -3,12 +3,25 @@
 
 type ContextFile = { path: string; content: string };
 
+/** File konteks bisa disunting user; tag penutup literal di dalamnya akan
+ *  menutup wrapper lebih awal dan membiarkan isi file menyamar sebagai struktur
+ *  prompt. Escape urutan penutup lebih dulu, baru awalan tag pembuka. */
+function escapeWrapperTags(text: string): string {
+	return text
+		.replaceAll("</project_instructions>", "&lt;/project_instructions&gt;")
+		.replaceAll("<project_instructions", "&lt;project_instructions");
+}
+
+function escapeAttribute(value: string): string {
+	return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+}
+
 export function formatProjectContext(contextFiles: ContextFile[]): string | undefined {
 	if (contextFiles.length === 0) return undefined;
 
 	let prompt = "<project_context>\n\nProject-specific instructions and guidelines:\n\n";
 	for (const { path, content } of contextFiles) {
-		prompt += `<project_instructions path="${path}">\n${content}\n</project_instructions>\n\n`;
+		prompt += `<project_instructions path="${escapeAttribute(path)}">\n${escapeWrapperTags(content)}\n</project_instructions>\n\n`;
 	}
 	return `${prompt}</project_context>`;
 }

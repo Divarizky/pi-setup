@@ -68,27 +68,37 @@ export function collectCarriedAttachments(records: readonly JsonlRecord[]): Carr
 
 	for (const raw of records) {
 		const record = raw as Rec;
+		// uuid dipakai sebagai kunci peta; record tanpa uuid yang valid akan membuat
+		// entri ber-key `undefined` dan bisa salah dipakai sebagai parent.
+		const uuid = typeof record.uuid === "string" && record.uuid ? record.uuid : undefined;
 		const prompt = userPromptText(record);
 		if (prompt !== undefined) {
-			ordinalOf.set(record.uuid as string, ordinal++);
-			textOf.set(record.uuid as string, prompt);
+			if (uuid) {
+				ordinalOf.set(uuid, ordinal);
+				textOf.set(uuid, prompt);
+			}
+			ordinal++;
 			continue;
 		}
 		if (record.type !== "attachment") continue;
-		const parent = record.parentUuid as string | null;
+		const parent =
+			typeof record.parentUuid === "string" && record.parentUuid ? record.parentUuid : null;
+		if (parent === null || !ordinalOf.has(parent) || !textOf.has(parent)) continue;
 		// Attachments chain to each other — a run of them hangs off one prompt, and
 		// 63 of 179 in real sessions parent to another attachment rather than to a
 		// message. Inherit the ordinal so the whole run keys to the prompt that
 		// caused it. Recorded for every attachment, not just the ones carried, since
 		// a content-bearing one can chain off a `skill_listing` we ignore.
-		if (parent === null || !ordinalOf.has(parent)) continue;
-		const inherited = ordinalOf.get(parent)!;
-		ordinalOf.set(record.uuid as string, inherited);
-		textOf.set(record.uuid as string, textOf.get(parent)!);
+		const inherited = ordinalOf.get(parent) as number;
+		const parentText = textOf.get(parent) as string;
+		if (uuid) {
+			ordinalOf.set(uuid, inherited);
+			textOf.set(uuid, parentText);
+		}
 
 		const attachment = record.attachment as { type: string; [key: string]: unknown } | undefined;
 		if (!attachment || !CONTENT_BEARING.has(attachment.type)) continue;
-		carried.push({ attachment, userOrdinal: inherited, parentText: textOf.get(parent)! });
+		carried.push({ attachment, userOrdinal: inherited, parentText });
 	}
 	return carried;
 }

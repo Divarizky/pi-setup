@@ -125,7 +125,11 @@ export async function runMentionClone(opts: MentionCloneOptions): Promise<Mentio
         { ...(params as Record<string, unknown>), run_in_background: true } as typeof params,
         signal,
         onUpdate,
-        ctx,
+        // Pi 1.3.0 melebarkan parameter kelima menjadi ExtensionToolContext (kini
+        // membawa `tools`/`executeTool`). Handler di balik tool ini hanya membaca
+        // `cwd`, `model`, dan `sessionManager` — alasan ia diikat ke konteks utama —
+        // jadi ExtensionContext utama diteruskan apa adanya.
+        ctx as unknown as Parameters<typeof agentTool.execute>[4],
       );
     },
   };
@@ -173,9 +177,17 @@ export async function runMentionClone(opts: MentionCloneOptions): Promise<Mentio
     // The clone rebuilds a system prompt from cwd and agentDir, which is close
     // but not the live one — extensions contribute to it per turn. Copy the
     // real thing, so the copy reasons under the instructions the user's model
-    // is actually working under.
+    // is actually working under. Pi 1.3.0 made `state.systemPrompt` read-only;
+    // the documented replacement is appending a system message, which the clone
+    // carries as additional instructions for its single turn.
     const systemPrompt = ctx.getSystemPrompt?.();
-    if (systemPrompt) session.agent.state.systemPrompt = systemPrompt;
+    if (systemPrompt) {
+      session.agent.state.messages.push({
+        role: "system",
+        content: systemPrompt,
+        timestamp: Date.now(),
+      });
+    }
 
     // The conversation itself. Pushed rather than assigned so the array the
     // session was built around stays the one it goes on using.

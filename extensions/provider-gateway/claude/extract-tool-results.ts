@@ -20,14 +20,17 @@ export interface McpResult {
 export function toolResultToMcpContent(
 	content: string | Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
 ): McpContent {
-	if (typeof content === "string") return [{ type: "text", text: content || "" }];
-	if (!Array.isArray(content)) return [{ type: "text", text: "" }];
+	if (typeof content === "string") return [{ type: "text", text: content }];
+	// MCP butuh minimal satu blok. Hasil kosong dan hasil yang tidak pernah ada
+	// bukan hal yang sama bagi model: yang pertama sukses tanpa output, yang kedua
+	// tidak terkirim — jadi yang kedua diberi penanda eksplisit.
+	if (!Array.isArray(content)) return [{ type: "text", text: "((tool returned no content))" }];
 	const blocks: McpContent = [];
 	for (const block of content) {
 		if (block.type === "text" && block.text) blocks.push({ type: "text", text: block.text });
 		else if (block.type === "image" && block.data && block.mimeType) blocks.push({ type: "image", data: block.data, mimeType: block.mimeType });
 	}
-	return blocks.length ? blocks : [{ type: "text", text: "" }];
+	return blocks.length ? blocks : [{ type: "text", text: "((tool returned no content))" }];
 }
 
 // Returns { results, stopIdx } so callers can log the walk boundary.

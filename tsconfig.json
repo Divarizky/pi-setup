@@ -15,7 +15,6 @@
     "**/*.test.ts",
     "extensions/**/test/**",
     "extensions/**/tests/**",
-    "extensions/orca-*.ts",
-    "extensions/provider-gateway/**"
+    "extensions/orca-*.ts"
   ]
 }

@@ -4,20 +4,26 @@
 
 import { statSync, readFileSync } from "fs";
 
+/** Normalize a caught value to a message: `catch` bindings are `unknown` under
+ *  strict mode. */
+function errText(e: unknown): string {
+	return e instanceof Error ? e.message : String(e);
+}
+
 export function verifyWrittenSession(jsonlPath: string, expectedSessionId: string, expectedRecordCount: number): string[] {
 	const warnings = [];
-	let st;
+	let st: ReturnType<typeof statSync>;
 	try {
 		st = statSync(jsonlPath);
 	} catch (e) {
-		warnings.push(`file missing after save — path=${jsonlPath} err=${e.message}`);
+		warnings.push(`file missing after save — path=${jsonlPath} err=${errText(e)}`);
 		return warnings;
 	}
-	let content;
+	let content: string;
 	try {
 		content = readFileSync(jsonlPath, "utf8");
 	} catch (e) {
-		warnings.push(`file unreadable — path=${jsonlPath} size=${st.size} err=${e.message}`);
+		warnings.push(`file unreadable — path=${jsonlPath} size=${st.size} err=${errText(e)}`);
 		return warnings;
 	}
 	const lines = content.split("\n").filter((l) => l.trim().length > 0);
@@ -32,7 +38,7 @@ export function verifyWrittenSession(jsonlPath: string, expectedSessionId: strin
 			warnings.push(`sessionId drift — expected=${expectedSessionId} first=${firstRec.sessionId} last=${lastRec.sessionId}`);
 		}
 	} catch (e) {
-		warnings.push(`malformed JSONL — path=${jsonlPath} err=${e.message}`);
+		warnings.push(`malformed JSONL — path=${jsonlPath} err=${errText(e)}`);
 	}
 	return warnings;
 }
