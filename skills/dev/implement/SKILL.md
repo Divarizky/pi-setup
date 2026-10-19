@@ -50,7 +50,7 @@ Jika Universal mode memakai instruksi langsung atau checklist di chat, jangan me
 1. Ambil kandidat dari `### Queue` (maks **3**, urutan priority). Periksa ulang semua `Depends` sudah berada di `### Done` dengan `[x]`, `Parallel: yes`, `subagent_supported == true`, sekurangnya dua kandidat, serta batas concurrency tool/platform. Jika kondisi gagal, jalankan satu task eligible secara sequential. Jangan menaikkan `Parallel: no` menjadi `yes` diam-diam; jika penanda sudah basi, usulkan revisi task kepada user.
 2. Untuk **setiap** kandidat, inspeksi kode secukupnya dan perkirakan `write_scope`: path relatif file/direktori yang kemungkinan berubah, termasuk test, konfigurasi, migrasi, generated files, dan shared entry points. Bandingkan setiap pasang scope, beserta efek bersama seperti schema/API yang dipakai task lain. Jika estimasi belum bisa dipersempit atau ada overlap/ketergantungan baru, keluarkan kandidat yang konflik; jika tersisa <2, jalankan sequential. Laporkan alasan perubahan keputusan. Jangan menganggap `write_scope` yang kosong atau tidak diketahui berarti tidak overlap.
 3. Periksa apakah tool yang terdeteksi mendukung coding, isolasi kerja yang diperlukan, dan pengambilan hasil. Jika mendukung `write_scope`/padanan, teruskan scope eksplisit per agent; jika tidak, tulis batasnya di brief. Jangan menganggap parameter scope saja menegakkan isolasi. Jika worktree/candidate perlu diintegrasikan, rencanakan verifikasi dan integrasi hasil sebelum review; jangan anggap perubahan agent otomatis muncul di checkout utama. Bila prasyarat isolasi atau integrasi tidak terpenuhi, jalankan sequential. Jika tool mensyaratkan Git bersih untuk spawn/integrasi dan pemindahan status di Step 2 akan mengotori checkout, jangan lanjutkan batch: pilih sequential atau minta user menyepakati alur integrasi yang menjaga checkout bersih. Jangan mengubah work card/tracker untuk mengejar preflight.
-4. Setelah batch final lolos preflight, jalankan Step 2 lalu spawn subagent per task → jalankan **Step 3 (TDD) saja**. Brief: Detail + Done criteria + `write_scope`, selalu baca aturan canonical `../shared/TDD.md`; baca vocabulary tambahan jika tersedia. Instruksi:
+4. Setelah batch final lolos preflight, jalankan Step 2 lalu spawn subagent per task → jalankan **Step 3 (TDD) saja**. Brief: deskripsi task + Done criteria + `write_scope`, selalu baca aturan canonical `../shared/TDD.md`; baca vocabulary tambahan jika tersedia. Instruksi:
    - **JANGAN** update work card atau tracker (single-writer: sesi utama)
    - **JANGAN** commit
    - **JANGAN** review
@@ -95,7 +95,7 @@ Implement tidak otomatis men-stage apa pun — file baru maupun edit tetap unsta
 
 ### Delegate to `code-review`
 
-Pass spec (work card `Detail` + `Ref` + `Done` criteria, atau mini-spec Step 1 untuk input percakapan) sebagai text inline dalam paket chain [Chain Pattern](../shared/COMMON.md#chain-pattern). **Sertakan Ref dan Done criteria**. Catat `Reviewed Snapshot` dari output review agar `git-commit` bisa memakai ulang verdict `PASS`. Sumber diff: `staged` — `code-review` menjalankan pre-check kelengkapan staged sendiri di Step 1.
+Pass spec (work card deskripsi task + `[Ref]` + `Done` criteria, atau mini-spec Step 1 untuk input percakapan) sebagai text inline dalam paket chain [Chain Pattern](../shared/COMMON.md#chain-pattern). **Sertakan Ref dan Done criteria**. Catat `Reviewed Snapshot` dari output review agar `git-commit` bisa memakai ulang verdict `PASS`. Sumber diff: `staged` — `code-review` menjalankan pre-check kelengkapan staged sendiri di Step 1.
 
 `code-review` `disable-model-invocation: true` → **baca `code-review/SKILL.md`, jalankan Step 1-5 manual** di sesi yang sama.
 
@@ -144,11 +144,9 @@ features:
 # F-<id> — <Feature>
 ## Tasks
 ### Done
-- [x] TASK-1 | <judul> | Depends: none | Priority: medium | Parallel: no
-    Detail: <behavior dari grill>
-    Ref: AC-01
-    Done:
-    - [x] <criteria>
+- [x] TASK-1 | [AC-01] <judul> | Priority: medium | Parallel: no
+    Depends: none
+    Done: <criteria>; <criteria>
 ```
 
 ### Commit Rules

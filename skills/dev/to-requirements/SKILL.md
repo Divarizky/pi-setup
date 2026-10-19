@@ -67,6 +67,11 @@ supersedes: <F-id/version sebelumnya>  # opsional, jangan pakai path work card
 ```markdown
 # F-01 — <Feature Title>
 
+## Clarifications
+<!-- Jawaban atas ambiguitas dari grill/draft. Tiap sesi bertanggal; jangan dihapus saat revisi. -->
+### Session <YYYY-MM-DD>
+- Q: <pertanyaan> → A: <jawaban>
+
 ## Problem
 <Masalah dari perspektif user — 2-4 kalimat>
 
@@ -74,11 +79,19 @@ supersedes: <F-id/version sebelumnya>  # opsional, jangan pakai path work card
 <Solusi dari perspektif user — 3-5 kalimat>
 
 ## User Stories
-(MUST) As a <role>, I want <goal>, so that <benefit>
-(SHOULD) As a <role>, I want <goal>, so that <benefit>
-(NICE) As a <role>, I want <goal>, so that <benefit>
+### User Story 1 - <judul> (Priority: P1)
+As a <role>, I want <goal>, so that <benefit>.
+Why this priority: <alasan prioritas>
+Independent Test: <cara menguji story ini secara mandiri, tanpa menunggu story lain>
 
-Label prioritas: MUST (critical path), SHOULD (penting tapi bisa tunda), NICE (nice-to-have).
+### User Story 2 - <judul> (Priority: P2)
+<sama seperti di atas>
+
+Label prioritas: P1 (MUST, critical path), P2 (SHOULD, penting tapi bisa tunda), P3 (NICE, nice-to-have). Tiap story wajib punya `Why this priority` dan `Independent Test`.
+
+## Edge Cases
+- <kasus batas atau kegagalan>
+  * Penanganan: <perilaku sistem yang diharapkan>
 
 ## Acceptance Criteria
 
@@ -95,6 +108,16 @@ Contoh:
 1. AC-01: WHEN login sukses THEN sistem SHALL arahkan ke dashboard dalam < 2 detik
 2. AC-02: IF email tidak terdaftar THEN sistem SHALL tampilkan error "email atau password salah"
 3. AC-03: WHEN sesi expired THEN sistem SHALL redirect ke login dengan pesan "sesi berakhir"
+
+## Functional Requirements
+- REQ-01: Sistem MUST <kewajiban terukur>.
+- REQ-02: <sama seperti di atas>
+
+## Success Criteria
+- SC-01: <target terukur, mis. latensi, persentase, atau kondisi yang bisa diuji>
+
+## Assumptions
+- <fakta lingkungan yang dipegang, mis. target deployment atau ketersediaan library>
 
 ## Implementation Decisions
 **Final** (sudah disepakati, tidak bisa diganti tanpa ADR):
@@ -162,6 +185,9 @@ Sebelum kasih ke user, cek:
 5. **Version check**: `version` di-increment benar (baru: 1.0.0, update: minor bump).
 6. **ID check**: `F-<id>` belum pernah dipakai; setiap AC memiliki ID stabil (`AC-01`, `AC-02`, dst.).
 7. **SRS check**: saat approval, Feature Registry memakai status lifecycle (`draft|approved|superseded`) dan Feature Requirements tetap berupa requirement terukur, bukan detail implementasi.
+8. **Story check**: setiap User Story punya Priority (P1–P3), `Why this priority`, dan `Independent Test`.
+9. **Edge & REQ check**: setiap Edge Case punya `Penanganan`; setiap `REQ-xx` dipetakan ke minimal satu AC; setiap AC dipetakan ke `REQ-xx` atau `GR-xx`.
+10. **Clarification & SC check**: jawaban di `Clarifications` tidak bertentangan dengan AC, REQ, atau Assumptions; setiap `SC-xx` terukur (angka, persentase, atau kondisi yang bisa diuji).
 
 Ada gap → tanyakan user, jangan publish dulu.
 
@@ -209,7 +235,7 @@ Chain manual ini hanya untuk kontinuitas sesi. User bisa invoke `to-tasks` langs
 
 Saat requirements approved:
 1. **Feature Registry**: tambah atau update baris `F-<id>` dengan judul, status `approved`, dan tanggal update. Jangan simpan path work card.
-2. **Feature Requirements**: sinkronkan scope, requirement `REQ-xx`, dan verification dari work card. `REQ-xx` scoped di dalam `F-xx`.
+2. **Feature Requirements**: sinkronkan scope, requirement `REQ-xx`, `SC-xx`, Edge Cases (sebagai verification), dan verification dari work card. `REQ-xx` dan `SC-xx` scoped di dalam `F-xx`. `Clarifications` dan `Assumptions` tetap di work card; keputusan yang mengikat dicatat di Feature Requirements.
 3. **Global Requirements**: requirement lintas fitur/NFR baru → beri ID `GR-xx`, deduplikasi terhadap requirement existing, lalu tambahkan dalam format EARS. Requirement spesifik fitur tetap di blok fitur.
 4. **Lazy Stack Docs Generation**: Jika fitur yang di-approve memperkenalkan stack baru yang sebelumnya `has_*: false` (misal DB/API/Auth pertama), buat file stack doc terkait (`DATABASE.md`, `API.md`, `SECURITY.md`) dari skeleton di `TEMPLATES.md`. Isi HANYA dengan model, route, atau aturan yang sudah approved di fitur ini (bukan spekulasi). Update flag terkait di `project-meta.md` menjadi `true`.
 5. **Revisi**: jika baseline berubah, update requirement terkait dan bump versi work card; status SRS kembali `draft` sampai approval ulang.

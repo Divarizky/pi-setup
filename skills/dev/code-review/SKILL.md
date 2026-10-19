@@ -56,7 +56,7 @@ Kumpulkan semua sumber yang relevan, jangan berhenti setelah menemukan satu:
 
 1. **Inline dari caller/user** — behavior, scope, Ref, acceptance criteria, dan Done criteria.
 2. **Path dari user** — validasi file exists/readable; jika tidak valid, beri tahu user dan lanjutkan dengan sumber lain yang tersedia.
-3. **Project mode** — baca `.workspace/context/SRS.md` dan `.workspace/work/F-<id>.md` bila tersedia. SRS memberi Global/Feature Requirements, status, verification; work card memberi `Detail:`, `Ref:`, dan `Done:`. Cocokkan `Ref:` dengan AC/REQ. Laporkan requirement/traceability gap pada axis Spec, jangan anggap salah satu dokumen menggantikan yang lain.
+3. **Project mode** — baca `.workspace/context/SRS.md` dan `.workspace/work/F-<id>.md` bila tersedia. SRS memberi Global/Feature Requirements, status, verification; work card memberi deskripsi task, `[Ref]` di heading, dan `Done:`. Cocokkan `Ref:` dengan AC/REQ. Laporkan requirement/traceability gap pada axis Spec, jangan anggap salah satu dokumen menggantikan yang lain.
 
 Universal mode tidak mengasumsikan `.workspace`; gunakan inline spec/path user, atau tandai `no spec available`. Jika user menyatakan tidak ada spec, skip axis Spec dengan keterbatasan itu. Bila caller/user menyebut spec wajib tetapi sumbernya hilang/tidak readable, verdict `BLOCKED`.
 

@@ -42,7 +42,7 @@ Isi berikut berlaku untuk dokumen Project maupun ringkasan chat Universal:
 - Keputusan yang sudah dibuat
 - Open question / next step
 - **Wajib**: "Suggested Skills" — skill mana dari kumpulan dev yang harus dipanggil sesi berikutnya (`ask-me`, `implement`, `bug-diagnosis`, `improve-architecture`, `project-migration`, `to-requirements`, `to-tasks`, `code-review`, `prototype`, `status`, `setup-workflow`, `handoff`)
-- **Kalau sesi tengah `implement` belum sampai review**: sertakan spec/task detail relevan (behavior, interface, edge case dari grill, `Ref`, atau `Detail` task dari work card) — ringkas ke handoff biar sesi baru tidak perlu buka file lain.
+- **Kalau sesi tengah `implement` belum sampai review**: sertakan spec/task detail relevan (behavior, interface, edge case dari grill, `[Ref]`, atau deskripsi task dari work card) — ringkas ke handoff biar sesi baru tidak perlu buka file lain.
 
 ## Reference-Only Rules
 

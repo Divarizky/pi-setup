@@ -197,12 +197,9 @@ updated: <YYYY-MM-DD>
 - **Strategy:** <unit/integration/e2e>
 
 ## Tasks
-- [ ] TASK-01 | <judul> | Depends: none | Priority: high | Parallel: no
-    Detail: <behavior end-to-end>
-    Ref: AC-01
-    Done:
-    - [ ] <kriteria terukur>
-    - [ ] <cara verifikasi>
+- [ ] TASK-01 | [AC-01] <behavior end-to-end> | Priority: high | Parallel: no
+    Depends: none
+    Done: <kriteria terukur>; <cara verifikasi>
 
 ## Evidence
 - <test, commit, atau catatan validasi>
@@ -236,12 +233,9 @@ Sistem menyediakan login OAuth dan membuat sesi setelah provider mengonfirmasi i
 
 ## Tasks
 ### Queue
-- [ ] TASK-01 | Implement OAuth login | Depends: none | Priority: high | Parallel: no
-    Detail: User dapat menyelesaikan login OAuth dan kembali ke aplikasi.
-    Ref: AC-01, AC-02
-    Done:
-    - [ ] Test sukses dan gagal pass.
-    - [ ] Error OAuth terlihat tanpa membocorkan credential.
+- [ ] TASK-01 | [AC-01, AC-02] User dapat menyelesaikan login OAuth dan kembali ke aplikasi. | Priority: high | Parallel: no
+    Depends: none
+    Done: Test sukses dan gagal pass; error OAuth terlihat tanpa membocorkan credential.
 
 ## Evidence
 - <test atau commit>
