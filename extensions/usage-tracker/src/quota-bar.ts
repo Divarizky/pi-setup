@@ -277,56 +277,90 @@ function antigravityPoolMatch(modelBare: string, limit: UsageLimit): boolean {
   return false;
 }
 
+/** Hit bucket atau pool milik satu akun, dengan peringkat kecocokannya. */
+interface ModelHit extends MatchedQuota {
+  readonly rank: number;
+}
+
+/** Pool grup 5 jam (rank 2) atau mingguan (rank 3). */
+function poolRank(limit: UsageLimit): number {
+  const is5h = /5\s*h|5\s*jam/i.test(limit.label) || limit.key?.includes("5h");
+  return is5h ? 2 : 3;
+}
+
 /**
- * Bucket per model (mis. Zenith untuk antigravity): setiap akun melaporkan
- * bucket untuk tiap model serta pool grup global (5h/mingguan).
- * Jika ada pool grup yang relevan, prioritaskan pool atau model bucket yang paling ketat.
+ * Pool grup yang habis dan reset-nya belum lewat. Sama seperti
+ * `isAntigravityPoolExhausted` di Zenith: pool dengan reset yang sudah lewat
+ * tidak dihitung habis.
+ */
+function isPoolExhausted(hit: ModelHit, now: Date): boolean {
+  const resetsAt = hit.limit.resetsAt;
+  return (
+    hit.rank >= 2 &&
+    hit.limit.usedPercent >= 100 &&
+    resetsAt !== undefined &&
+    resetsAt.getTime() > now.getTime()
+  );
+}
+
+/** Pilih hit yang lebih ketat; pada angka sama, bucket spesifik model menang. */
+function tighterHit(a: ModelHit, b: ModelHit): ModelHit {
+  if (a.limit.usedPercent !== b.limit.usedPercent) {
+    return a.limit.usedPercent > b.limit.usedPercent ? a : b;
+  }
+  return a.rank <= b.rank ? a : b;
+}
+
+/**
+ * Bucket per model (mis. Zenith untuk antigravity). Akun diurutkan menurut
+ * prioritas Zenith, lalu akun pertama yang pool grupnya belum habis dipakai,
+ * sama seperti router memilih koneksi. Bar menampilkan batas paling ketat pada
+ * akun itu. Bila semua akun habis, ditampilkan pool habis dari akun prioritas
+ * tertinggi.
  */
 function findModelBucket(
   model: QuotaModelRef,
   usages: readonly ProviderUsage[],
+  now: Date,
 ): MatchedQuota | undefined {
   const bare = bareModelId(model.id).toLowerCase();
-  const hits: Array<MatchedQuota & { readonly rank: number }> = [];
+  const accounts: Array<{ readonly usage: ProviderUsage; readonly hits: ModelHit[] }> = [];
 
   for (const usage of usages) {
+    const hits: ModelHit[] = [];
     for (const limit of usage.limits ?? []) {
-      // 1. Cek rank kecocokan model spesifik
       const rank = bucketRank(model, limit);
       if (rank !== undefined) {
         hits.push({ usage, limit, rank });
-        continue;
-      }
-
-      // 2. Jika koneksi antigravity dan limit merupakan pool global grup yang cocok
-      if (usage.provider === "antigravity" && antigravityPoolMatch(bare, limit)) {
-        // Pool 5h diprioritaskan (rank 2), weekly pool (rank 3)
-        const is5h = /5\s*h|5\s*jam/i.test(limit.label) || limit.key?.includes("5h");
-        hits.push({ usage, limit, rank: is5h ? 2 : 3 });
+      } else if (usage.provider === "antigravity" && limit.pool === true && antigravityPoolMatch(bare, limit)) {
+        hits.push({ usage, limit, rank: poolRank(limit) });
       }
     }
-  }
-  if (hits.length === 0) return undefined;
-
-  // Jika ada bucket/pool model spesifik (rank 0 atau 1), prioritaskan model spesifik
-  // kecuali jika pool grup sudah mencapai batas (100% habis).
-  const exhaustedPool = hits.find((h) => (h.rank === 2 || h.rank === 3) && h.limit.usedPercent >= 100);
-  if (exhaustedPool) {
-    return { usage: exhaustedPool.usage, limit: exhaustedPool.limit };
+    if (hits.length > 0) accounts.push({ usage, hits });
   }
 
-  const routable = hits.filter((hit) => hit.limit.usedPercent < 100);
-  const pool = routable.length > 0 ? routable : hits;
-  const bestRank = Math.min(...pool.map((hit) => hit.rank));
-  const best = pool
-    .filter((hit) => hit.rank === bestRank)
-    .reduce((selected, hit) => (hit.limit.usedPercent > selected.limit.usedPercent ? hit : selected));
-  return { usage: best.usage, limit: best.limit };
+  // Array.prototype.sort stabil, jadi akun tanpa prioritas mempertahankan urutan asal.
+  const ordered = [...accounts].sort(
+    (a, b) =>
+      (a.usage.priority ?? Number.MAX_SAFE_INTEGER) - (b.usage.priority ?? Number.MAX_SAFE_INTEGER),
+  );
+  const first = ordered[0];
+  if (!first) return undefined;
+
+  const usable = ordered.find((account) => !account.hits.some((hit) => isPoolExhausted(hit, now)));
+  if (usable) {
+    const best = usable.hits.reduce(tighterHit);
+    return { usage: best.usage, limit: best.limit };
+  }
+
+  const blocked = first.hits.find((hit) => isPoolExhausted(hit, now)) ?? first.hits[0];
+  return blocked ? { usage: blocked.usage, limit: blocked.limit } : undefined;
 }
 
 export function findQuotaForModel(
   model: QuotaModelRef,
   usages: readonly ProviderUsage[],
+  now = new Date(),
 ): MatchedQuota | undefined {
   const provider = quotaProviderId(model);
   const candidates = usages.filter(
@@ -334,7 +368,7 @@ export function findQuotaForModel(
   );
 
   const modelKeyed = candidates.filter((usage) => usage.perModelBuckets);
-  if (modelKeyed.length > 0) return findModelBucket(model, modelKeyed);
+  if (modelKeyed.length > 0) return findModelBucket(model, modelKeyed, now);
 
   for (const candidate of candidates) {
     const limit = findMatchingLimit(model, candidate);

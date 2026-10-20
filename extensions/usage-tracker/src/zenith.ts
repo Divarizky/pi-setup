@@ -1,5 +1,6 @@
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { ProviderUsage, UsageLimit } from "./providers.ts";
 
@@ -10,6 +11,12 @@ import type { ProviderUsage, UsageLimit } from "./providers.ts";
  * koneksi beserta kuota terakhir yang sudah di-cache Zenith di SQLite-nya, jadi
  * endpoint ini murah: ia tidak memanggil provider upstream dan tidak butuh
  * kredensial (hanya bisa diakses dari loopback).
+ *
+ * Saat login dashboard Zenith aktif, `/api/quota` menolak request tanpa sesi
+ * (401). Kuota lalu dibaca langsung dari database Zenith secara read-only bila
+ * lokasinya diketahui lewat env `ZENITH_DB_PATH` atau `zenithDbPath` di
+ * `usage-tracker.json` pada agent dir. Query hanya mengambil `$.quota`, jadi
+ * token akun tidak pernah keluar dari SQLite.
  *
  * Hasil sukses terakhir disimpan di `cache/zenith-quota.json` supaya dashboard
  * tetap menampilkan angka terakhir saat Zenith sedang tidak berjalan.
@@ -26,6 +33,8 @@ export const ZENITH_LEGACY_PROVIDER_ID = "zenroute";
 const DEFAULT_BASE_URL = "http://127.0.0.1:20120";
 const DEFAULT_MAX_AGE_MS = 60_000;
 const STALE_AFTER_MS = 15 * 60_000;
+/** Cache hasil sukses terakhir hanya dipakai saat endpoint gagal bila masih sebaru ini. */
+const MAX_FALLBACK_AGE_MS = 30 * 60_000;
 const CACHE_VERSION = 1;
 const CACHE_FILE = "zenith-quota.json";
 let cacheWriteSequence = 0;
@@ -53,6 +62,8 @@ export interface ZenithFetchOptions {
   readonly maxAgeMs?: number;
   readonly cacheDir?: string;
   readonly baseUrl?: string;
+  /** Path database Zenith; `null` mematikan pembacaan database. */
+  readonly dbPath?: string | null;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -116,6 +127,7 @@ function parsePoolLimit(value: unknown): UsageLimit | undefined {
   return {
     label,
     key,
+    pool: true,
     usedPercent,
     resetsAt: resetMs !== undefined ? new Date(resetMs) : undefined,
   };
@@ -227,6 +239,7 @@ function toProviderUsage(entry: unknown, now: Date, fromCache: boolean): Provide
     billing: unavailable("billing"),
     limits: limits.length > 0 ? limits : undefined,
     perModelBuckets: MODEL_KEYED_PROVIDERS.has(provider),
+    priority: finite(connection.priority),
     quota: plan,
     balance,
     message: error,
@@ -271,9 +284,69 @@ function writeCache(path: string, value: ZenithCacheFile): void {
   }
 }
 
+/** Lokasi database Zenith dari env atau `usage-tracker.json`; tanpa tebakan path. */
+function zenithDbPath(): string | undefined {
+  const fromEnv = process.env.ZENITH_DB_PATH?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    const config = asRecord(JSON.parse(readFileSync(join(getAgentDir(), "usage-tracker.json"), "utf8")));
+    const configured = typeof config?.zenithDbPath === "string" ? config.zenithDbPath.trim() : "";
+    return configured || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+interface SqliteStatement {
+  all: () => unknown[];
+}
+
+interface SqliteDatabase {
+  prepare: (query: string) => SqliteStatement;
+  close: () => void;
+}
+
+/**
+ * Payload berbentuk sama dengan `/api/quota`, dibaca read-only dari database.
+ * Hanya kolom non-rahasia dan `$.quota` yang diambil dari `credentials`.
+ */
+function readZenithDb(path: string): unknown[] | undefined {
+  if (!existsSync(path)) return undefined;
+  let database: SqliteDatabase | undefined;
+  try {
+    const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
+      DatabaseSync: new (file: string, options?: { readOnly?: boolean }) => SqliteDatabase;
+    };
+    database = new DatabaseSync(path, { readOnly: true });
+    const rows = database
+      .prepare(
+        "SELECT id, name, provider, auth_type, is_active, priority, " +
+          "json_extract(credentials, '$.quota') AS quota FROM connections ORDER BY id ASC",
+      )
+      .all();
+    return rows.map((row) => {
+      const record = asRecord(row) ?? {};
+      let quota: unknown = null;
+      if (typeof record.quota === "string") {
+        try {
+          quota = JSON.parse(record.quota);
+        } catch {
+          quota = null;
+        }
+      }
+      return { ...record, quota };
+    });
+  } catch {
+    return undefined;
+  } finally {
+    database?.close();
+  }
+}
+
 /**
  * Kuota semua koneksi Zenith. Tidak pernah melempar: saat endpoint gagal,
- * hasil sukses terakhir dipakai dengan penanda `stale`.
+ * database Zenith dibaca langsung, lalu hasil sukses terakhir dipakai dengan
+ * penanda `stale`.
  */
 export async function fetchZenithQuotas(options: ZenithFetchOptions = {}): Promise<readonly ProviderUsage[]> {
   const now = options.now ?? new Date();
@@ -297,6 +370,14 @@ export async function fetchZenithQuotas(options: ZenithFetchOptions = {}): Promi
     writeCache(cachePath, { version: 1, fetchedAt: now.getTime(), payload });
     return parsePayload(payload, now, false);
   } catch {
-    return cached ? parsePayload(cached.payload, now, true) : [];
+    const dbPath = options.dbPath === undefined ? zenithDbPath() : options.dbPath;
+    const fromDb = dbPath ? readZenithDb(dbPath) : undefined;
+    if (fromDb) {
+      writeCache(cachePath, { version: 1, fetchedAt: now.getTime(), payload: fromDb });
+      return parsePayload(fromDb, now, false);
+    }
+    // Cache yang terlalu tua tidak ditampilkan sebagai kuota aktif.
+    const usable = cached && now.getTime() - cached.fetchedAt <= MAX_FALLBACK_AGE_MS;
+    return usable ? parsePayload(cached.payload, now, true) : [];
   }
 }

@@ -32,6 +32,8 @@ export interface UsageLimit {
   readonly label: string;
   /** Kunci bucket dari sumber, mis. id model di Zenith. Dipakai untuk mencocokkan model. */
   readonly key?: string;
+  /** Pool grup dari sumber (5 jam/mingguan), bukan bucket per model. */
+  readonly pool?: boolean;
   readonly usedPercent: number;
   readonly limitWindowSeconds?: number;
   readonly resetsAt?: Date;
@@ -56,6 +58,8 @@ export interface ProviderUsage {
   readonly stale?: boolean;
   /** Bucket dikunci per model. Model tanpa bucket yang cocok tidak diberi bar. */
   readonly perModelBuckets?: boolean;
+  /** Prioritas koneksi di Zenith; angka kecil dipakai lebih dulu. */
+  readonly priority?: number;
 }
 
 export interface UsageFetchOptions {
