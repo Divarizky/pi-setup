@@ -2,7 +2,7 @@ import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent"
 import { truncateToWidth, visibleWidth, type TUI } from "@earendil-works/pi-tui";
 import type { ProviderUsage, UsageLimit, UsageTotals } from "./providers.ts";
 import { providerName } from "./providers.ts";
-import { quotaAge } from "./quota-bar.ts";
+import { groupTierLimits, quotaAge } from "./quota-bar.ts";
 
 export interface UsageTrackerViewData {
   readonly providers: readonly ProviderUsage[];
@@ -168,8 +168,10 @@ function providerRows(theme: Theme, usage: ProviderUsage, width: number, now: Da
     }
     // Codex dan router lokal memakai kolom yang sama. Dengan layout bersama ini,
     // nama model, bar, dan persentase tetap sejajar untuk setiap limit.
-    const layout = quotaLineLayout(usage.limits, inner);
-    rows.push(...usage.limits.flatMap((limit) => limitLines(theme, limit, inner, now, layout)));
+    // Router per-model (Antigravity) melaporkan satu bucket per tingkat berpikir; di sini digabung per keluarga.
+    const shown = usage.perModelBuckets ? groupTierLimits(usage.limits) : usage.limits;
+    const layout = quotaLineLayout(shown, inner);
+    rows.push(...shown.flatMap((limit) => limitLines(theme, limit, inner, now, layout)));
     if (usage.message) rows.push(theme.fg("dim", usage.message));
   } else {
     rows.push(

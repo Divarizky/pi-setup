@@ -87,6 +87,40 @@ function epochMs(value: unknown): number | undefined {
   return undefined;
 }
 
+interface QuotaPoolItem {
+  readonly group?: string;
+  readonly window?: string;
+  readonly label?: string;
+  readonly bucketId?: string;
+  readonly remainingPercentage?: number;
+  readonly resetAt?: string | null;
+}
+
+function parsePoolLimit(value: unknown): UsageLimit | undefined {
+  const item = asRecord(value) as QuotaPoolItem | undefined;
+  if (!item) return undefined;
+  const remaining = finite(item.remainingPercentage);
+  if (remaining === undefined) return undefined;
+  const usedPercent = clampPercent(100 - remaining);
+  const resetMs = epochMs(item.resetAt);
+  const label = typeof item.label === "string" && item.label.trim()
+    ? item.label.trim()
+    : typeof item.group === "string" && item.group.trim()
+      ? item.group.trim()
+      : undefined;
+  if (!label) return undefined;
+  const key = typeof item.bucketId === "string" && item.bucketId.trim()
+    ? item.bucketId.trim()
+    : label;
+
+  return {
+    label,
+    key,
+    usedPercent,
+    resetsAt: resetMs !== undefined ? new Date(resetMs) : undefined,
+  };
+}
+
 /**
  * Satu bar kuota Zenith. Bentuk barisnya sama antar provider:
  * `{ used, total, remainingPercentage, resetAt, displayName }`.
@@ -154,12 +188,19 @@ function toProviderUsage(entry: unknown, now: Date, fromCache: boolean): Provide
   if (!provider) return undefined;
 
   const quota = asRecord(connection.quota);
+  const pools = Array.isArray(quota?.pools)
+    ? quota.pools
+      .map(parsePoolLimit)
+      .filter((value): value is UsageLimit => value !== undefined)
+    : [];
+
   const rawQuotas = asRecord(quota?.quotas);
-  const limits = rawQuotas
+  const modelLimits = rawQuotas
     ? Object.entries(rawQuotas)
       .map(([label, value]) => quotaLimit(value, label))
       .filter((value): value is UsageLimit => value !== undefined)
     : [];
+  const limits = [...pools, ...modelLimits];
   const balance = quota ? formatBalance(quota) : undefined;
   const error = typeof quota?.error === "string" && quota.error.trim() ? quota.error.trim() : undefined;
   if (limits.length === 0 && !balance && !error) return undefined;

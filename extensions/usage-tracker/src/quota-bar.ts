@@ -261,26 +261,59 @@ function bucketRank(model: QuotaModelRef, limit: UsageLimit): number | undefined
   return tokens.every((token) => TIER_TOKENS.has(token)) ? 1 : undefined;
 }
 
+/** Segmen grup pool Antigravity (5h dan mingguan) */
+function antigravityPoolMatch(modelBare: string, limit: UsageLimit): boolean {
+  const normLabel = limit.label.toLowerCase();
+  const isArgon = /argon/i.test(modelBare);
+  if (isArgon) {
+    return normLabel.includes("argon");
+  }
+  if (/^gemini/i.test(modelBare)) {
+    return normLabel.includes("gemini") && !normLabel.includes("argon");
+  }
+  if (/^(claude|gpt)/i.test(modelBare)) {
+    return normLabel.includes("claude") || normLabel.includes("gpt") || normLabel.includes("3p");
+  }
+  return false;
+}
+
 /**
  * Bucket per model (mis. Zenith untuk antigravity): setiap akun melaporkan
- * bucket untuk tiap model. Bucket yang tidak cocok dengan model tidak pernah
- * dipakai sebagai pengganti. Jika tidak ada bucket yang cocok, hasilnya kosong.
- *
- * Di antara yang cocok, bucket yang sudah 100% terpakai dilewati selama ada
- * akun lain dengan sisa. Ini estimasi, bukan perilaku router yang diverifikasi.
+ * bucket untuk tiap model serta pool grup global (5h/mingguan).
+ * Jika ada pool grup yang relevan, prioritaskan pool atau model bucket yang paling ketat.
  */
 function findModelBucket(
   model: QuotaModelRef,
   usages: readonly ProviderUsage[],
 ): MatchedQuota | undefined {
+  const bare = bareModelId(model.id).toLowerCase();
   const hits: Array<MatchedQuota & { readonly rank: number }> = [];
+
   for (const usage of usages) {
     for (const limit of usage.limits ?? []) {
+      // 1. Cek rank kecocokan model spesifik
       const rank = bucketRank(model, limit);
-      if (rank !== undefined) hits.push({ usage, limit, rank });
+      if (rank !== undefined) {
+        hits.push({ usage, limit, rank });
+        continue;
+      }
+
+      // 2. Jika koneksi antigravity dan limit merupakan pool global grup yang cocok
+      if (usage.provider === "antigravity" && antigravityPoolMatch(bare, limit)) {
+        // Pool 5h diprioritaskan (rank 2), weekly pool (rank 3)
+        const is5h = /5\s*h|5\s*jam/i.test(limit.label) || limit.key?.includes("5h");
+        hits.push({ usage, limit, rank: is5h ? 2 : 3 });
+      }
     }
   }
   if (hits.length === 0) return undefined;
+
+  // Jika ada bucket/pool model spesifik (rank 0 atau 1), prioritaskan model spesifik
+  // kecuali jika pool grup sudah mencapai batas (100% habis).
+  const exhaustedPool = hits.find((h) => (h.rank === 2 || h.rank === 3) && h.limit.usedPercent >= 100);
+  if (exhaustedPool) {
+    return { usage: exhaustedPool.usage, limit: exhaustedPool.limit };
+  }
 
   const routable = hits.filter((hit) => hit.limit.usedPercent < 100);
   const pool = routable.length > 0 ? routable : hits;
@@ -309,6 +342,47 @@ export function findQuotaForModel(
   }
 
   return undefined;
+}
+
+/** Akhiran tingkat berpikir pada nama tampilan, mis. `(Low)`, `(Extra Low)`, `(Thinking)`. */
+const TIER_LABEL_SUFFIX = /\s*\(\s*(?:extra\s*low|extra\s*high|minimal|low|medium|high|thinking)\s*\)\s*$/i;
+
+/**
+ * Gabungkan bucket per tingkat berpikir menjadi satu baris per keluarga model
+ * (mis. `Gemini 4 Argon (Low|Medium|High)` -> `Gemini 4 Argon`). Hanya untuk
+ * tampilan: `limits` asli tetap dipakai pencocokan quota rail yang butuh key
+ * per runtime. Tingkat dalam satu keluarga berbagi pool yang sama sehingga
+ * persentasenya identik; bila berbeda, diambil yang paling longgar (sisa
+ * terbanyak) agar baris menjawab "masih bisa dipakai atau tidak". Keluarga
+ * dengan satu anggota dan limit tanpa akhiran tingkat (pool 5 jam/mingguan)
+ * dibiarkan apa adanya.
+ */
+export function groupTierLimits(limits: readonly UsageLimit[]): readonly UsageLimit[] {
+  const groups = new Map<string, UsageLimit[]>();
+  const order: Array<string | UsageLimit> = [];
+  for (const limit of limits) {
+    const family = TIER_LABEL_SUFFIX.test(limit.label) ? limit.label.replace(TIER_LABEL_SUFFIX, "").trim() : undefined;
+    if (!family) {
+      order.push(limit);
+      continue;
+    }
+    const members = groups.get(family);
+    if (members) members.push(limit);
+    else {
+      groups.set(family, [limit]);
+      order.push(family);
+    }
+  }
+
+  return order.map((entry) => {
+    if (typeof entry !== "string") return entry;
+    const members = groups.get(entry) ?? [];
+    if (members.length < 2) return members[0] as UsageLimit;
+    const best = members.reduce((a, b) => (b.usedPercent < a.usedPercent ? b : a));
+    const resets = members.map((m) => m.resetsAt).filter((d): d is Date => d !== undefined);
+    const earliest = resets.length ? new Date(Math.min(...resets.map((d) => d.getTime()))) : undefined;
+    return { label: entry, key: best.key, usedPercent: best.usedPercent, resetsAt: earliest };
+  });
 }
 
 /** Select the most-used window so a single compact bar is conservative. */
