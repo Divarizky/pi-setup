@@ -28,6 +28,7 @@ import {
   isClaudeCliInstalled,
   installClaudeCli,
   isClaudeProviderRegistered,
+  hasClaudeCliInstalledSync,
   markClaudeRebuild,
   recordClaudePromptCapture,
   CLAUDE_PROVIDER_ID,
@@ -757,6 +758,20 @@ export default function (pi: ExtensionAPI): void {
   const zenithKeyAtLoad = readApiKeyEntrySync(ZENITH_PROVIDER_ID) ?? readApiKeyEntrySync(LEGACY_ZENROUTE_PROVIDER_ID);
   if (zenithKeyAtLoad) {
     registerZenithProvider(pi, zenithKeyAtLoad, [], readStoredModelsSync(ZENITH_PROVIDER_ID));
+  }
+
+  // Claude Pro/Max didaftarkan sedini mungkin (fase load) kalau CLI tersedia.
+  // Tanpa ini, model default `claude` di settings.json gagal di-resolve saat
+  // startup dan Pi diam-diam jatuh ke provider lain; user harus /reload.
+  // Deteksi CLI di sini memakai resolver sinkron (existsSync + probe), bukan
+  // `await isClaudeCliInstalled()` yang butuh execFile; dialog konfirmasi
+  // instalasi tetap ditunda ke session_start karena butuh UI.
+  if (!isClaudeProviderRegistered()) {
+    try {
+      if (hasClaudeCliInstalledSync()) {
+        registerClaudeProvider(pi);
+      }
+    } catch { /* deteksi gagal: biarkan session_start mencoba lagi */ }
   }
 
   // Teruskan rewrite history (compact/tree) ke mirror sesi Claude agar query

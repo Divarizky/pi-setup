@@ -1255,6 +1255,10 @@ function registerCompatClaudeApi(): void {
   register({ api: CLAUDE_API_ID, stream: streamClaudeAgentSdk as any, streamSimple: streamClaudeAgentSdk as any });
 }
 
+function hasClaudeCliInstalledSync(): boolean {
+  return resolveClaudeExecutable() !== undefined || globalClaudeCmdPath() !== null;
+}
+
 export function registerClaudeProvider(pi: ExtensionAPI): void {
   const config = loadConfig(process.cwd());
   providerSettings = config.provider ?? {};
@@ -1313,5 +1317,6 @@ export {
   isClaudeCliInstalled,
   installClaudeCli,
   isClaudeProviderRegistered,
+  hasClaudeCliInstalledSync,
 };
 export { CLAUDE_PROVIDER_NAME };
