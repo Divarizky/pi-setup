@@ -42,7 +42,7 @@ let cacheWriteSequence = 0;
  * Provider Zenith yang bucket kuotanya per model (key seperti `gemini-4-argon-low`),
  * bukan per jendela waktu. Provider lain tetap memakai bucket terpakai tertinggi.
  */
-const MODEL_KEYED_PROVIDERS: ReadonlySet<string> = new Set(["antigravity"]);
+const MODEL_KEYED_PROVIDERS: ReadonlySet<string> = new Set(["antigravity", "kiro", "xkiro"]);
 
 export function isZenithProvider(providerId: string): boolean {
   return providerId === ZENITH_PROVIDER_ID || providerId === ZENITH_LEGACY_PROVIDER_ID;

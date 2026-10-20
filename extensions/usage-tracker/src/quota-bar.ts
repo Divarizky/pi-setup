@@ -122,35 +122,66 @@ export function parseStandardQuotaHeaders(
 const ROUTER_PREFIX_ALIASES: Record<string, Record<string, string>> = {
   "9router": {
     ag: "antigravity",
+    antigravity: "antigravity",
     oc: "opencode",
+    opencode: "opencode",
     ollama: "ollama",
     openrouter: "openrouter",
     gemini: "gemini",
+    claude: "claude",
+    cc: "claude",
+    anthropic: "claude",
+    codex: "codex",
+    cx: "codex",
+    github: "github",
+    copilot: "github",
+    gh: "github",
   },
   zenith: {
     ag: "antigravity",
+    antigravity: "antigravity",
     bzl: "bazaarlink",
+    bazaarlink: "bazaarlink",
     cc: "claude",
+    claude: "claude",
+    anthropic: "claude",
     cf: "cloudflare-ai",
+    "cloudflare-ai": "cloudflare-ai",
     cl: "cline",
+    cline: "cline",
     cmc: "commandcode",
+    commandcode: "commandcode",
     copilot: "github",
     cx: "codex",
+    codex: "codex",
     fb: "freebuff",
+    freebuff: "freebuff",
     gh: "github",
+    github: "github",
     kc: "kilocode",
+    kilocode: "kilocode",
     kr: "kiro",
+    kiro: "kiro",
     l7: "llm7",
+    llm7: "llm7",
     mis: "mistral",
+    mistral: "mistral",
     mistralai: "mistral",
     nv: "nvidia",
+    nvidia: "nvidia",
     ol: "ollama",
+    ollama: "ollama",
     "ollama-cloud": "ollama",
     or: "openrouter",
+    openrouter: "openrouter",
     ovh: "ovhcloud",
+    ovhcloud: "ovhcloud",
     tg: "together",
+    together: "together",
     xkr: "xkiro",
+    xkiro: "xkiro",
     zai: "glm",
+    glm: "glm",
   },
 };
 
@@ -289,18 +320,41 @@ function poolRank(limit: UsageLimit): number {
 }
 
 /**
- * Pool grup yang habis dan reset-nya belum lewat. Sama seperti
- * `isAntigravityPoolExhausted` di Zenith: pool dengan reset yang sudah lewat
- * tidak dihitung habis.
+ * Limit (baik pool maupun bucket model) yang habis dan reset-nya belum lewat.
+ * Bila resetsAt tidak ada (mis. kredit 0 habis), limit dianggap habis.
+ * Sama seperti router Zenith: limit dengan reset yang sudah lewat tidak
+ * dihitung habis karena akan segera diisi ulang / sinkronisasi berikutnya.
  */
-function isPoolExhausted(hit: ModelHit, now: Date): boolean {
-  const resetsAt = hit.limit.resetsAt;
-  return (
-    hit.rank >= 2 &&
-    hit.limit.usedPercent >= 100 &&
-    resetsAt !== undefined &&
-    resetsAt.getTime() > now.getTime()
-  );
+function isLimitExhausted(limit: UsageLimit, now: Date): boolean {
+  if (limit.usedPercent < 100) return false;
+  if (!limit.resetsAt) return true;
+  return limit.resetsAt.getTime() > now.getTime();
+}
+
+function isHitExhausted(hit: ModelHit, now: Date): boolean {
+  return isLimitExhausted(hit.limit, now);
+}
+
+/**
+ * Akun umum (non-modelKeyed) dianggap habis bila statusnya unavailable
+ * atau memiliki jendela kuota yang sedang exhausted.
+ */
+function isAccountExhaustedGeneral(usage: ProviderUsage, now: Date): boolean {
+  if (usage.status === "unavailable") return true;
+  const limits = usage.limits ?? [];
+  return limits.some((limit) => isLimitExhausted(limit, now));
+}
+
+/**
+ * Akun dianggap habis untuk model ini jika:
+ * 1. Pool grup modelnya (5h atau mingguan) habis.
+ * 2. ATAU akun memiliki bucket model dan seluruh bucket model yang cocok sudah habis.
+ */
+function isAccountExhausted(hits: readonly ModelHit[], now: Date): boolean {
+  if (hits.some((hit) => hit.rank >= 2 && isHitExhausted(hit, now))) return true;
+  const modelHits = hits.filter((hit) => hit.rank <= 1);
+  if (modelHits.length > 0 && modelHits.every((hit) => isHitExhausted(hit, now))) return true;
+  return false;
 }
 
 /** Pilih hit yang lebih ketat; pada angka sama, bucket spesifik model menang. */
@@ -313,10 +367,10 @@ function tighterHit(a: ModelHit, b: ModelHit): ModelHit {
 
 /**
  * Bucket per model (mis. Zenith untuk antigravity). Akun diurutkan menurut
- * prioritas Zenith, lalu akun pertama yang pool grupnya belum habis dipakai,
- * sama seperti router memilih koneksi. Bar menampilkan batas paling ketat pada
- * akun itu. Bila semua akun habis, ditampilkan pool habis dari akun prioritas
- * tertinggi.
+ * prioritas Zenith, lalu akun pertama yang belum habis dipakai, sama seperti
+ * router memilih koneksi. Akun yang memiliki inventory wajib memiliki bucket
+ * model yang cocok. Bar menampilkan batas paling ketat pada akun itu.
+ * Bila semua akun habis, ditampilkan limit habis dari akun prioritas tertinggi.
  */
 function findModelBucket(
   model: QuotaModelRef,
@@ -327,8 +381,11 @@ function findModelBucket(
   const accounts: Array<{ readonly usage: ProviderUsage; readonly hits: ModelHit[] }> = [];
 
   for (const usage of usages) {
+    const limits = usage.limits ?? [];
+    const hasModelBuckets = limits.some((l) => !l.pool);
     const hits: ModelHit[] = [];
-    for (const limit of usage.limits ?? []) {
+
+    for (const limit of limits) {
       const rank = bucketRank(model, limit);
       if (rank !== undefined) {
         hits.push({ usage, limit, rank });
@@ -336,6 +393,14 @@ function findModelBucket(
         hits.push({ usage, limit, rank: poolRank(limit) });
       }
     }
+
+    // Jika akun sudah memiliki data bucket model (inventory tersinkron), akun
+    // HANYA valid jika memiliki bucket yang cocok dengan model ini. Akun yang
+    // tidak memiliki bucket model tersebut tidak melayani model ini di Zenith.
+    if (hasModelBuckets && !hits.some((h) => h.rank <= 1)) {
+      continue;
+    }
+
     if (hits.length > 0) accounts.push({ usage, hits });
   }
 
@@ -347,13 +412,15 @@ function findModelBucket(
   const first = ordered[0];
   if (!first) return undefined;
 
-  const usable = ordered.find((account) => !account.hits.some((hit) => isPoolExhausted(hit, now)));
+  const usable = ordered.find((account) => !isAccountExhausted(account.hits, now));
   if (usable) {
-    const best = usable.hits.reduce(tighterHit);
-    return { usage: best.usage, limit: best.limit };
+    const nonExhausted = usable.hits.filter((hit) => !isHitExhausted(hit, now));
+    const pool = nonExhausted.length > 0 ? nonExhausted : usable.hits;
+    const best = pool.reduce(tighterHit);
+    return { usage: usable.usage, limit: best.limit };
   }
 
-  const blocked = first.hits.find((hit) => isPoolExhausted(hit, now)) ?? first.hits[0];
+  const blocked = first.hits.find((hit) => isHitExhausted(hit, now)) ?? first.hits[0];
   return blocked ? { usage: blocked.usage, limit: blocked.limit } : undefined;
 }
 
@@ -362,17 +429,45 @@ export function findQuotaForModel(
   usages: readonly ProviderUsage[],
   now = new Date(),
 ): MatchedQuota | undefined {
-  const provider = quotaProviderId(model);
-  const candidates = usages.filter(
-    (usage) => usage.provider.toLowerCase() === provider.toLowerCase() && Boolean(usage.limits?.length),
-  );
+  const provider = quotaProviderId(model).toLowerCase();
+  const candidates = usages.filter((usage) => {
+    const p = usage.provider.toLowerCase();
+    const match =
+      p === provider ||
+      (provider === "claude" && p === "anthropic") ||
+      (provider === "anthropic" && p === "claude");
+    return match && Boolean(usage.limits?.length);
+  });
 
   const modelKeyed = candidates.filter((usage) => usage.perModelBuckets);
   if (modelKeyed.length > 0) return findModelBucket(model, modelKeyed, now);
 
-  for (const candidate of candidates) {
+  // Urutkan seluruh akun kandidat menurut priority router (angka lebih kecil = prioritas lebih tinggi).
+  // Akun tanpa prioritas diletakkan di akhir dengan mempertahankan urutan asal.
+  const ordered = [...candidates].sort(
+    (a, b) =>
+      (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER),
+  );
+
+  // 1. Pilih akun pertama dengan prioritas tertinggi yang sehat (belum exhausted)
+  // dan memiliki limit yang cocok untuk model ini.
+  for (const candidate of ordered) {
     const limit = findMatchingLimit(model, candidate);
-    if (limit) return { usage: candidate, limit };
+    if (!limit) continue;
+
+    if (!isAccountExhaustedGeneral(candidate, now)) {
+      return { usage: candidate, limit };
+    }
+  }
+
+  // 2. Jika seluruh akun exhausted, pilih akun prioritas tertinggi yang memiliki limit cocok,
+  // dan utamakan menampilkan limit yang memblokir (exhausted) pada akun tersebut.
+  for (const candidate of ordered) {
+    const limit = findMatchingLimit(model, candidate);
+    if (!limit) continue;
+
+    const blockedLimit = (candidate.limits ?? []).find((l) => isLimitExhausted(l, now)) ?? limit;
+    return { usage: candidate, limit: blockedLimit };
   }
 
   return undefined;
@@ -454,6 +549,18 @@ export function quotaAge(since: Date | undefined, now: Date): string | undefined
   return `${minutes}m`;
 }
 
+function compactLimitLabel(label: string): string {
+  return label
+    .replace(/^Claude and GPT models/i, "Claude/GPT")
+    .replace(/^Gemini Models/i, "Gemini")
+    .replace(/^Gemini 4 Argon/i, "Argon")
+    .trim();
+}
+
+function compactAccountLabel(label: string): string {
+  return label.replace(/@[\w.-]+/g, "");
+}
+
 /**
  * Render a quota rail directly below Pi's editor separator, followed by a
  * closing rule that keeps the built-in footer visually separate.
@@ -470,9 +577,6 @@ export function renderQuotaBar(
   borderColor: (text: string) => string = (text) => theme.fg("borderMuted", text),
 ): string[] {
   const safeWidth = Math.max(1, width);
-  // Use the provider returned by the quota source. For a router this is the
-  // upstream provider (e.g. antigravity), not the transport name ("9router").
-  const providerLabel = matched.usage.provider;
   const usedPercent = Math.max(0, Math.min(100, matched.limit.usedPercent));
   const percent = `${usedPercent.toFixed(0)}% used`;
   const reset = formatReset(matched.limit.resetsAt, now);
@@ -480,9 +584,40 @@ export function renderQuotaBar(
   const age = matched.usage.stale ? quotaAge(matched.usage.updatedAt, now) : undefined;
   const suffix = age ? `${base} · stale ${age}` : base;
 
+  const accountFull = matched.usage.label?.trim() || matched.usage.provider;
+  const limitFull = matched.limit.label?.trim();
+
+  // Susun label kiri (akun) dan kanan (limit + status pemakaian) bertingkat
+  // sesuai lebar terminal agar progress rail tetap memiliki ruang visual.
+  let leftLabel = accountFull;
+  let rightSuffix = limitFull ? `${limitFull} · ${suffix}` : suffix;
+
+  const minBarWidth = 8;
+  const calcOverhead = (left: string, right: string) => visibleWidth(left) + visibleWidth(right) + 6;
+
+  if (calcOverhead(leftLabel, rightSuffix) + minBarWidth > safeWidth) {
+    const accountCompact = compactAccountLabel(accountFull);
+    const limitCompact = limitFull ? compactLimitLabel(limitFull) : undefined;
+    const rightCompact = limitCompact ? `${limitCompact} · ${suffix}` : suffix;
+
+    if (calcOverhead(accountCompact, rightCompact) + minBarWidth <= safeWidth) {
+      leftLabel = accountCompact;
+      rightSuffix = rightCompact;
+    } else if (calcOverhead(accountCompact, suffix) + minBarWidth <= safeWidth) {
+      leftLabel = accountCompact;
+      rightSuffix = suffix;
+    } else if (calcOverhead(matched.usage.provider, suffix) + minBarWidth <= safeWidth) {
+      leftLabel = matched.usage.provider;
+      rightSuffix = suffix;
+    } else {
+      leftLabel = matched.usage.provider;
+      rightSuffix = percent;
+    }
+  }
+
   // Fill every column between the provider and the quota information.
   const divider = borderColor("│");
-  const overhead = visibleWidth(providerLabel) + visibleWidth(suffix) + 6;
+  const overhead = visibleWidth(leftLabel) + visibleWidth(rightSuffix) + 6;
   const barWidth = Math.max(1, safeWidth - overhead);
   const usedWidth = Math.round((usedPercent / 100) * barWidth);
   const bar = usedWidth <= 0
@@ -492,7 +627,7 @@ export function renderQuotaBar(
       : `${"━".repeat(usedWidth - 1)}╸${"─".repeat(barWidth - usedWidth)}`;
 
   const content = [
-    theme.fg("text", providerLabel),
+    theme.fg("text", leftLabel),
     " ",
     divider,
     " ",
@@ -500,7 +635,7 @@ export function renderQuotaBar(
     " ",
     divider,
     " ",
-    theme.fg("text", suffix),
+    theme.fg("text", rightSuffix),
   ].join("");
 
   const rule = borderColor("─".repeat(safeWidth));

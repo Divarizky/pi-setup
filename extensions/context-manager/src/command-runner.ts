@@ -1,7 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { basename, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join, resolve } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
-export type RunnerRuntime = "shell" | "javascript" | "typescript" | "python";
+export type RunnerRuntime = "shell" | "bash" | "powershell" | "javascript" | "typescript" | "python";
 
 export interface RunScriptOptions {
   runtime: RunnerRuntime;
@@ -20,8 +23,13 @@ export interface RunScriptResult {
   signal: string | null;
   timedOut: boolean;
   truncated: boolean;
+  /** Potongan terakhir stderr, dipakai saat script gagal supaya pesan error tidak tenggelam. */
+  stderrTail: string;
   durationMs: number;
 }
+
+const STDERR_TAIL_CHARS = 8_000;
+const STDERR_TAIL_LINES = 20;
 
 export class ScriptCancelledError extends Error {
   readonly result: RunScriptResult;
@@ -34,7 +42,11 @@ export class ScriptCancelledError extends Error {
 }
 
 const PI_BINARY_PATTERN = /^pi(?:\.exe)?$/i;
-const SENSITIVE_ENV_PATTERN = /(TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|AUTH|COOKIE|CREDENTIAL)/i;
+const SENSITIVE_ENV_PATTERN = /(TOKEN|SECRET|PASSWORD|PASSWD|API[_-]?KEY|COOKIE|CREDENTIAL)/i;
+// AUTH dicocokkan per kata: substring ikut menangkap GIT_AUTHOR_NAME/EMAIL.
+const SENSITIVE_ENV_WORD_PATTERN = /(?:^|[_-])(?:O?AUTH|AUTHORIZATION)(?:$|[_-])/i;
+// Bukan secret, tapi dibutuhkan git/ssh (mis. `git push` lewat SSH agent).
+const ALLOWED_ENV_KEYS = new Set(["SSH_AUTH_SOCK"]);
 const UNSAFE_EXEC_ENV_PATTERN = /^(?:NODE_OPTIONS|NODE_PATH|PYTHONPATH|PYTHONHOME|PYTHONSTARTUP|RUBYOPT|PERL5OPT|PERL5LIB|JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|GIT_EXTERNAL_DIFF|GIT_SSH_COMMAND|GIT_PAGER|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$/i;
 
 function runtimeExecutable(): string {
@@ -42,11 +54,93 @@ function runtimeExecutable(): string {
   return process.platform === "win32" ? "node.exe" : "node";
 }
 
-function commandForRuntime(runtime: RunnerRuntime, script: string): { command: string; args: string[] } {
-  if (runtime === "shell") {
-    return process.platform === "win32"
-      ? { command: "powershell.exe", args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script] }
-      : { command: "/bin/sh", args: ["-c", script] };
+export interface ShellCommand {
+  command: string;
+  args: string[];
+}
+
+function readShellPathSetting(): string | undefined {
+  // shellPath dari settings Pi, supaya bash yang dipilih user juga dipakai di sini.
+  try {
+    const settings = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "settings.json"), "utf8")) as { shellPath?: unknown };
+    return typeof settings.shellPath === "string" ? settings.shellPath : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Bash untuk runtime shell: `shellPath` dari settings, lalu Git for Windows. */
+export function findBash(): string | undefined {
+  const candidates: (string | undefined)[] = [readShellPathSetting()];
+  if (process.platform === "win32") {
+    candidates.push(join(process.env.ProgramFiles ?? "C:/Program Files", "Git", "bin", "bash.exe"));
+    if (process.env.LOCALAPPDATA) candidates.push(join(process.env.LOCALAPPDATA, "Programs", "Git", "bin", "bash.exe"));
+  }
+  return candidates.find((path): path is string => typeof path === "string" && path.length > 0 && existsSync(path));
+}
+
+/** Nama shell untuk runtime shell, dipakai di deskripsi tool. */
+export function shellRuntimeName(): string {
+  if (findBash()) return "bash";
+  return process.platform === "win32" ? "PowerShell" : "sh";
+}
+
+export function buildPowerShellCommand(script: string): ShellCommand {
+  return {
+    command: "powershell.exe",
+    args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", `${script}\nexit $LASTEXITCODE`],
+  };
+}
+
+/**
+ * Deteksi leksikal cepat apakah script menggunakan sintaks/cmdlet khas PowerShell
+ * yang tidak valid di Bash.
+ */
+export function looksLikePowerShell(script: string): boolean {
+  const psPatterns = [
+    /\$(?:env:[A-Za-z_]|LASTEXITCODE|PSVersionTable|true|false|null)\b/i,
+    /\b(?:Get|Set|New|Remove|Test|Start|Stop|Invoke|Out|Select|Where|Clear|Add|Copy|Move)-[A-Za-z]+\b/,
+    /\b(?:ForEach-Object|Where-Object|Select-Object|Measure-Object)\b/i,
+    /\[Console\]::/i,
+    /\[[A-Za-z0-9_.]+(\[\])?\]::/,
+    /\|\s*Out-String\b/i,
+    /\|\s*ForEach\s*\{/i,
+    /\|\s*Where\s*\{/i,
+  ];
+  return psPatterns.some((pattern) => pattern.test(script));
+}
+
+/**
+ * Perintah untuk runtime shell. Tanpa bash di Windows, PowerShell dipakai dan
+ * baris `exit $LASTEXITCODE` ditambahkan supaya exit code script tidak hilang.
+ */
+export function buildShellCommand(
+  script: string,
+  bashPath: string | undefined,
+  platform: NodeJS.Platform = process.platform,
+): ShellCommand {
+  // Jika di Windows dan script mengandung sintaks khas PowerShell, prioritaskan PowerShell
+  if (platform === "win32" && looksLikePowerShell(script)) {
+    return buildPowerShellCommand(script);
+  }
+  if (bashPath) return { command: bashPath, args: ["-c", script] };
+  if (platform === "win32") {
+    return buildPowerShellCommand(script);
+  }
+  return { command: "/bin/sh", args: ["-c", script] };
+}
+
+function commandForRuntime(runtime: RunnerRuntime, script: string): ShellCommand {
+  if (runtime === "shell") return buildShellCommand(script, findBash());
+  if (runtime === "bash") {
+    const bash = findBash();
+    if (!bash && process.platform !== "win32") {
+      return { command: "/bin/bash", args: ["-c", script] };
+    }
+    return { command: bash ?? "bash", args: ["-c", script] };
+  }
+  if (runtime === "powershell") {
+    return buildPowerShellCommand(script);
   }
   if (runtime === "javascript") {
     return { command: runtimeExecutable(), args: ["-e", script] };
@@ -63,102 +157,13 @@ function commandForRuntime(runtime: RunnerRuntime, script: string): { command: s
 export function sanitizeEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return Object.fromEntries(
     Object.entries(env).filter(([key]) =>
-      !SENSITIVE_ENV_PATTERN.test(key) && !UNSAFE_EXEC_ENV_PATTERN.test(key),
+      ALLOWED_ENV_KEYS.has(key.toUpperCase()) || (
+        !SENSITIVE_ENV_PATTERN.test(key)
+        && !SENSITIVE_ENV_WORD_PATTERN.test(key)
+        && !UNSAFE_EXEC_ENV_PATTERN.test(key)
+      ),
     ),
   );
-}
-
-// ponytail: allowlist sederhana read-only (tanpa dep) — akurat untuk pola umum; upgrade ke shell-quote/shlex hanya bila butuh AST komplit (mis. nested subshell, $() kompleks) dan usage >80% sering.
-const READONLY_SHELL_SEGMENT_PATTERNS: RegExp[] = [
-  /^\s*(ls|dir|pwd|whoami|cat|type|head|tail|less|more|wc|sort|uniq|cut|awk|sed|jq|yq|tree|stat|file|du|df|printenv|uname|date|which|where|ping|sleep|ver)\b/i,
-  /^\s*(grep|rg|ag|find|fd|git)\b/i,
-  /^\s*(npm|pnpm|yarn|bun)\b/i,
-  /^\s*(node|python3?|python|deno|bun)\s+(--version|-v)\s*$/i,
-  /^\s*echo\b/i,
-  /^\s*printf\b/i,
-];
-
-const READONLY_GIT_SUBCOMMAND = /^(status|diff|log|show|remote|rev-parse|ls-files|ls-remote|tag|describe|shortlog|blame)\b/i;
-const READONLY_GIT_BRANCH_ARGS = /^branch\b(?:\s+(?:--[a-z-]+|-[a-z]+|\S+))*\s*$/i;
-const READONLY_NPM_SUBCOMMAND = /^(list|ls|view|outdated|why|explain|help)\b/i;
-
-// ponytail: heuristik substring konservatif untuk js/ts/py — arah aman: false positive = minta konfirmasi, bukan lolos.
-// read-only = komputasi murni tanpa IO/side-effect (mis. 1+1, JSON.parse, math, print). Upgrade path: AST parse bila heuristik terlalu berisik.
-const MUTATING_JS_PATTERN = /require\s*\(|\bimport\b|from\s+['"]|child_process|worker_threads|\bcluster\b|\bfs\b|\bos\b|\bpath\b|\bnet\b|\bhttp\b|\bdgram\b|\bdns\b|\btls\b|\bstream\b|\bvm\b|\binspector\b|\brepl\b|\breadline\b|process\s*\.|\bDeno\b|\bBun\b|globalThis|\bglobal\s*\.|\bself\s*\.|\bwindow\b|\bdocument\b|\bnavigator\b|localStorage|sessionStorage|indexedDB|\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|\beval\s*\(|new\s+Function|\bspawn\b|\bexecFile\b|\bexecSync\b|\bspawnSync\b|\bfork\s*\(|writeFile|appendFile|\bmkdir\b|\brmdir\b|\bunlink\b|\brename\b|copyFile|\btruncate\b|\bchmod\b|\bchown\b|createWriteStream|\.write\s*\(/i;
-
-const MUTATING_PY_PATTERN = /__import__|\bimport\b|\beval\s*\(|\bexec\s*\(|\bcompile\s*\(|\bopen\s*\([^,]*,\s*['"][^'"]*[wax+]|\binput\s*\(|\bexit\b|\bquit\b|\bos\b|\bsys\b|\bsubprocess\b|\bshutil\b|\bpathlib\b|\bsocket\b|\bhttp\b|\burllib\b|\brequests\b|\bctypes\b|\bmultiprocessing\b|\bthreading\b|\bconcurrent\b|\bimportlib\b|\bpkgutil\b|\bsite\b|\bpty\b|\btty\b|\btermios\b|\bfcntl\b|\bsignal\b|\bssl\b|\bftplib\b|\bsmtplib\b|\btelnetlib\b|\bwebbrowser\b|\bsystem\b|\bpopen\b|\bspawn\w*|\.write\s*\(|\.writelines|file\s*=/i;
-
-function isMutatingCodeScript(runtime: RunnerRuntime, script: string): boolean {
-  if (runtime === "python") return MUTATING_PY_PATTERN.test(script);
-  return MUTATING_JS_PATTERN.test(script);
-}
-
-function stripQuoted(script: string): string {
-  return script.replaceAll(/'[^']*'|"[^"]*"/g, (m) => " ".repeat(m.length));
-}
-function hasShellExpansion(script: string): boolean {
-  return /\$\(|\$\(\(|`/.test(script)
-    || /\$\{[^}]*\}/.test(script)
-    || /(^|[^\\])\$[A-Za-z_][A-Za-z0-9_]*/.test(script);
-}
-
-function containsOutsideCwdReference(script: string): boolean {
-  // The shell runner is project-local by contract. A conservative lexical
-  // guard prevents the read-only allowlist from becoming a read primitive for
-  // /etc, $HOME, another drive, or a parent directory. Scripts that genuinely
-  // need those paths are classified as mutating and require confirmation.
-  return /(?:^|[\s"'(=])(?:~(?:[\\/]|$)|[\\/]{1,2}|[A-Za-z]:[\\/]|\.\.(?:[\\/]|$))/.test(script);
-}
-
-function containsRedirection(script: string): boolean {
-  // ponytail: treat any bare `>` as redirection (covers >, >>, 2>, 2>>, &>, >&); quoted `>` stripped above.
-  return stripQuoted(script).includes(">");
-}
-
-function isReadOnlyShellSegment(segment: string): boolean {
-  const trimmed = segment.trim();
-  if (!trimmed) return true;
-  if (hasShellExpansion(trimmed)) return false;
-  if (containsOutsideCwdReference(trimmed)) return false;
-  if (containsRedirection(trimmed)) return false;
-  if (/\b(tee|Set-Content|Out-File)\b/i.test(trimmed)) return false;
-  if (/^\s*find\b/i.test(trimmed) && /(?:^|\s)-(?:exec|execdir|delete|ok|okdir)\b/i.test(trimmed)) return false;
-  if (/^\s*awk\b/i.test(trimmed) && (/\bsystem\s*\(/i.test(trimmed) || />/.test(trimmed))) return false;
-  if (/^\s*sed\b/i.test(trimmed) && /(?:^|\s)(?:-i|--in-place)(?:\s|=|$)/i.test(trimmed)) return false;
-  if (/^\s*git\b/i.test(trimmed) && /(?:--output(?:=|\s)|--ext-diff\b)/i.test(trimmed)) return false;
-  const matchesAllowlist = READONLY_SHELL_SEGMENT_PATTERNS.some((re) => re.test(trimmed));
-  if (!matchesAllowlist) return false;
-  if (/^\s*git\b/i.test(trimmed)) {
-    const after = trimmed.replace(/^\s*git\s+/i, "");
-    if (/^branch\b/i.test(after)) {
-      if (!READONLY_GIT_BRANCH_ARGS.test(after)) return false;
-      if (/\s-D\b|\s--delete\b|\s-d\b|\s-m\b|\s--move\b|\s-c\b|\s--copy\b/i.test(` ${after}`)) return false;
-    } else if (!READONLY_GIT_SUBCOMMAND.test(after)) return false;
-    if (/^remote\b/i.test(after) && !/^remote(?:\s+(?:-v|--verbose))?\s*$/i.test(after)) return false;
-    if (/^tag\b/i.test(after) && !/^tag(?:\s+(?:-l|--list)\b.*)?\s*$/i.test(after)) return false;
-  }
-  if (/^\s*(npm|pnpm|yarn|bun)\b/i.test(trimmed)) {
-    const after = trimmed.replace(/^\s*(npm|pnpm|yarn|bun)\s+/i, "");
-    if (!after.trim()) return false;
-    if (/\baudit\b/i.test(after) && /\bfix\b/i.test(after)) return false;
-    if (!READONLY_NPM_SUBCOMMAND.test(after)) return false;
-  }
-  if (/^\s*([./]|[A-Za-z]:[\\/])[^;&|\n]*\.(sh|bash|zsh|ps1|bat|cmd|py|js|ts)\b/i.test(trimmed)) return false;
-  if (/^\s*(bash|sh|zsh|fish|pwsh|powershell|python3?|node|deno|bun)(\s+.*)?$/i.test(trimmed)) {
-    if (!/^\s*(node|python3?|python|deno|bun)\s+(--version|-v)\b/i.test(trimmed)) return false;
-  }
-  return true;
-}
-
-function isReadOnlyShellScript(script: string): boolean {
-  const segments = script.split(/(?:&&|\|\||;|\n|\|)/g);
-  return segments.every((seg) => isReadOnlyShellSegment(seg));
-}
-
-export function isPotentiallyMutating(runtime: RunnerRuntime, script: string): boolean {
-  if (!script.trim()) return true;
-  if (runtime === "shell") return !isReadOnlyShellScript(script);
-  return isMutatingCodeScript(runtime, script);
 }
 
 export function formatElapsed(ms: number): string {
@@ -170,16 +175,38 @@ export function formatElapsed(ms: number): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
-function appendOutput(parts: string[], chunk: Buffer, maxChars: number): boolean {
-  const text = chunk.toString("utf8");
-  const current = parts.join("");
-  if (current.length >= maxChars) return true;
-  if (current.length + text.length > maxChars) {
-    parts.push(text.slice(0, maxChars - current.length));
-    return true;
+// Panjang disimpan terpisah: join ulang seluruh buffer per chunk membuat
+// pengumpulan output kuadratik (10 MB dalam chunk 4 KB ~8 detik CPU).
+export class OutputCollector {
+  private readonly parts: string[] = [];
+  private readonly maxChars: number;
+  private length = 0;
+  truncated = false;
+
+  constructor(maxChars: number) {
+    this.maxChars = maxChars;
   }
-  parts.push(text);
-  return false;
+
+  /** Mengembalikan true kalau batas tercapai dan teks (sebagian) dibuang. */
+  append(text: string): boolean {
+    if (this.length >= this.maxChars) {
+      if (text) this.truncated = true;
+      return this.truncated;
+    }
+    if (this.length + text.length > this.maxChars) {
+      this.parts.push(text.slice(0, this.maxChars - this.length));
+      this.length = this.maxChars;
+      this.truncated = true;
+      return true;
+    }
+    this.parts.push(text);
+    this.length += text.length;
+    return false;
+  }
+
+  toString(): string {
+    return this.parts.join("");
+  }
 }
 
 function processGroupExists(pid: number): boolean {
@@ -336,6 +363,7 @@ export async function runScript(options: RunScriptOptions): Promise<RunScriptRes
       signal: null,
       timedOut: false,
       truncated: false,
+      stderrTail: "",
       durationMs: 0,
     });
   }
@@ -355,10 +383,10 @@ export async function runScript(options: RunScriptOptions): Promise<RunScriptRes
     processTreeKill ??= killProcessTree(child);
     return processTreeKill;
   };
-  const parts: string[] = [];
+  const collector = new OutputCollector(maxRawOutputChars);
   const liveOutput = new LiveOutputBuffer();
-  let truncated = false;
   let timedOut = false;
+  let stderrRaw = "";
   let settled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let progressTimer: ReturnType<typeof setInterval> | undefined;
@@ -429,18 +457,25 @@ export async function runScript(options: RunScriptOptions): Promise<RunScriptRes
       stopLiveUpdates();
       void requestProcessTreeKill();
     }, timeoutMs);
-    const handleOutput = (chunk: Buffer) => {
-      if (appendOutput(parts, chunk, maxRawOutputChars)) {
-        truncated = true;
-        void requestProcessTreeKill();
-      }
+    // Satu decoder per stream: karakter multi-byte yang terbelah di dua chunk
+    // tetap utuh, dan stdout/stderr tidak saling menyambung byte parsial.
+    const handleText = (text: string) => {
+      if (!text) return;
+        // Output berlebih hanya dibuang. Proses dibiarkan selesai, dibatasi timeout.
+      collector.append(text);
       if (options.onProgress || options.onOutput) {
-        liveOutput.append(chunk.toString("utf8"));
+        liveOutput.append(text);
         scheduleOutputUpdate();
       }
     };
-    child.stdout?.on("data", handleOutput);
-    child.stderr?.on("data", handleOutput);
+    const handleStderr = (text: string) => {
+      stderrRaw = (stderrRaw + text).slice(-STDERR_TAIL_CHARS);
+      handleText(text);
+    };
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
+    child.stdout?.on("data", (chunk: Buffer) => handleText(stdoutDecoder.write(chunk)));
+    child.stderr?.on("data", (chunk: Buffer) => handleStderr(stderrDecoder.write(chunk)));
     let processError: Error | undefined;
     child.once("error", (error) => {
       processError = error;
@@ -448,6 +483,8 @@ export async function runScript(options: RunScriptOptions): Promise<RunScriptRes
       void requestProcessTreeKill();
     });
     child.once("close", (exitCode, signal) => {
+      handleText(stdoutDecoder.end());
+      handleStderr(stderrDecoder.end());
       if (outputUpdateTimer && !stopUpdates) {
         clearTimeout(outputUpdateTimer);
         outputUpdateTimer = undefined;
@@ -465,13 +502,16 @@ export async function runScript(options: RunScriptOptions): Promise<RunScriptRes
     if (processTreeKill) await processTreeKill;
   });
 
-  if (truncated) parts.push("\n[context-manager] Raw output dipotong setelah batas cache tercapai.");
+  const truncated = collector.truncated;
+  let output = collector.toString();
+  if (truncated) output += "\n[context-manager] Raw output dipotong setelah batas cache tercapai.";
   const runResult: RunScriptResult = {
-    output: parts.join(""),
+    output,
     exitCode: result.exitCode,
     signal: result.signal,
     timedOut,
     truncated,
+    stderrTail: stderrRaw.split(/\r?\n/).filter((line) => line.trim()).slice(-STDERR_TAIL_LINES).join("\n"),
     durationMs: Date.now() - startedAt,
   };
   if (options.signal?.aborted) throw new ScriptCancelledError(runResult);

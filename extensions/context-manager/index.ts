@@ -43,7 +43,7 @@ import {
 } from "./src/context-config.ts";
 import {
   formatElapsed,
-  isPotentiallyMutating,
+  shellRuntimeName,
   runScript,
   sanitizeTerminalOutput,
   ScriptCancelledError,
@@ -112,6 +112,7 @@ interface ExecuteToolDetails {
     exitCode?: number | null;
     signal?: string | null;
     timedOut?: boolean;
+    truncated?: boolean;
     cancelled?: boolean;
     durationMs?: number;
     displayOutputPreview?: OutputPreview;
@@ -233,6 +234,7 @@ export default function (pi: ExtensionAPI) {
     outputCache.setSessionId(persistentSessionId);
     outputCache.resetSession();
     cachedToolResults.clear();
+    pendingExecuteErrorDetails.clear();
     prunedToolResults.clear();
     // Rekonstruksi activeIds dari branch agar resume tidak kehilangan referensi (reference-kept)
     try {
@@ -270,21 +272,25 @@ export default function (pi: ExtensionAPI) {
     name: "execute",
     label: "Execute Context-Safe Script",
     renderShell: "self",
-    description: "Run a general non-interactive shell or script in the project and return a compact result. Raw output is cached for later inspection. All scripts run without confirmation.",
-    promptSnippet: "Run a project-local script and return only a compact, cached result",
+    description: "Run a general non-interactive shell or script, starting in the project directory, and return a compact result. Raw output is cached for later inspection. Scripts are not sandboxed and run without confirmation; they can read and write outside the project.",
+    promptSnippet: "Run a script from the project directory and return only a compact, cached result",
     promptGuidelines: [
       "Prefer execute for tests, lint, builds, git inspection, and processing large outputs.",
-      "Use runtime shell, javascript, typescript, or python; keep the script non-interactive.",
-      "All scripts run without confirmation, including potentially mutating ones.",
+      `Use runtime shell (${shellRuntimeName()}), bash, powershell, javascript, typescript, or python; keep the script non-interactive.`,
+      "Scripts run without confirmation and are not sandboxed, including potentially mutating ones.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
       runtime: Type.Optional(Type.Union([
         Type.Literal("shell"),
+        Type.Literal("bash"),
+        Type.Literal("powershell"),
         Type.Literal("javascript"),
         Type.Literal("typescript"),
         Type.Literal("python"),
-      ])),
+      ], {
+        description: "Runtime lingkungan eksekusi. 'shell' (default) memakai Bash jika ada dan otomatis dialihkan ke PowerShell bila mendeteksi sintaks cmdlet PowerShell. 'bash' dan 'powershell' dapat ditentukan secara eksplisit.",
+      })),
       script: Type.String({ description: "Shell command or script to execute" }),
       cwd: Type.Optional(Type.String({ description: "Project-local working directory" })),
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1_000, maximum: MAX_EXECUTION_TIMEOUT_MS })),
@@ -310,24 +316,8 @@ export default function (pi: ExtensionAPI) {
         throw new Error("execute hanya boleh bekerja di dalam current project.");
       }
 
-      // Approval gate dihapus per permintaan user: semua script jalan tanpa
-      // konfirmasi, termasuk yang mutatif dan mode headless. Batas aman sisa:
-      // isInsideProject (cwd), sanitizeEnvironment, timeout + kill tree.
-      void isPotentiallyMutating;
-
-      // Revalidate cwd
-      const [verifiedCwd, verifiedProjectCwd] = await Promise.all([
-        realpath(requestedCwd).catch(() => requestedCwd),
-        realpath(ctx.cwd).catch(() => ctx.cwd),
-      ]);
-      throwIfCancelled();
-      if (
-        verifiedCwd !== realRequestedCwd ||
-        !isInsideProject(verifiedProjectCwd, verifiedCwd)
-      ) {
-        throw new Error("current project berubah setelah validasi; execute dibatalkan.");
-      }
-
+      // Script tidak di-sandbox: cwd awal dicek di atas, lalu script bebas
+      // membaca dan menulis di luar project lewat `cd`, path absolut, atau env.
       const uiUpdate = ctx.hasUI ? onUpdate : undefined;
       let lastSent = "";
       const sendProgress = (elapsedMs: number, outputPreview = "") => {
@@ -348,7 +338,7 @@ export default function (pi: ExtensionAPI) {
         result = await runScript({
           runtime,
           script: params.script,
-          cwd: verifiedCwd,
+          cwd: realRequestedCwd,
           timeoutMs: params.timeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS,
           maxRawOutputChars: MAX_EXECUTION_OUTPUT_BYTES,
           signal,
@@ -374,7 +364,9 @@ export default function (pi: ExtensionAPI) {
             ? "success"
             : `failed (exit ${result.exitCode ?? "unknown"})`;
       const signalInfo = result.signal ? `; signal: ${sanitizeTerminalOutput(result.signal)}` : "";
-      const statusLine = `[context-manager] Status: ${status}; durasi: ${formatElapsed(result.durationMs)}${signalInfo}. | outputId: "${outputId}"`;
+      // Output dipotong bukan kegagalan script; ditandai terpisah agar tidak terbaca sebagai error.
+      const truncatedInfo = result.truncated ? "; output dipotong" : "";
+      const statusLine = `[context-manager] Status: ${status}; durasi: ${formatElapsed(result.durationMs)}${signalInfo}${truncatedInfo}. | outputId: "${outputId}"`;
       const maxOutputChars = Math.max(
         1_000,
         Math.min(params.maxOutputChars ?? DEFAULT_EXECUTION_OUTPUT_CHARS, MAX_EXECUTION_OUTPUT_CHARS),
@@ -404,6 +396,10 @@ export default function (pi: ExtensionAPI) {
         boundedOutput = [header, boundedBody].join("\n");
         recordSummary(stats, raw, boundedOutput);
       }
+      const failed = !cancelled && !result.timedOut && result.exitCode !== 0;
+      if (failed && result.stderrTail) {
+        boundedOutput += `\n\nstderr terakhir:\n${sanitizeTerminalOutput(result.stderrTail)}`;
+      }
       cachedToolResults.set(toolCallId, {
         outputId,
         text: boundedOutput,
@@ -419,6 +415,7 @@ export default function (pi: ExtensionAPI) {
             signal: result.signal,
             timedOut: result.timedOut,
             cancelled,
+            truncated: result.truncated,
             durationMs: result.durationMs,
             ...displayOutputDetails,
           },
@@ -430,7 +427,7 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: boundedOutput }],
         details: {
-          contextManager: { outputId, runtime, exitCode: result.exitCode, signal: result.signal, timedOut: result.timedOut, cancelled: false, durationMs: result.durationMs, ...displayOutputDetails },
+          contextManager: { outputId, runtime, exitCode: result.exitCode, signal: result.signal, timedOut: result.timedOut, cancelled: false, truncated: result.truncated, durationMs: result.durationMs, ...displayOutputDetails },
         },
       };
     },

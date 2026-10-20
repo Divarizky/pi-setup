@@ -4,15 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  buildPowerShellCommand,
+  buildShellCommand,
+  findBash,
   formatElapsed,
-  isPotentiallyMutating,
+  looksLikePowerShell,
   LiveOutputBuffer,
+  OutputCollector,
   runScript,
   sanitizeEnvironment,
 } from "./command-runner.ts";
 
 test("runScript executes a cross-platform shell and captures output", async () => {
-  const script = process.platform === "win32" ? "Write-Output hello" : "printf hello";
+  const script = "echo hello";
   const result = await runScript({
     runtime: "shell",
     script,
@@ -26,13 +30,99 @@ test("runScript executes a cross-platform shell and captures output", async () =
   assert.equal(result.timedOut, false);
 });
 
-test("runScript enforces the raw output limit", async () => {
-  const script = process.platform === "win32"
-    ? "Write-Output ('x' * 5000)"
-    : "printf 'x%.0s' $(seq 1 5000)";
+test("looksLikePowerShell detects common cmdlets and syntax", () => {
+  assert.equal(looksLikePowerShell("Get-ChildItem -Path ."), true);
+  assert.equal(looksLikePowerShell("1..10 | ForEach-Object { $_ }"), true);
+  assert.equal(looksLikePowerShell("$LASTEXITCODE"), true);
+  assert.equal(looksLikePowerShell("[Console]::Out.WriteLine('hi')"), true);
+  assert.equal(looksLikePowerShell("ls | Out-String"), true);
+  assert.equal(looksLikePowerShell("Test-Path ./file.txt"), true);
+  assert.equal(looksLikePowerShell("echo 'hello world' && ls -la"), false);
+  assert.equal(looksLikePowerShell("grep -rn 'test' ."), false);
+});
+
+test("buildShellCommand auto-routes to powershell when script contains PS syntax", () => {
+  const command = buildShellCommand("Get-ChildItem -Path .", "/usr/bin/bash", "win32");
+  assert.equal(command.command, "powershell.exe");
+  assert.match(command.args.at(-1) ?? "", /Get-ChildItem/);
+});
+
+test("runScript executes explicit powershell runtime on Windows", { skip: process.platform !== "win32" }, async () => {
+  const result = await runScript({
+    runtime: "powershell",
+    script: "Write-Output 'from-powershell'",
+    cwd: process.cwd(),
+    timeoutMs: 10_000,
+    maxRawOutputChars: 1_000,
+  });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.output, /from-powershell/);
+});
+
+test("runScript auto-routes powershell syntax through shell runtime on Windows", { skip: process.platform !== "win32" }, async () => {
   const result = await runScript({
     runtime: "shell",
-    script,
+    script: "Get-Process -Id $PID | Select-Object -ExpandProperty Id",
+    cwd: process.cwd(),
+    timeoutMs: 10_000,
+    maxRawOutputChars: 1_000,
+  });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.output, /\d+/);
+});
+
+test("runScript executes explicit bash runtime when available", { skip: !findBash() }, async () => {
+  const result = await runScript({
+    runtime: "bash",
+    script: "echo bash-explicit && echo ok",
+    cwd: process.cwd(),
+    timeoutMs: 10_000,
+    maxRawOutputChars: 1_000,
+  });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.output, /bash-explicit/);
+});
+
+test("buildShellCommand prefers bash when it is available", () => {
+  assert.deepEqual(buildShellCommand("echo a && echo b", "/usr/bin/bash", "win32"), {
+    command: "/usr/bin/bash",
+    args: ["-c", "echo a && echo b"],
+  });
+});
+
+test("buildShellCommand keeps the script exit code under PowerShell", () => {
+  const command = buildShellCommand("exit 7", undefined, "win32");
+  assert.equal(command.command, "powershell.exe");
+  assert.equal(command.args.at(-1), "exit 7\nexit $LASTEXITCODE");
+});
+
+test("runScript shell reports the real exit code", async () => {
+  const result = await runScript({
+    runtime: "shell",
+    script: "exit 7",
+    cwd: process.cwd(),
+    timeoutMs: 10_000,
+    maxRawOutputChars: 1_000,
+  });
+  assert.equal(result.exitCode, 7);
+});
+
+test("runScript shell accepts bash syntax when bash is available", { skip: !findBash() }, async () => {
+  const result = await runScript({
+    runtime: "shell",
+    script: "echo a && echo b",
+    cwd: process.cwd(),
+    timeoutMs: 10_000,
+    maxRawOutputChars: 1_000,
+  });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.output.replace(/\r\n/g, "\n").trim(), "a\nb");
+});
+
+test("runScript enforces the raw output limit", async () => {
+  const result = await runScript({
+    runtime: "javascript",
+    script: "process.stdout.write('x'.repeat(5000))",
     cwd: process.cwd(),
     timeoutMs: 10_000,
     maxRawOutputChars: 1_000,
@@ -42,66 +132,89 @@ test("runScript enforces the raw output limit", async () => {
   assert.ok(result.output.length <= 1_100);
 });
 
-test("mutation detection allowlist: read-only lolos, mutatif diblokir", () => {
-  // js/ts/py read-only lolos; yang menulis/IO butuh confirm
-  assert.equal(isPotentiallyMutating("javascript", "console.log('read')"), false);
-  assert.equal(isPotentiallyMutating("python", "print('hi')"), false);
-  assert.equal(isPotentiallyMutating("typescript", "1 + 2"), false);
-  assert.equal(isPotentiallyMutating("javascript", "require('fs').unlinkSync('x')"), true);
-  assert.equal(isPotentiallyMutating("python", "open('x', 'w').write('hi')"), true);
-  assert.equal(isPotentiallyMutating("typescript", "Deno.removeSync('x')"), true);
-  // read-only yang diizinkan
-  assert.equal(isPotentiallyMutating("shell", "git status --short"), false);
-  assert.equal(isPotentiallyMutating("shell", "git diff --stat"), false);
-  assert.equal(isPotentiallyMutating("shell", "git log --oneline -n 5"), false);
-  assert.equal(isPotentiallyMutating("shell", "git remote -v"), false);
-  assert.equal(isPotentiallyMutating("shell", "git tag -l"), false);
-  assert.equal(isPotentiallyMutating("shell", "ls -la"), false);
-  assert.equal(isPotentiallyMutating("shell", "cat README.md"), false);
-  assert.equal(isPotentiallyMutating("shell", "grep -R foo ."), false);
-  assert.equal(isPotentiallyMutating("shell", "npm test"), true);
-  assert.equal(isPotentiallyMutating("shell", "npm ls"), false);
-  assert.equal(isPotentiallyMutating("shell", "echo hello"), false);
-  assert.equal(isPotentiallyMutating("shell", "ls -la && cat package.json"), false);
-  // Jalur di luar workspace tidak boleh lolos sebagai read-only.
-  assert.equal(isPotentiallyMutating("shell", "cat /etc/passwd"), true);
-  assert.equal(isPotentiallyMutating("shell", "cat ../secrets.txt"), true);
-  assert.equal(isPotentiallyMutating("shell", "cat $HOME/.ssh/id_rsa"), true);
-  assert.equal(isPotentiallyMutating("shell", "cat C:\\Users\\Public\\secret.txt"), true);
-  // mutatif / tidak di-allowlist
-  assert.equal(isPotentiallyMutating("shell", "git reset --hard"), true);
-  assert.equal(isPotentiallyMutating("shell", "git commit -m hi"), true);
-  assert.equal(isPotentiallyMutating("shell", "git remote add origin https://example.com/repo.git"), true);
-  assert.equal(isPotentiallyMutating("shell", "git tag v1"), true);
-  assert.equal(isPotentiallyMutating("shell", "git diff --output=report.txt"), true);
-  assert.equal(isPotentiallyMutating("shell", "./custom-project-script.sh"), true);
-  assert.equal(isPotentiallyMutating("shell", "echo hello > output.txt"), true);
-  assert.equal(isPotentiallyMutating("shell", "cat x | tee out.txt"), true);
-  assert.equal(isPotentiallyMutating("shell", "rm -rf ./dist"), true);
-  assert.equal(isPotentiallyMutating("shell", "npm install"), true);
-  assert.equal(isPotentiallyMutating("shell", "custom-project-command"), true);
-  assert.equal(isPotentiallyMutating("shell", ""), true);
-  // P1: varian mutatif yang sebelumnya lolos allowlist harus diblokir
-  assert.equal(isPotentiallyMutating("shell", "git branch -D feature"), true);
-  assert.equal(isPotentiallyMutating("shell", "npm audit fix"), true);
-  assert.equal(isPotentiallyMutating("shell", "echo $(Remove-Item ./target -Recurse)"), true);
-  assert.equal(isPotentiallyMutating("shell", "echo `rm -rf /tmp/x`"), true);
-  assert.equal(isPotentiallyMutating("shell", "echo ${HOME}"), true);
-  assert.equal(isPotentiallyMutating("shell", "env rm -rf ./target"), true);
-  assert.equal(isPotentiallyMutating("shell", "command rm -rf ./target"), true);
-  assert.equal(isPotentiallyMutating("shell", "timeout 1 rm -rf ./target"), true);
-  assert.equal(isPotentiallyMutating("shell", "find . -exec rm {} \\;"), true);
-  assert.equal(isPotentiallyMutating("shell", "awk 'BEGIN { system(\"rm -rf ./target\") }'"), true);
-  assert.equal(isPotentiallyMutating("shell", "awk '{ print > \"target\" }'"), true);
-  assert.equal(isPotentiallyMutating("shell", "sed -i 's/a/b/' file.txt"), true);
-  assert.equal(isPotentiallyMutating("shell", "node --version -e \"process.exit(1)\""), true);
-  assert.equal(isPotentiallyMutating("shell", "git branch"), false);
-  assert.equal(isPotentiallyMutating("shell", "git branch -a"), false);
-});
-
 test("sanitizeEnvironment removes common secret variables", () => {
   const sanitized = sanitizeEnvironment({ PATH: "/bin", API_KEY: "hidden", SAFE_VALUE: "ok" });
   assert.deepEqual(sanitized, { PATH: "/bin", SAFE_VALUE: "ok" });
+});
+
+test("sanitizeEnvironment keeps git identity and ssh agent while dropping auth secrets", () => {
+  const sanitized = sanitizeEnvironment({
+    GIT_AUTHOR_NAME: "a",
+    GIT_AUTHOR_EMAIL: "a@x",
+    GIT_COMMITTER_NAME: "c",
+    SSH_AUTH_SOCK: "/tmp/agent.sock",
+    AUTHOR: "keep",
+    AUTH: "x",
+    AUTH_HEADER: "x",
+    OAUTH_CLIENT: "x",
+    BASIC_AUTH: "x",
+    HTTP_AUTHORIZATION: "x",
+    GH_TOKEN: "x",
+  });
+  assert.deepEqual(Object.keys(sanitized).sort(), [
+    "AUTHOR",
+    "GIT_AUTHOR_EMAIL",
+    "GIT_AUTHOR_NAME",
+    "GIT_COMMITTER_NAME",
+    "SSH_AUTH_SOCK",
+  ]);
+});
+
+test("OutputCollector bounds output in linear time", () => {
+  const collector = new OutputCollector(10 * 1024 * 1024);
+  const chunk = "a".repeat(4096);
+  const startedAt = Date.now();
+  let reachedLimit = false;
+  for (let i = 0; i < 3_000 && !reachedLimit; i++) reachedLimit = collector.append(chunk);
+  assert.equal(reachedLimit, true);
+  assert.equal(collector.truncated, true);
+  assert.equal(collector.toString().length, 10 * 1024 * 1024);
+  assert.ok(Date.now() - startedAt < 1_000, "pengumpulan 10 MB tidak boleh kuadratik");
+  assert.equal(collector.append("more"), true);
+  assert.equal(collector.toString().length, 10 * 1024 * 1024);
+});
+
+test("runScript keeps multi-byte characters split across chunks intact", async () => {
+  // Tulis byte UTF-8 "é" (0xC3 0xA9) dalam dua write terpisah dengan jeda.
+  const script = [
+    "process.stdout.write(Buffer.from([0xc3]));",
+    "setTimeout(() => process.stdout.write(Buffer.from([0xa9, 0x0a])), 50);",
+  ].join("");
+  const result = await runScript({
+    runtime: "javascript",
+    script,
+    cwd: process.cwd(),
+    timeoutMs: 10_000,
+    maxRawOutputChars: 1_000,
+  });
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.output, "\u00e9\n");
+});
+
+test("runScript lets the process finish when raw output is truncated", async () => {
+  // Exit code 3 hanya muncul kalau proses tidak dibunuh setelah output melewati batas.
+  const result = await runScript({
+    runtime: "javascript",
+    script: "process.stdout.write('x'.repeat(5000)); setTimeout(() => { process.exitCode = 3; }, 200);",
+    cwd: process.cwd(),
+    timeoutMs: 10_000,
+    maxRawOutputChars: 1_000,
+  });
+  assert.equal(result.truncated, true);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.exitCode, 3);
+});
+
+test("runScript returns the stderr tail for a failing script", async () => {
+  const result = await runScript({
+    runtime: "javascript",
+    script: "console.log('stdout-line'); console.error('boom-one'); console.error('boom-two'); process.exit(2);",
+    cwd: process.cwd(),
+    timeoutMs: 10_000,
+    maxRawOutputChars: 1_000,
+  });
+  assert.equal(result.exitCode, 2);
+  assert.equal(result.stderrTail, "boom-one\nboom-two");
 });
 
 test("formatElapsed otomatis ms->s->m", () => {
@@ -147,7 +260,7 @@ test("runScript emits the first output preview without waiting for the progress 
   let sawInitialOutput = false;
   const result = await runScript({
     runtime: "shell",
-    script: process.platform === "win32" ? "Write-Output quick-output" : "printf 'quick-output\\n'",
+    script: "echo quick-output",
     cwd: process.cwd(),
     timeoutMs: 10_000,
     maxRawOutputChars: 1_000,
@@ -160,12 +273,10 @@ test("runScript emits the first output preview without waiting for the progress 
 });
 
 test("runScript coalesces rapid output preview updates", async () => {
-  const script = process.platform === "win32"
-    ? "1..30 | ForEach-Object { [Console]::Out.WriteLine(\"line-$_\"); Start-Sleep -Milliseconds 10 }"
-    : "for i in $(seq 1 30); do printf 'line-%s\\n' \"$i\"; sleep 0.01; done";
+  const script = "(async () => { for (let i = 1; i <= 30; i++) { console.log('line-' + i); await new Promise((r) => setTimeout(r, 10)); } })()";
   const outputUpdates: Array<{ elapsedMs: number; preview: string }> = [];
   const result = await runScript({
-    runtime: "shell",
+    runtime: "javascript",
     script,
     cwd: process.cwd(),
     timeoutMs: 10_000,
@@ -187,8 +298,8 @@ test("runScript stops progress updates after cancellation", async () => {
 
   await assert.rejects(
     runScript({
-      runtime: "shell",
-      script: process.platform === "win32" ? "Start-Sleep -Seconds 5" : "sleep 5",
+      runtime: "javascript",
+      script: "setTimeout(() => {}, 5000)",
       cwd: process.cwd(),
       timeoutMs: 10_000,
       maxRawOutputChars: 1_000,
@@ -268,8 +379,8 @@ test("runScript does not start a process when its signal is already aborted", as
 
 test("runScript treats progress callback failures as non-fatal", async () => {
   const result = await runScript({
-    runtime: "shell",
-    script: process.platform === "win32" ? "Start-Sleep -Milliseconds 50" : "sleep 0.05",
+    runtime: "javascript",
+    script: "setTimeout(() => {}, 50)",
     cwd: process.cwd(),
     timeoutMs: 10_000,
     maxRawOutputChars: 1_000,
@@ -283,10 +394,8 @@ test("runScript exposes output in progress updates before the process exits", as
   let processFinished = false;
   let sawOutputWhileRunning = false;
   const result = await runScript({
-    runtime: "shell",
-    script: process.platform === "win32"
-      ? "Write-Output before; Start-Sleep -Milliseconds 350; Write-Output after"
-      : "printf 'before\\n'; sleep 0.35; printf 'after\\n'",
+    runtime: "javascript",
+    script: "console.log('before'); setTimeout(() => console.log('after'), 350);",
     cwd: process.cwd(),
     timeoutMs: 10_000,
     maxRawOutputChars: 1_000,

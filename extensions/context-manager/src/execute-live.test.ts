@@ -363,10 +363,8 @@ test("execute streams live output into the partial tool renderer", async () => {
     const result = await execute.execute(
       "live-output-test",
       {
-        runtime: "shell",
-        script: process.platform === "win32"
-          ? "[Console]::Out.WriteLine('live-start'); [Console]::Error.WriteLine('stderr-live'); Start-Sleep -Milliseconds 350; Write-Output live-end"
-          : "printf 'live-start\\n'; printf 'stderr-live\\n' >&2; sleep 0.35; printf 'live-end\\n'",
+        runtime: "javascript",
+        script: "console.log('live-start'); console.error('stderr-live'); setTimeout(() => console.log('live-end'), 350);",
       },
       undefined,
       (update: any) => {
@@ -409,7 +407,7 @@ test("execute streams live output into the partial tool renderer", async () => {
       result,
       { expanded: false, isPartial: false },
       theme,
-      { args: { runtime: "shell", script: "live stream test" } } as any,
+      { args: { runtime: "javascript", script: "live stream test" } } as any,
     ).render(120).join("\n");
     assert.match(renderedFinal, /3 lines/);
     assert.doesNotMatch(renderedFinal, /live-start/);
@@ -418,9 +416,9 @@ test("execute streams live output into the partial tool renderer", async () => {
       result,
       { expanded: true, isPartial: false },
       theme,
-      { args: { runtime: "shell", script: "live stream test" } } as any,
+      { args: { runtime: "javascript", script: "live stream test" } } as any,
     ).render(120).join("\n");
-    assert.match(renderedExpanded, /Ran shell/);
+    assert.match(renderedExpanded, /Ran javascript/);
     assert.match(renderedExpanded, /exit 0/);
     assert.match(renderedExpanded, /stderr-live/);
     assert.match(renderedExpanded, /live-end/);

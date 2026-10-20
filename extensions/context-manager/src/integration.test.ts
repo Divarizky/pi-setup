@@ -4,7 +4,7 @@ import { readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import test from "node:test";
-import { isPotentiallyMutating, runScript, sanitizeEnvironment } from "./command-runner.ts";
+import { runScript, sanitizeEnvironment } from "./command-runner.ts";
 import { OutputCache } from "./output-cache.ts";
 
 // Helper: simulasi isInsideProject yang dipakai execute/inspect (realpath+relative)
@@ -58,14 +58,6 @@ test("allowlist shell: detail Pi tetap dipertahankan (merge details)", () => {
   assert.equal((merged as any).contextManager.outputId, outputId);
 });
 
-test("allowlist shell: redirection dan pipe mutatif wajib diblokir", () => {
-  assert.equal(isPotentiallyMutating("shell", "ls -la > out.txt"), true);
-  assert.equal(isPotentiallyMutating("shell", "cat x | tee out.txt"), true);
-  assert.equal(isPotentiallyMutating("shell", "echo hi | Set-Content out.txt"), true);
-  assert.equal(isPotentiallyMutating("shell", "npm install"), true);
-  assert.equal(isPotentiallyMutating("shell", "git checkout main"), true);
-});
-
 test("sanitizeEnvironment: tidak membocorkan secret env ke child", async () => {
   const env = { PATH: "/bin", GH_TOKEN: "secret", MY_PASSWORD: "secret2", SAFE: "ok" };
   const sanitized = sanitizeEnvironment(env as any);
@@ -73,11 +65,11 @@ test("sanitizeEnvironment: tidak membocorkan secret env ke child", async () => {
   assert.equal((sanitized as any).MY_PASSWORD, undefined);
   assert.equal((sanitized as any).SAFE, "ok");
   // jalankan child via runScript dan pastikan env sensitif tidak diteruskan (best-effort)
-  const script = process.platform === "win32" ? "Get-ChildItem Env: | Out-String" : "env";
-  const result = await runScript({ runtime: "shell", script, cwd: tmpdir(), timeoutMs: 10_000, maxRawOutputChars: 20_000 });
+  const script = "console.log(Object.keys(process.env).join(' '))";
+  const result = await runScript({ runtime: "javascript", script, cwd: tmpdir(), timeoutMs: 10_000, maxRawOutputChars: 20_000 });
   // set env sensitif di proses saat ini, lalu pastikan child tidak melihatnya (jika ada, tes ini akan flaky tapi tetap berguna)
   process.env.CM_TEST_SECRET_TOKEN = "should-not-appear";
-  const result2 = await runScript({ runtime: "shell", script, cwd: tmpdir(), timeoutMs: 10_000, maxRawOutputChars: 20_000 });
+  const result2 = await runScript({ runtime: "javascript", script, cwd: tmpdir(), timeoutMs: 10_000, maxRawOutputChars: 20_000 });
   delete process.env.CM_TEST_SECRET_TOKEN;
   assert.equal(result2.output.includes("CM_TEST_SECRET_TOKEN"), false);
   void result;
