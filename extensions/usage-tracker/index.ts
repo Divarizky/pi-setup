@@ -3,7 +3,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ProviderUsage, UsageTotals } from "./src/providers.ts";
+import type { ProviderUsage, ServedAccount, UsageTotals } from "./src/providers.ts";
 import {
   fetchProviderUsage,
   type ProviderId,
@@ -15,10 +15,17 @@ import {
   readNineRouterLocalData,
   type NineRouterLocalData,
 } from "./src/ninerouter.ts";
-import { fetchZenithQuotas, isZenithProvider } from "./src/zenith.ts";
 import {
+  fetchZenithQuotas,
+  isZenithProvider,
+  readLastServedAccount,
+  servedAccountFromHeaders,
+} from "./src/zenith.ts";
+import {
+  bareModelId,
   findQuotaForModel,
   parseStandardQuotaHeaders,
+  quotaProviderId,
   primaryQuotaLimit,
   renderQuotaBar,
   type MatchedQuota,
@@ -166,6 +173,7 @@ async function fetchActiveQuota(
   ctx: ExtensionContext,
   model: QuotaModelRef,
   signal: AbortSignal,
+  servedHeader?: ServedAccount,
 ): Promise<MatchedQuota | undefined> {
   if (model.provider === "openai-codex" || model.provider === "anthropic" || model.provider === "claude") {
     const usage = await fetchProviderUsage(
@@ -189,7 +197,13 @@ async function fetchActiveQuota(
   }
 
   if (isZenithProvider(model.provider)) {
-    return findQuotaForModel(model, await fetchZenithQuotas({ signal }));
+    // Akun aktual diambil dari sumber yang paling baru: header respons terakhir
+    // atau riwayat usage Zenith. Keduanya bisa kosong, lalu tebakan urutan router dipakai.
+    const history = readLastServedAccount(quotaProviderId(model), bareModelId(model.id));
+    const served = [servedHeader, history]
+      .filter((entry): entry is ServedAccount => entry !== undefined)
+      .sort((a, b) => b.observedAt - a.observedAt)[0];
+    return findQuotaForModel(model, await fetchZenithQuotas({ signal }), new Date(), served);
   }
 
   if (model.provider !== "9router") return undefined;
@@ -232,6 +246,8 @@ function createQuotaBarRuntime(
   let requestController: AbortController | undefined;
   let latestCtx: ExtensionContext = initialCtx;
   const standardQuotas = new Map<string, MatchedQuota>();
+  // Akun yang melayani request terakhir per model, dari header `X-Zenith-Account`.
+  const servedHeaders = new Map<string, ServedAccount>();
 
   const modelKey = (model: QuotaModelRef): string => `${model.provider}/${model.id}`;
 
@@ -278,7 +294,7 @@ function createQuotaBarRuntime(
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const matched = await fetchActiveQuota(ctx, model, controller.signal);
+      const matched = await fetchActiveQuota(ctx, model, controller.signal, servedHeaders.get(modelKey(model)));
       if (generation !== refreshGeneration || activeModelKey !== modelKey(model)) return;
 
       // Hasil kosong (misalnya endpoint 429) tidak boleh menghapus snapshot yang masih ada.
@@ -336,6 +352,13 @@ function createQuotaBarRuntime(
     ctx: ExtensionContext,
   ): void => {
     latestCtx = ctx;
+    if (isZenithProvider(model.provider)) {
+      const served = servedAccountFromHeaders(headers, new Date());
+      if (!served) return;
+      servedHeaders.set(modelKey(model), served);
+      if (activeModelKey === modelKey(model)) void refresh(ctx, true);
+      return;
+    }
     // Provider-specific endpoints remain authoritative for these integrations.
     if (isManagedProvider(model.provider)) return;
     const matched = parseStandardQuotaHeaders(model.provider, headers);

@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { ProviderUsage, UsageLimit } from "./providers.ts";
+import type { ProviderUsage, ServedAccount, UsageLimit } from "./providers.ts";
 
 export interface QuotaModelRef {
   readonly provider: string;
@@ -261,7 +261,7 @@ export function findMatchingLimit(
   return primaryQuotaLimit(usage);
 }
 
-function bareModelId(id: string): string {
+export function bareModelId(id: string): string {
   return id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
 }
 
@@ -320,6 +320,47 @@ function poolRank(limit: UsageLimit): number {
 }
 
 /**
+ * Router mengunci satu model per akun saat rate limit. Pencocokannya persis
+ * seperti di Zenith: lock disimpan dan dicek dengan string model yang diminta,
+ * bukan keluarga atau tier-nya. Lock `gemini-3.8-flash-high` tidak menutupi
+ * `gemini-3.8-flash`, dan sebaliknya.
+ */
+function isAccountLockedForModel(usage: ProviderUsage, bareModel: string, now: Date): boolean {
+  return (usage.lockedModels ?? []).some(
+    (lock) => lock.lockedUntil > now.getTime() && lock.model.toLowerCase() === bareModel,
+  );
+}
+
+/**
+ * Sisa kuota model dari inventory router. Inventory menyimpan tier yang
+ * dipakai akun itu sendiri, jadi nilainya bisa lebih tajam daripada
+ * persentase agregat pada `quotas`.
+ */
+function inventoryRemaining(
+  usage: ProviderUsage,
+  bareModel: string,
+): { readonly remaining: number; readonly resetsAt?: number } | undefined {
+  const entries = usage.modelInventory;
+  if (!entries || entries.length === 0) return undefined;
+  const candidates = entries.filter((entry) => {
+    const model = entry.model.toLowerCase();
+    return model === bareModel || model.startsWith(`${bareModel}-`) || bareModel.startsWith(`${model}-`);
+  });
+  if (candidates.length === 0) return undefined;
+  // Sisa kuota terkecil adalah yang paling menentukan: tier yang dipakai
+  // request adalah tier dengan sisa terkecil.
+  let best: (typeof candidates)[number] | undefined;
+  for (const candidate of candidates) {
+    if (candidate.remaining === undefined) continue;
+    if (!best || best.remaining === undefined || candidate.remaining < best.remaining) {
+      best = candidate;
+    }
+  }
+  if (!best || best.remaining === undefined) return undefined;
+  return { remaining: best.remaining, resetsAt: best.resetsAt };
+}
+
+/**
  * Limit (baik pool maupun bucket model) yang habis dan reset-nya belum lewat.
  * Bila resetsAt tidak ada (mis. kredit 0 habis), limit dianggap habis.
  * Sama seperti router Zenith: limit dengan reset yang sudah lewat tidak
@@ -331,7 +372,16 @@ function isLimitExhausted(limit: UsageLimit, now: Date): boolean {
   return limit.resetsAt.getTime() > now.getTime();
 }
 
-function isHitExhausted(hit: ModelHit, now: Date): boolean {
+function isHitExhausted(hit: ModelHit, now: Date, usage?: ProviderUsage, bareModel?: string): boolean {
+  // Inventory router adalah sumber yang lebih tepat: di sana sisa kuota model
+  // dihitung per tier yang benar-benar dipakai, bukan per agregat keluarga.
+  if (usage && bareModel && hit.rank <= 1) {
+    const inventory = inventoryRemaining(usage, bareModel);
+    if (inventory && inventory.remaining === 0) {
+      if (inventory.resetsAt === undefined) return true;
+      return inventory.resetsAt > now.getTime();
+    }
+  }
   return isLimitExhausted(hit.limit, now);
 }
 
@@ -350,10 +400,15 @@ function isAccountExhaustedGeneral(usage: ProviderUsage, now: Date): boolean {
  * 1. Pool grup modelnya (5h atau mingguan) habis.
  * 2. ATAU akun memiliki bucket model dan seluruh bucket model yang cocok sudah habis.
  */
-function isAccountExhausted(hits: readonly ModelHit[], now: Date): boolean {
-  if (hits.some((hit) => hit.rank >= 2 && isHitExhausted(hit, now))) return true;
+function isAccountExhausted(
+  hits: readonly ModelHit[],
+  now: Date,
+  usage?: ProviderUsage,
+  bareModel?: string,
+): boolean {
+  if (hits.some((hit) => hit.rank >= 2 && isHitExhausted(hit, now, usage, bareModel))) return true;
   const modelHits = hits.filter((hit) => hit.rank <= 1);
-  if (modelHits.length > 0 && modelHits.every((hit) => isHitExhausted(hit, now))) return true;
+  if (modelHits.length > 0 && modelHits.every((hit) => isHitExhausted(hit, now, usage, bareModel))) return true;
   return false;
 }
 
@@ -365,62 +420,106 @@ function tighterHit(a: ModelHit, b: ModelHit): ModelHit {
   return a.rank <= b.rank ? a : b;
 }
 
+/** Akun yang sedang cooldown setelah error berulang tidak dipilih router. */
+function isAccountCoolingDown(usage: ProviderUsage, now: Date): boolean {
+  return usage.cooldownUntil !== undefined && usage.cooldownUntil > now.getTime();
+}
+
 /**
- * Bucket per model (mis. Zenith untuk antigravity). Akun diurutkan menurut
- * prioritas Zenith, lalu akun pertama yang belum habis dipakai, sama seperti
- * router memilih koneksi. Akun yang memiliki inventory wajib memiliki bucket
- * model yang cocok. Bar menampilkan batas paling ketat pada akun itu.
- * Bila semua akun habis, ditampilkan limit habis dari akun prioritas tertinggi.
+ * Akun yang boleh dipilih router untuk model ini: tidak terkunci untuk model
+ * tersebut, tidak sedang cooldown, dan tidak ditandai habis oleh router.
  */
-function findModelBucket(
+function isAccountRoutable(usage: ProviderUsage, bareModel: string, now: Date): boolean {
+  return (
+    !isAccountLockedForModel(usage, bareModel, now) &&
+    !isAccountCoolingDown(usage, now) &&
+    usage.isExhausted !== true
+  );
+}
+
+/**
+ * Hit bucket dan pool milik satu akun untuk model ini. Mengembalikan undefined
+ * bila akun tidak melayani model ini.
+ */
+function collectAccountHits(usage: ProviderUsage, model: QuotaModelRef, bareModel: string): ModelHit[] | undefined {
+  const limits = usage.limits ?? [];
+  const hits: ModelHit[] = [];
+  for (const limit of limits) {
+    const rank = bucketRank(model, limit);
+    if (rank !== undefined) {
+      hits.push({ usage, limit, rank });
+    } else if (usage.provider === "antigravity" && limit.pool === true && antigravityPoolMatch(bareModel, limit)) {
+      hits.push({ usage, limit, rank: poolRank(limit) });
+    }
+  }
+  // Akun yang memiliki data bucket model wajib punya bucket yang cocok dengan model ini.
+  const hasModelBuckets = limits.some((limit) => !limit.pool);
+  if (hasModelBuckets && !hits.some((hit) => hit.rank <= 1)) return undefined;
+  return hits.length > 0 ? hits : undefined;
+}
+
+/** Urutan router: priority terkecil lebih dulu, lalu id koneksi terkecil. */
+function compareRouterOrder(a: ProviderUsage, b: ProviderUsage): number {
+  const byPriority = (a.priority ?? Number.MAX_SAFE_INTEGER) - (b.priority ?? Number.MAX_SAFE_INTEGER);
+  if (byPriority !== 0) return byPriority;
+  return (a.connectionId ?? Number.MAX_SAFE_INTEGER) - (b.connectionId ?? Number.MAX_SAFE_INTEGER);
+}
+
+/** Batas paling ketat yang belum habis pada satu akun. */
+function strictestHit(hits: readonly ModelHit[], now: Date, usage: ProviderUsage, bareModel: string): MatchedQuota {
+  const open = hits.filter((hit) => !isHitExhausted(hit, now, usage, bareModel));
+  const pool = open.length > 0 ? open : hits;
+  const best = pool.reduce(tighterHit);
+  return { usage, limit: best.limit };
+}
+
+/** Akun yang melayani request terakhir, dicocokkan lewat id koneksi atau nama akun. */
+function findServedUsage(served: ServedAccount, usages: readonly ProviderUsage[]): ProviderUsage | undefined {
+  if (served.connectionId !== undefined) {
+    return usages.find((usage) => usage.connectionId === served.connectionId);
+  }
+  return usages.find((usage) => usage.accountName !== undefined && usage.accountName === served.accountName);
+}
+
+/**
+ * Bucket per model (mis. Zenith untuk antigravity). Akun yang melayani request
+ * terakhir (`served`) ditampilkan selama masih bisa dipilih router. Jika tidak,
+ * akun dipilih dengan urutan router: priority lalu id, melewati akun yang
+ * terkunci, cooldown, atau habis. Bar menampilkan batas paling ketat pada akun
+ * itu. Bila semua akun habis, ditampilkan limit habis dari akun prioritas tertinggi.
+ */
+export function findModelBucket(
   model: QuotaModelRef,
   usages: readonly ProviderUsage[],
   now: Date,
+  served?: ServedAccount,
 ): MatchedQuota | undefined {
   const bare = bareModelId(model.id).toLowerCase();
-  const accounts: Array<{ readonly usage: ProviderUsage; readonly hits: ModelHit[] }> = [];
 
-  for (const usage of usages) {
-    const limits = usage.limits ?? [];
-    const hasModelBuckets = limits.some((l) => !l.pool);
-    const hits: ModelHit[] = [];
-
-    for (const limit of limits) {
-      const rank = bucketRank(model, limit);
-      if (rank !== undefined) {
-        hits.push({ usage, limit, rank });
-      } else if (usage.provider === "antigravity" && limit.pool === true && antigravityPoolMatch(bare, limit)) {
-        hits.push({ usage, limit, rank: poolRank(limit) });
-      }
+  const servedUsage = served ? findServedUsage(served, usages) : undefined;
+  if (servedUsage && isAccountRoutable(servedUsage, bare, now)) {
+    const hits = collectAccountHits(servedUsage, model, bare);
+    if (hits && !isAccountExhausted(hits, now, servedUsage, bare)) {
+      return strictestHit(hits, now, servedUsage, bare);
     }
-
-    // Jika akun sudah memiliki data bucket model (inventory tersinkron), akun
-    // HANYA valid jika memiliki bucket yang cocok dengan model ini. Akun yang
-    // tidak memiliki bucket model tersebut tidak melayani model ini di Zenith.
-    if (hasModelBuckets && !hits.some((h) => h.rank <= 1)) {
-      continue;
-    }
-
-    if (hits.length > 0) accounts.push({ usage, hits });
   }
 
-  // Array.prototype.sort stabil, jadi akun tanpa prioritas mempertahankan urutan asal.
-  const ordered = [...accounts].sort(
-    (a, b) =>
-      (a.usage.priority ?? Number.MAX_SAFE_INTEGER) - (b.usage.priority ?? Number.MAX_SAFE_INTEGER),
-  );
+  const candidates = usages.flatMap((usage) => {
+    const hits = collectAccountHits(usage, model, bare);
+    return hits ? [{ usage, hits }] : [];
+  });
+  const byRouter = [...candidates].sort((a, b) => compareRouterOrder(a.usage, b.usage));
+  // Jika tidak ada akun yang bisa dipilih, tampilkan akun prioritas tertinggi
+  // supaya limit yang menghentikan request tetap terlihat.
+  const routable = byRouter.filter((candidate) => isAccountRoutable(candidate.usage, bare, now));
+  const ordered = routable.length > 0 ? routable : byRouter;
   const first = ordered[0];
   if (!first) return undefined;
 
-  const usable = ordered.find((account) => !isAccountExhausted(account.hits, now));
-  if (usable) {
-    const nonExhausted = usable.hits.filter((hit) => !isHitExhausted(hit, now));
-    const pool = nonExhausted.length > 0 ? nonExhausted : usable.hits;
-    const best = pool.reduce(tighterHit);
-    return { usage: usable.usage, limit: best.limit };
-  }
+  const usable = ordered.find((candidate) => !isAccountExhausted(candidate.hits, now, candidate.usage, bare));
+  if (usable) return strictestHit(usable.hits, now, usable.usage, bare);
 
-  const blocked = first.hits.find((hit) => isHitExhausted(hit, now)) ?? first.hits[0];
+  const blocked = first.hits.find((hit) => isHitExhausted(hit, now, first.usage, bare)) ?? first.hits[0];
   return blocked ? { usage: blocked.usage, limit: blocked.limit } : undefined;
 }
 
@@ -428,6 +527,7 @@ export function findQuotaForModel(
   model: QuotaModelRef,
   usages: readonly ProviderUsage[],
   now = new Date(),
+  served?: ServedAccount,
 ): MatchedQuota | undefined {
   const provider = quotaProviderId(model).toLowerCase();
   const candidates = usages.filter((usage) => {
@@ -440,7 +540,7 @@ export function findQuotaForModel(
   });
 
   const modelKeyed = candidates.filter((usage) => usage.perModelBuckets);
-  if (modelKeyed.length > 0) return findModelBucket(model, modelKeyed, now);
+  if (modelKeyed.length > 0) return findModelBucket(model, modelKeyed, now, served);
 
   // Urutkan seluruh akun kandidat menurut priority router (angka lebih kecil = prioritas lebih tinggi).
   // Akun tanpa prioritas diletakkan di akhir dengan mempertahankan urutan asal.

@@ -1255,8 +1255,55 @@ function registerCompatClaudeApi(): void {
   register({ api: CLAUDE_API_ID, stream: streamClaudeAgentSdk as any, streamSimple: streamClaudeAgentSdk as any });
 }
 
-function hasClaudeCliInstalledSync(): boolean {
-  return resolveClaudeExecutable() !== undefined || globalClaudeCmdPath() !== null;
+// Kandidat `claude` di direktori PATH (tanpa spawn). Menutup instalasi di luar
+// %APPDATA%\npm pada Windows, dan installer non-npm di macOS/Linux.
+function findClaudeOnPath(): string | null {
+  const separator = process.platform === "win32" ? ";" : ":";
+  const names = process.platform === "win32"
+    ? ["claude.exe", "claude.cmd", "claude.bat"]
+    : ["claude"];
+  for (const dir of (process.env.PATH ?? "").split(separator)) {
+    if (!dir) continue;
+    for (const name of names) {
+      const candidate = join(dir, name);
+      try {
+        if (existsSync(candidate) && statSync(candidate).size >= 10) return candidate;
+      } catch { /* entri PATH tidak terbaca: lanjut */ }
+    }
+  }
+  return null;
+}
+
+/**
+ * Status CLI tanpa spawn, untuk fase load extension dan log diagnostik.
+ * Sengaja tidak memakai `resolveClaudeExecutable`, karena fungsi itu men-spawn
+ * `claude --version` (~113-149 ms di Windows) dan menahan startup Pi. Probe
+ * nyata tetap dijalankan `resolveClaudeExecutable` pada turn pertama, jadi
+ * binary yang rusak tetap ditolak sebelum SDK di-spawn.
+ */
+function claudeCliStatusSync(): { installed: boolean; path: string | null } {
+  const candidates = [
+    providerSettings.pathToClaudeCodeExecutable,
+    globalClaudeExePath(),
+    findClaudeOnPath(),
+    globalClaudeCmdPath(),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      if (existsSync(candidate)) return { installed: true, path: candidate };
+    } catch { /* lanjut ke kandidat berikutnya */ }
+  }
+  return { installed: false, path: null };
+}
+
+/**
+ * Muat `claude-gateway.json` sebelum deteksi CLI di fase load, supaya
+ * `provider.pathToClaudeCodeExecutable` ikut dipakai. Tanpa ini setelan itu baru
+ * terbaca di `registerClaudeProvider`, yaitu setelah deteksi berjalan.
+ */
+export function primeClaudeProviderSettings(cwd: string): void {
+  providerSettings = loadConfig(cwd).provider ?? {};
 }
 
 export function registerClaudeProvider(pi: ExtensionAPI): void {
@@ -1317,6 +1364,6 @@ export {
   isClaudeCliInstalled,
   installClaudeCli,
   isClaudeProviderRegistered,
-  hasClaudeCliInstalledSync,
+  claudeCliStatusSync,
 };
 export { CLAUDE_PROVIDER_NAME };

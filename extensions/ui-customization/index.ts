@@ -10,24 +10,18 @@ import type {
   ThemeColor,
 } from "@earendil-works/pi-coding-agent";
 import {
-  Container,
   getCapabilities,
   hyperlink,
-  Spacer,
-  Text,
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
 import {
   emptyGitInfoState,
-  emptyMemoryStatusState,
   emptyModelInfoState,
   GIT_INFO_CHANNEL,
-  MEMORY_STATUS_CHANNEL,
   MODEL_INFO_CHANNEL,
   REFRESH_CHANNEL,
   isGitInfoState,
-  isMemoryStatusState,
   isModelInfoState,
 } from "../dashboard-state/dashboard-state.ts";
 
@@ -230,47 +224,6 @@ function gradientText(text: string, phase: number, palette: Rgb[] = PALETTE) {
     .join("");
 }
 
-function hasChildren(
-  component: RenderableNode,
-): component is RenderableNode & { children: RenderableNode[] } {
-  return Array.isArray(component.children);
-}
-
-function renderedText(component: RenderableNode) {
-  try {
-    return component.render(200).join("\n").replace(ANSI_PATTERN, "");
-  } catch {
-    return "";
-  }
-}
-
-function hideThemesSection(component: RenderableNode) {
-  if (!hasChildren(component)) return false;
-
-  for (let index = 0; index < component.children.length; index += 1) {
-    const child = component.children[index]!;
-    const firstLine = renderedText(child)
-      .split("\n")
-      .find((line) => line.trim())
-      ?.trim();
-
-    if (firstLine === "[Themes]") {
-      const removeCount =
-        component.children[index + 1] &&
-        renderedText(component.children[index + 1]!).trim() === ""
-          ? 2
-          : 1;
-      component.children.splice(index, removeCount);
-      component.invalidate();
-      return true;
-    }
-
-    if (hideThemesSection(child)) return true;
-  }
-
-  return false;
-}
-
 function formatTokens(tokens: number) {
   if (tokens < 1_000) return `${tokens}`;
   if (tokens < 1_000_000) return `${Math.round(tokens / 1_000)}K`;
@@ -352,13 +305,8 @@ export default function uiCustomization(pi: ExtensionAPI) {
   let title = "pi";
   let modelInfo = emptyModelInfoState();
   let gitInfo = emptyGitInfoState();
-  let memoryStatus = emptyMemoryStatusState();
   let requestRender: (() => void) | undefined;
   let activeTui: DashboardTui | undefined;
-  let themeRemovalTimers: Array<ReturnType<typeof setTimeout>> = [];
-  let memoryInsertTimers: Array<ReturnType<typeof setTimeout>> = [];
-  let memoryTheme: Theme | undefined;
-  let memoryInserted = false;
   let mcpSnapshot = loadInitialMcpSnapshot();
 
   const stopModelListener = pi.events.on(MODEL_INFO_CHANNEL, (value) => {
@@ -370,12 +318,6 @@ export default function uiCustomization(pi: ExtensionAPI) {
   const stopGitListener = pi.events.on(GIT_INFO_CHANNEL, (value) => {
     if (!isGitInfoState(value)) return;
     gitInfo = value;
-    requestRender?.();
-  });
-
-  const stopMemoryListener = pi.events.on(MEMORY_STATUS_CHANNEL, (value) => {
-    if (!isMemoryStatusState(value)) return;
-    memoryStatus = value;
     requestRender?.();
   });
 
@@ -433,88 +375,6 @@ export default function uiCustomization(pi: ExtensionAPI) {
     pi.events.emit(MODEL_INFO_CHANNEL, info);
   }
 
-  function sectionLabelAnsi(component: RenderableNode): string {
-    try {
-      const raw = component.render(200).join("\n");
-      const match = raw.match(/\x1b\[[0-9;]*m/);
-      return match ? match[0] : "";
-    } catch {
-      return "";
-    }
-  }
-
-  function insertMemorySection(component: RenderableNode): boolean {
-    if (!hasChildren(component)) return false;
-
-    for (let index = 0; index < component.children.length; index += 1) {
-      const child = component.children[index]!;
-      const firstLine = renderedText(child)
-        .split("\n")
-        .find((line) => line.trim())
-        ?.trim();
-
-      if (firstLine === "[Extensions]") {
-        const container = new Container();
-        container.addChild(new Spacer(1));
-        container.addChild(
-          new Text(`${sectionLabelAnsi(child)}[Memory]`, 0, 0),
-        );
-        container.addChild(
-          new Text(
-            memoryTheme
-              ? memoryTheme.fg(
-                  "muted",
-                  `  ${memoryStatus.ok ? "Active" : "Missing"}`,
-                )
-              : `${DIM}  ${memoryStatus.ok ? "Active" : "Missing"}${RESET}`,
-            0,
-            0,
-          ),
-        );
-        let insertAt = index + 1;
-        while (
-          insertAt < component.children.length &&
-          renderedText(component.children[insertAt]!).trim() !== ""
-        ) {
-          insertAt += 1;
-        }
-        component.children.splice(insertAt, 0, container);
-        component.invalidate();
-        return true;
-      }
-
-      if (insertMemorySection(child)) return true;
-    }
-
-    return false;
-  }
-
-  function scheduleMemoryInsert(tui: DashboardTui) {
-    for (const delay of [0, 50, 250, 1_000]) {
-      memoryInsertTimers.push(
-        setTimeout(() => {
-          if (!memoryStatus.shortPath || memoryInserted) return;
-          if (insertMemorySection(tui)) {
-            memoryInserted = true;
-            tui.requestRender(true);
-          }
-        }, delay),
-      );
-    }
-  }
-
-  function scheduleThemeRemoval(tui: DashboardTui) {
-    themeRemovalTimers = [];
-
-    for (const delay of [0, 50, 250, 1_000]) {
-      themeRemovalTimers.push(
-        setTimeout(() => {
-          if (hideThemesSection(tui)) tui.requestRender(true);
-        }, delay),
-      );
-    }
-  }
-
   function install(ctx: ExtensionContext) {
     if (ctx.mode !== "tui") return;
 
@@ -525,10 +385,7 @@ export default function uiCustomization(pi: ExtensionAPI) {
         theme,
         requestRender: () => tui.requestRender(),
       });
-      memoryTheme = theme;
       requestRender = () => tui.requestRender();
-      scheduleThemeRemoval(tui);
-      scheduleMemoryInsert(tui);
 
       return {
         render(width: number) {
@@ -645,25 +502,15 @@ export default function uiCustomization(pi: ExtensionAPI) {
     title = formatDirectory(ctx.cwd);
     modelInfo = emptyModelInfoState();
     gitInfo = emptyGitInfoState();
-    memoryInserted = false;
     if (ctx.model) {
       updateModelInfo(ctx, ctx.model, ctx.thinkingLevel ?? "off");
     }
     install(ctx);
   });
 
-  pi.on("resources_discover", () => {
-    if (activeTui) scheduleThemeRemoval(activeTui);
-  });
-
   pi.on("session_shutdown", (_event, ctx) => {
     stopModelListener();
     stopGitListener();
-    stopMemoryListener();
-    for (const timer of themeRemovalTimers) clearTimeout(timer);
-    for (const timer of memoryInsertTimers) clearTimeout(timer);
-    themeRemovalTimers = [];
-    memoryInsertTimers = [];
     activeTui = undefined;
     requestRender = undefined;
     bindUi(undefined);

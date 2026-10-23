@@ -5,8 +5,8 @@ import {
   rename,
   writeFile,
 } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
 
@@ -15,6 +15,7 @@ import type {
   ExtensionCommandContext,
   ProviderConfig,
   ProviderModelConfig,
+  ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import type {
   ModelsStoreEntry,
@@ -28,7 +29,8 @@ import {
   isClaudeCliInstalled,
   installClaudeCli,
   isClaudeProviderRegistered,
-  hasClaudeCliInstalledSync,
+  claudeCliStatusSync,
+  primeClaudeProviderSettings,
   markClaudeRebuild,
   recordClaudePromptCapture,
   CLAUDE_PROVIDER_ID,
@@ -77,6 +79,42 @@ const AGENT_DIR =
 const AUTH_FILE = join(AGENT_DIR, "auth.json");
 const MODELS_STORE_FILE = join(AGENT_DIR, "models-store.json");
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+// Katalog model diambil dari gateway lokal (9Router, Zenith) dan opencode.ai.
+// Tanpa batas waktu, fetch yang menggantung menahan startup serta listing model.
+const CATALOG_FETCH_TIMEOUT_MS = 5_000;
+const STARTUP_LOG_FILE = join(AGENT_DIR, "cache", "provider-gateway-startup.log");
+const STARTUP_LOG_MAX_BYTES = 512 * 1024;
+// Dipakai untuk mengukur durasi fase load extension; satu-satunya angka startup
+// yang stabil di mesin ini (waktu proses penuh didominasi cek ketersediaan).
+const LOAD_STARTED_AT = Date.now();
+
+/**
+ * Catat kejadian fase load dan session_start ke file, bukan console: extension
+ * dimuat sebelum UI siap, dan kegagalan registrasi provider sebelumnya ditelan
+ * tanpa jejak. Log ini yang membedakan "provider tidak terdaftar" dari
+ * "provider terdaftar tapi hilang dari snapshot availability Pi".
+ */
+function logStartup(event: string, data: Record<string, unknown> = {}): void {
+  try {
+    mkdirSync(dirname(STARTUP_LOG_FILE), { recursive: true });
+    try {
+      if (statSync(STARTUP_LOG_FILE).size > STARTUP_LOG_MAX_BYTES) {
+        writeFileSync(STARTUP_LOG_FILE, "");
+      }
+    } catch { /* file belum ada */ }
+    appendFileSync(STARTUP_LOG_FILE, `${JSON.stringify({ at: new Date().toISOString(), pid: process.pid, event, ...data })}\n`);
+  } catch { /* log tidak boleh mengganggu startup */ }
+}
+
+/** Jumlah model satu provider pada snapshot registry (opsional: hanya yang available). */
+function countProviderModels(ctx: ExtensionContext, providerId: string, availableOnly = false): number {
+  try {
+    const models = availableOnly ? ctx.modelRegistry.getAvailable() : ctx.modelRegistry.getAll();
+    return models.filter((model) => model.provider === providerId).length;
+  } catch {
+    return -1;
+  }
+}
 
 /**
  * Model yang dipersist Pi untuk satu provider, dibaca sinkron saat extension
@@ -346,6 +384,7 @@ function getLocalAvailableModelIds(): Map<string, Set<string>> | null {
 async function request<T>(path: string, apiKey: string): Promise<T> {
   const response = await fetch(`${NINEROUTER_URL}${path}`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
@@ -388,7 +427,10 @@ async function getOpenCodeFreeModels(apiKey: string | null): Promise<RouterModel
   try {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    const response = await fetch(OPENCODE_ZEN_MODELS_URL, { headers });
+    const response = await fetch(OPENCODE_ZEN_MODELS_URL, {
+      headers,
+      signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
+    });
     if (!response.ok) return null;
     const json = await response.json() as ModelsResponse;
     return (json.data ?? [])
@@ -438,35 +480,67 @@ async function fetchMergedRouterModels(apiKey: string): Promise<RouterModel[] | 
   return merged.length > 0 ? merged : null;
 }
 
-function registerRouterProvider(pi: ExtensionAPI, apiKey: string, models: RouterModel[]): void {
-  let lastModels: ProviderModelConfig[] | undefined;
+function registerRouterProvider(
+  pi: ExtensionAPI,
+  apiKey: string,
+  models: RouterModel[],
+  initialModels?: ProviderModelConfig[],
+): void {
+  let lastModels: ProviderModelConfig[] = initialModels?.length
+    ? initialModels
+    : toRouterModelDefs(models);
+  // Snapshot models-store dianggap segar: alasan sama dengan registerZenithProvider.
+  let lastRefreshedAt = initialModels?.length ? Date.now() : 0;
+  // Pi memanggil refreshModels beberapa kali saat startup. Fetch-nya dipakai
+  // bersama, tapi persist tetap dilakukan per pemanggil: publish terikat ke
+  // generation refresh masing-masing, dan generation lama langsung dibatalkan.
+  let inFlightFetch: Promise<void> | undefined;
+  const ensureModels = (): Promise<void> => {
+    if (inFlightFetch) return inFlightFetch;
+    const operation = (async (): Promise<void> => {
+      try {
+        const key = await getApiKeyEntry(ROUTER_PROVIDER_ID);
+        if (!key) return;
+        const models = await fetchMergedRouterModels(key);
+        if (models === null) return;
+        lastModels = toRouterModelDefs(models);
+        lastRefreshedAt = Date.now();
+      } catch { /* pertahankan snapshot terakhir */ }
+    })();
+    inFlightFetch = operation.finally(() => {
+      inFlightFetch = undefined;
+    });
+    return inFlightFetch;
+  };
   const config: ProviderConfig = {
     name: ROUTER_PROVIDER_NAME,
     baseUrl: `${NINEROUTER_URL}/v1`,
     apiKey,
     authHeader: true,
     api: "openai-completions",
-    models: toRouterModelDefs(models),
-    async refreshModels(): Promise<ProviderModelConfig[]> {
-      const key = await getApiKeyEntry(ROUTER_PROVIDER_ID);
-      if (!key) return lastModels ?? [];
-      try {
-        const models = await fetchMergedRouterModels(key);
-        if (models === null) return lastModels ?? [];
-        lastModels = toRouterModelDefs(models);
+    models: lastModels,
+    async refreshModels(context: RefreshModelsContext): Promise<ProviderModelConfig[]> {
+      if (!context?.force && lastRefreshedAt > 0 && Date.now() - lastRefreshedAt < REFRESH_INTERVAL_MS) {
         return lastModels;
-      } catch {
-        return lastModels ?? [];
       }
+      await ensureModels();
+      // Snapshot dipersist supaya daftar model 9Router tersedia di fase load
+      // sesi berikutnya tanpa menunggu jaringan (pola sama dengan zenith).
+      try {
+        await context?.publish({
+          persist: { models: lastModels } as unknown as ModelsStoreEntry,
+        });
+      } catch { /* persist gagal: sesi tetap jalan dengan daftar live */ }
+      return lastModels;
     },
   };
-  lastModels = config.models;
   pi.registerProvider(ROUTER_PROVIDER_ID, config);
 }
 
 async function getZenithModels(apiKey: string): Promise<RouterModel[]> {
   const response = await fetch(`${ZENITH_URL}/v1/models`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
@@ -484,6 +558,25 @@ function registerZenithProvider(pi: ExtensionAPI, apiKey: string, models: Router
   // startup dan saat listing model, dan fetch yang belum selesai ketika proses
   // ditutup memicu assertion libuv di Windows (src\win\async.c:94).
   let lastRefreshedAt = initialModels?.length ? Date.now() : 0;
+  // Satu fetch bersama untuk semua pemanggilan refreshModels yang berbarengan;
+  // persist tetap per pemanggil karena publish terikat ke generation refresh.
+  let inFlightFetch: Promise<void> | undefined;
+  const ensureModels = (): Promise<void> => {
+    if (inFlightFetch) return inFlightFetch;
+    const operation = (async (): Promise<void> => {
+      try {
+        const key = await getRouterApiKey();
+        if (!key) return;
+        const models = await getZenithModels(key);
+        lastModels = toRouterModelDefs(models);
+        lastRefreshedAt = Date.now();
+      } catch { /* pertahankan snapshot terakhir */ }
+    })();
+    inFlightFetch = operation.finally(() => {
+      inFlightFetch = undefined;
+    });
+    return inFlightFetch;
+  };
   const config: ProviderConfig = {
     name: ZENITH_PROVIDER_NAME,
     baseUrl: `${ZENITH_URL}/v1`,
@@ -492,27 +585,19 @@ function registerZenithProvider(pi: ExtensionAPI, apiKey: string, models: Router
     api: "openai-completions",
     models: lastModels,
     async refreshModels(context: RefreshModelsContext): Promise<ProviderModelConfig[]> {
-      if (!context.force && lastRefreshedAt > 0 && Date.now() - lastRefreshedAt < REFRESH_INTERVAL_MS) {
+      if (!context?.force && lastRefreshedAt > 0 && Date.now() - lastRefreshedAt < REFRESH_INTERVAL_MS) {
         return lastModels;
       }
-      const key = await getRouterApiKey();
-      if (!key) return lastModels;
+      await ensureModels();
+      // Simpan snapshot ke models-store. Tanpa ini daftar model zenith hilang
+      // dari registry sebelum session_start, sehingga model default di
+      // settings.json tidak bisa di-resolve dan Pi diam-diam jatuh ke provider lain.
       try {
-        const models = await getZenithModels(key);
-        lastModels = toRouterModelDefs(models);
-        lastRefreshedAt = Date.now();
-        // Simpan snapshot ke models-store. Tanpa ini daftar model zenith hilang
-        // dari registry sebelum session_start, sehingga model default di
-        // settings.json tidak bisa di-resolve dan Pi diam-diam jatuh ke provider lain.
-        try {
-          await context.publish({
-            persist: { models: lastModels } as unknown as ModelsStoreEntry,
-          });
-        } catch { /* persist gagal: sesi tetap jalan dengan daftar live */ }
-        return lastModels;
-      } catch {
-        return lastModels;
-      }
+        await context?.publish({
+          persist: { models: lastModels } as unknown as ModelsStoreEntry,
+        });
+      } catch { /* persist gagal: sesi tetap jalan dengan daftar live */ }
+      return lastModels;
     },
   };
   zenithRegistered = true;
@@ -522,6 +607,43 @@ function registerZenithProvider(pi: ExtensionAPI, apiKey: string, models: Router
 // Provider zenith hanya boleh didaftarkan sekali: load-time memakai snapshot
 // models-store, lalu session_start me-refresh dengan daftar live.
 let zenithRegistered = false;
+// Sama seperti zenith: 9Router didaftarkan di fase load memakai snapshot
+// models-store. `routerSnapshotAtLoad` menandai snapshot itu berisi model, supaya
+// session_start tidak perlu fetch jaringan hanya untuk mengisi daftar kosong.
+let routerRegistered = false;
+let routerSnapshotAtLoad = false;
+
+// Timer reconciler availability Claude; dibersihkan di session_shutdown supaya
+// proses tidak menahan timer saat Pi ditutup.
+const claudeReconcileTimers = new Set<ReturnType<typeof setTimeout>>();
+
+/**
+ * Pi menghitung snapshot availability secara asinkron. Provider yang sudah
+ * terdaftar bisa tidak muncul di `/models` bila satu pass ketersediaan berjalan
+ * sebelum registrasinya diterapkan. Kalau itu terjadi pada Claude, daftarkan
+ * ulang sekali: registrasi ulang menandai provider sebagai configured dan
+ * memicu pass ketersediaan baru. Dua percobaan, lalu berhenti.
+ */
+function scheduleClaudeAvailabilityReconcile(pi: ExtensionAPI, ctx: ExtensionContext): void {
+  for (const delay of [1_500, 4_000]) {
+    const timer = setTimeout(() => {
+      claudeReconcileTimers.delete(timer);
+      if (!isClaudeProviderRegistered()) return;
+      const all = countProviderModels(ctx, CLAUDE_PROVIDER_ID);
+      const available = countProviderModels(ctx, CLAUDE_PROVIDER_ID, true);
+      logStartup("reconcile:claude", { delay, all, available });
+      if (all > 0 && available === 0) {
+        try {
+          registerClaudeProvider(pi);
+          logStartup("reconcile:claude", { delay, reRegistered: true });
+        } catch (error) {
+          logStartup("reconcile:claude", { delay, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+    }, delay);
+    claudeReconcileTimers.add(timer);
+  }
+}
 
 // --- Claude Pro/Max via Agent SDK (pengganti OAuth direct) ---
 // Direct HTTP OAuth (api anthropic-messages + token sk-ant-oat) ditolak Anthropic
@@ -720,7 +842,6 @@ async function gatewayLogout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pr
 }
 
 export default function (pi: ExtensionAPI): void {
-  let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
   pi.registerCommand("gateway-login", { description: "Login provider via gateway (9Router / Zen / Claude / OpenAI)", handler: async (_args, ctx) => gatewayLogin(pi, ctx) });
   pi.registerCommand("gateway-status", { description: "Show gateway provider status", handler: async (_args, ctx) => gatewayStatus(ctx) });
@@ -760,18 +881,48 @@ export default function (pi: ExtensionAPI): void {
     registerZenithProvider(pi, zenithKeyAtLoad, [], readStoredModelsSync(ZENITH_PROVIDER_ID));
   }
 
+  // 9Router juga didaftarkan di fase load memakai snapshot models-store, supaya
+  // daftar modelnya sudah ada saat Pi me-resolve model default. Fetch jaringan
+  // tetap dilakukan refreshModels provider ini di background.
+  const routerKeyAtLoad = readApiKeyEntrySync(ROUTER_PROVIDER_ID);
+  if (routerKeyAtLoad) {
+    const storedRouterModels = readStoredModelsSync(ROUTER_PROVIDER_ID);
+    try {
+      registerRouterProvider(pi, routerKeyAtLoad, [], storedRouterModels);
+      routerRegistered = true;
+      routerSnapshotAtLoad = storedRouterModels.length > 0;
+      logStartup("load:9router", {
+        models: storedRouterModels.length,
+        source: routerSnapshotAtLoad ? "snapshot" : "empty",
+      });
+    } catch (error) {
+      logStartup("load:9router", { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   // Claude Pro/Max didaftarkan sedini mungkin (fase load) kalau CLI tersedia.
   // Tanpa ini, model default `claude` di settings.json gagal di-resolve saat
   // startup dan Pi diam-diam jatuh ke provider lain; user harus /reload.
-  // Deteksi CLI di sini memakai resolver sinkron (existsSync + probe), bukan
-  // `await isClaudeCliInstalled()` yang butuh execFile; dialog konfirmasi
-  // instalasi tetap ditunda ke session_start karena butuh UI.
+  // Setelan claude-gateway.json dimuat lebih awal agar
+  // `provider.pathToClaudeCodeExecutable` ikut dipakai saat deteksi.
+  try {
+    primeClaudeProviderSettings(process.cwd());
+  } catch { /* setelan rusak: pakai default */ }
   if (!isClaudeProviderRegistered()) {
     try {
-      if (hasClaudeCliInstalledSync()) {
-        registerClaudeProvider(pi);
-      }
-    } catch { /* deteksi gagal: biarkan session_start mencoba lagi */ }
+      const claudeCli = claudeCliStatusSync();
+      if (claudeCli.installed) registerClaudeProvider(pi);
+      logStartup("load:claude", {
+        installed: claudeCli.installed,
+        path: claudeCli.path,
+        registered: isClaudeProviderRegistered(),
+        elapsedMs: Date.now() - LOAD_STARTED_AT,
+      });
+    } catch (error) {
+      logStartup("load:claude", { error: error instanceof Error ? error.message : String(error) });
+    }
+  } else {
+    logStartup("load:claude", { registered: true, alreadyRegistered: true, elapsedMs: Date.now() - LOAD_STARTED_AT });
   }
 
   // Teruskan rewrite history (compact/tree) ke mirror sesi Claude agar query
@@ -782,55 +933,88 @@ export default function (pi: ExtensionAPI): void {
     markClaudeRebuild(ctx.sessionManager.getSessionId(), "session_tree"));
 
   pi.on("session_start", async (_event, ctx) => {
-    // Registrasi kondisional Claude CLI jika biner tersedia atau dialog konfirmasi fallback
-    try {
-      const claudeInstalled = await isClaudeCliInstalled();
-      if (claudeInstalled) {
-        if (!isClaudeProviderRegistered()) {
+    logStartup("session_start", {
+      claude: {
+        registered: isClaudeProviderRegistered(),
+        all: countProviderModels(ctx, CLAUDE_PROVIDER_ID),
+        available: countProviderModels(ctx, CLAUDE_PROVIDER_ID, true),
+      },
+      zenith: {
+        registered: zenithRegistered,
+        all: countProviderModels(ctx, ZENITH_PROVIDER_ID),
+        available: countProviderModels(ctx, ZENITH_PROVIDER_ID, true),
+      },
+      "9router": {
+        registered: routerRegistered,
+        snapshot: routerSnapshotAtLoad,
+        all: countProviderModels(ctx, ROUTER_PROVIDER_ID),
+        available: countProviderModels(ctx, ROUTER_PROVIDER_ID, true),
+      },
+    });
+
+    // Provider Claude yang sudah terdaftar di fase load tidak perlu di-probe
+    // lagi: spawn `claude --version` (~120 ms di Windows) tidak memberi
+    // informasi baru, dan probe nyata tetap terjadi saat turn pertama.
+    if (!isClaudeProviderRegistered()) {
+      try {
+        if (await isClaudeCliInstalled()) {
           registerClaudeProvider(pi);
-        }
-      } else if (ctx.hasUI && !isClaudeInstallDeclined()) {
-        const confirmed = await ctx.ui.confirm(
-          "Claude Code CLI Belum Terpasang",
-          "Claude Code CLI (@anthropic-ai/claude-code) belum terpasang di sistem ini.\nApakah Anda ingin memasangnya sekarang secara global via npm?",
-        );
-        if (confirmed) {
-          ctx.ui.notify("Memasang @anthropic-ai/claude-code secara global...", "info");
-          const installRes = await installClaudeCli();
-          if (installRes.success) {
-            setClaudeInstallDeclined(false);
-            registerClaudeProvider(pi);
-            let loggedIn = false;
-            try {
-              const info = await checkClaudeCli();
-              loggedIn = info.loggedIn;
-            } catch {
-              loggedIn = false;
-            }
-            if (loggedIn) {
-              ctx.ui.notify("Claude Code CLI berhasil dipasang dan terhubung.", "info");
-            } else {
-              ctx.ui.notify(
-                "Claude Code CLI berhasil dipasang.\nJalankan `claude login` di terminal untuk mulai menggunakan Claude Pro/Max.",
-                "warning",
-              );
-            }
+          logStartup("session_start:claude", { registered: true, source: "probe" });
+        } else if (ctx.hasUI && !isClaudeInstallDeclined()) {
+          const confirmed = await ctx.ui.confirm(
+            "Claude Code CLI Belum Terpasang",
+            "Claude Code CLI (@anthropic-ai/claude-code) belum terpasang di sistem ini.\nApakah Anda ingin memasangnya sekarang secara global via npm?",
+          );
+          if (confirmed) {
+            // Instalasi npm butuh puluhan detik. Dijalankan di background supaya
+            // prompt pertama tidak tertahan selama proses itu.
+            void (async () => {
+              ctx.ui.notify("Memasang @anthropic-ai/claude-code secara global...", "info");
+              const installRes = await installClaudeCli();
+              if (!installRes.success) {
+                logStartup("session_start:claude", { installFailed: installRes.error });
+                ctx.ui.notify(`Gagal memasang Claude Code CLI: ${installRes.error}`, "error");
+                return;
+              }
+              setClaudeInstallDeclined(false);
+              registerClaudeProvider(pi);
+              let loggedIn = false;
+              try {
+                loggedIn = (await checkClaudeCli()).loggedIn;
+              } catch {
+                loggedIn = false;
+              }
+              logStartup("session_start:claude", { installed: true, loggedIn });
+              if (loggedIn) {
+                ctx.ui.notify("Claude Code CLI berhasil dipasang dan terhubung.", "info");
+              } else {
+                ctx.ui.notify(
+                  "Claude Code CLI berhasil dipasang.\nJalankan `claude login` di terminal untuk mulai menggunakan Claude Pro/Max.",
+                  "warning",
+                );
+              }
+            })();
           } else {
-            ctx.ui.notify(`Gagal memasang Claude Code CLI: ${installRes.error}`, "error");
+            setClaudeInstallDeclined(true);
           }
-        } else {
-          setClaudeInstallDeclined(true);
         }
+      } catch (error) {
+        // Abaikan error deteksi Claude di session_start agar startup sesi tidak terhambat
+        logStartup("session_start:claude", { error: error instanceof Error ? error.message : String(error) });
       }
-    } catch {
-      // Abaikan error deteksi Claude di session_start agar startup sesi tidak terhambat
     }
+
+    // Pi menghitung snapshot availability secara asinkron. Kalau Claude terdaftar
+    // tapi tidak ada di snapshot itu, `/models` tidak menampilkannya; daftarkan
+    // ulang sekali agar provider ditandai configured lagi.
+    scheduleClaudeAvailabilityReconcile(pi, ctx);
 
     try {
       const apiKey = await getApiKeyEntry(ROUTER_PROVIDER_ID);
-      if (apiKey) {
-        const merged = await fetchMergedRouterModels(apiKey);
-        if (merged) registerRouterProvider(pi, apiKey, merged);
+      // Daftar live 9Router diurus refreshModels provider ini (dipanggil Pi saat
+      // startup dan saat katalog di-refresh), jadi tidak ada fetch di sini.
+      if (apiKey && !routerSnapshotAtLoad) {
+        logStartup("session_start:9router", { registered: routerRegistered, snapshot: false });
       }
 
       const zenithApiKey = await getRouterApiKey();
@@ -843,23 +1027,21 @@ export default function (pi: ExtensionAPI): void {
         } catch { /* Zenith Router belum jalan; snapshot kosong. */ }
       }
 
-      if (refreshTimer) clearInterval(refreshTimer);
-      refreshTimer = setInterval(() => {
-        void (async () => {
-          const key = await getApiKeyEntry(ROUTER_PROVIDER_ID);
-          if (!key) return;
-          try {
-            const models = await fetchMergedRouterModels(key);
-            if (models === null) return;
-            registerRouterProvider(pi, key, models);
-          } catch { /* biarkan snapshot terakhir. */ }
-        })();
-      }, REFRESH_INTERVAL_MS);
+      // Refresh berkala tidak lagi dijalankan sendiri. Interval manual di sini
+      // mendaftarkan ulang provider setiap 5 menit, dan registrasi ulang memicu
+      // pemeriksaan ketersediaan Pi — sumber snapshot yang berubah-ubah. Sebagai
+      // gantinya cukup minta Pi me-refresh katalognya; refreshModels provider
+      // yang memutuskan perlu fetch atau tidak (TTL REFRESH_INTERVAL_MS).
+      // Dibatasi ke provider gateway: refresh tanpa `providers` ikut menyentuh
+      // semua provider bawaan Pi, yang jauh lebih mahal daripada yang dibutuhkan.
+      void ctx.modelRegistry
+        .refresh({ allowNetwork: true, providers: [ROUTER_PROVIDER_ID, ZENITH_PROVIDER_ID] })
+        .catch(() => undefined);
     } catch { /* katalog gagal dimuat; snapshot sebelumnya dipertahankan. */ }
   });
 
   pi.on("session_shutdown", () => {
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = undefined;
+    for (const timer of claudeReconcileTimers) clearTimeout(timer);
+    claudeReconcileTimers.clear();
   });
 }

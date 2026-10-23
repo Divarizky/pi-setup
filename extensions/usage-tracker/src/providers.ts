@@ -39,6 +39,17 @@ export interface UsageLimit {
   readonly resetsAt?: Date;
 }
 
+/**
+ * Akun yang melayani request terakhir untuk sebuah model. Diambil dari header
+ * `X-Zenith-Account` atau riwayat `usage_history`; `observedAt` dipakai untuk
+ * memilih yang paling baru.
+ */
+export interface ServedAccount {
+  readonly accountName?: string;
+  readonly connectionId?: number;
+  readonly observedAt: number;
+}
+
 export interface ProviderUsage {
   readonly provider: ProviderId;
   readonly label?: string;
@@ -60,6 +71,40 @@ export interface ProviderUsage {
   readonly perModelBuckets?: boolean;
   /** Prioritas koneksi di Zenith; angka kecil dipakai lebih dulu. */
   readonly priority?: number;
+  /** Id koneksi dan nama akun di Zenith, untuk mencocokkan akun yang melayani request. */
+  readonly connectionId?: number;
+  readonly accountName?: string;
+  /** Batas akhir cooldown akun di router. */
+  readonly cooldownUntil?: number;
+  /** Akun ditandai habis oleh router (`quota.is_exhausted` atau sisa <= 0). */
+  readonly isExhausted?: boolean;
+  /**
+   * Model yang sedang dikunci router untuk koneksi ini, dengan batas akhir
+   * lock. Router tidak memakai koneksi tersebut untuk model itu selama lock
+   * aktif, jadi quota bar harus automate akun lain.
+   */
+  readonly lockedModels?: readonly ModelLock[];
+  /**
+   * Kuota per model dari inventory router (Antigravity). Nilai `remaining`
+   * mentah lebih akurat daripada persentase pada `quotas`, karena yang
+   * mewakili kuota yang benar-benar tersisa pada tier yang dipakai.
+   */
+  readonly modelInventory?: readonly ModelInventoryEntry[];
+}
+
+/** Lock per model pada satu koneksi router. */
+export interface ModelLock {
+  readonly model: string;
+  readonly lockedUntil: number;
+}
+
+/** Sisa kuota satu model pada satu koneksi router. */
+export interface ModelInventoryEntry {
+  readonly model: string;
+  /** Sisa kuota 0..1, mengikuti bentuk data mentah router. */
+  readonly remaining?: number;
+  /** Kapan kuota terisi ulang. */
+  readonly resetsAt?: number;
 }
 
 export interface UsageFetchOptions {

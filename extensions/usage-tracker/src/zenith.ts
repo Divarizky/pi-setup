@@ -2,7 +2,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import type { ProviderUsage, UsageLimit } from "./providers.ts";
+import type { ModelInventoryEntry, ModelLock, ProviderUsage, ServedAccount, UsageLimit } from "./providers.ts";
 
 /**
  * Kuota koneksi Zenith Router (`zenith-router`, gateway lokal port 20120).
@@ -240,12 +240,49 @@ function toProviderUsage(entry: unknown, now: Date, fromCache: boolean): Provide
     limits: limits.length > 0 ? limits : undefined,
     perModelBuckets: MODEL_KEYED_PROVIDERS.has(provider),
     priority: finite(connection.priority),
+    connectionId: finite(connection.id),
+    accountName: name || undefined,
+    cooldownUntil: finite(connection.routing_cooldown_until),
+    isExhausted: quota?.is_exhausted === true || (finite(quota?.remaining) ?? 1) <= 0,
     quota: plan,
     balance,
     message: error,
     updatedAt,
     stale,
+    lockedModels: parseRoutingLocks(connection.routing_locks),
+    modelInventory: parseRoutingInventory(connection.routing_inventory),
   };
+}
+
+/** Lock per model dari router, dinormalkan ke bentuk usage tracker. */
+function parseRoutingLocks(value: unknown): ModelLock[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const locks: ModelLock[] = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const model = typeof record?.model === "string" ? record.model.trim() : "";
+    const lockedUntil = finite(record?.locked_until);
+    if (!model || lockedUntil === undefined) continue;
+    locks.push({ model, lockedUntil });
+  }
+  return locks.length > 0 ? locks : undefined;
+}
+
+/** Sisa kuota per model dari inventory router. */
+function parseRoutingInventory(value: unknown): ModelInventoryEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries: ModelInventoryEntry[] = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const model = typeof record?.model_id === "string" ? record.model_id.trim() : "";
+    if (!model) continue;
+    entries.push({
+      model,
+      remaining: finite(record?.quota_remaining),
+      resetsAt: finite(record?.quota_reset_at),
+    });
+  }
+  return entries.length > 0 ? entries : undefined;
 }
 
 function parsePayload(payload: unknown, now: Date, fromCache: boolean): readonly ProviderUsage[] {
@@ -298,7 +335,7 @@ function zenithDbPath(): string | undefined {
 }
 
 interface SqliteStatement {
-  all: () => unknown[];
+  all: (...params: unknown[]) => unknown[];
 }
 
 interface SqliteDatabase {
@@ -307,17 +344,85 @@ interface SqliteDatabase {
 }
 
 /**
+ * Data routing router yang tidak ada di `/api/quota`: lock per model, sisa kuota
+ * per model dari inventory, dan cooldown akun. Ketiganya menentukan akun mana
+ * yang benar-benar melayani request, jadi quota bar harus ikut memperhitungkannya.
+ */
+interface ZenithRoutingData {
+  /** connection_id -> daftar model yang dikunci. */
+  readonly locks: ReadonlyMap<number, ReadonlyArray<{ model: string; locked_until: number }>>;
+  /** connection_id -> sisa kuota per model. */
+  readonly inventory: ReadonlyMap<number, ReadonlyArray<{ model_id: string; quota_remaining?: number; quota_reset_at?: number }>>;
+  /** connection_id -> batas akhir cooldown akun. */
+  readonly cooldowns: ReadonlyMap<number, number>;
+}
+
+const EMPTY_ROUTING: ZenithRoutingData = { locks: new Map(), inventory: new Map(), cooldowns: new Map() };
+
+/**
+ * Baca tabel routing router. Tabel bisa belum ada di instalasi lama, jadi
+ * kegagalan per tabel tidak menggagalkan seluruh pembacaan.
+ */
+function readZenithRoutingData(database: SqliteDatabase): ZenithRoutingData {
+  const locks = new Map<number, Array<{ model: string; locked_until: number }>>();
+  const inventory = new Map<number, Array<{ model_id: string; quota_remaining?: number; quota_reset_at?: number }>>();
+  const cooldowns = new Map<number, number>();
+
+  const readTable = (query: string): unknown[] => {
+    try {
+      return database.prepare(query).all();
+    } catch {
+      return [];
+    }
+  };
+
+  for (const row of readTable("SELECT connection_id, model, locked_until FROM connection_model_locks")) {
+    const record = asRecord(row);
+    const connectionId = finite(record?.connection_id);
+    const model = typeof record?.model === "string" ? record.model.trim() : "";
+    const lockedUntil = finite(record?.locked_until);
+    if (connectionId === undefined || !model || lockedUntil === undefined) continue;
+    const bucket = locks.get(connectionId) ?? [];
+    bucket.push({ model, locked_until: lockedUntil });
+    locks.set(connectionId, bucket);
+  }
+
+  for (const row of readTable(
+    "SELECT connection_id, model_id, quota_remaining, quota_reset_at FROM antigravity_account_models",
+  )) {
+    const record = asRecord(row);
+    const connectionId = finite(record?.connection_id);
+    const model = typeof record?.model_id === "string" ? record.model_id.trim() : "";
+    if (connectionId === undefined || !model) continue;
+    const bucket = inventory.get(connectionId) ?? [];
+    bucket.push({
+      model_id: model,
+      quota_remaining: finite(record?.quota_remaining),
+      quota_reset_at: finite(record?.quota_reset_at),
+    });
+    inventory.set(connectionId, bucket);
+  }
+
+  for (const row of readTable("SELECT id, cooldown_until FROM connections WHERE cooldown_until > 0")) {
+    const record = asRecord(row);
+    const connectionId = finite(record?.id);
+    const cooldownUntil = finite(record?.cooldown_until);
+    if (connectionId === undefined || cooldownUntil === undefined) continue;
+    cooldowns.set(connectionId, cooldownUntil);
+  }
+
+  return { locks, inventory, cooldowns };
+}
+
+/**
  * Payload berbentuk sama dengan `/api/quota`, dibaca read-only dari database.
  * Hanya kolom non-rahasia dan `$.quota` yang diambil dari `credentials`.
  */
 function readZenithDb(path: string): unknown[] | undefined {
-  if (!existsSync(path)) return undefined;
-  let database: SqliteDatabase | undefined;
+  const opened = openZenithDb(path);
+  if (!opened) return undefined;
+  const { database, routing } = opened;
   try {
-    const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
-      DatabaseSync: new (file: string, options?: { readOnly?: boolean }) => SqliteDatabase;
-    };
-    database = new DatabaseSync(path, { readOnly: true });
     const rows = database
       .prepare(
         "SELECT id, name, provider, auth_type, is_active, priority, " +
@@ -334,13 +439,126 @@ function readZenithDb(path: string): unknown[] | undefined {
           quota = null;
         }
       }
-      return { ...record, quota };
+      const id = finite(record.id);
+      return {
+        ...record,
+        quota,
+        routing_locks: id === undefined ? undefined : routing.locks.get(id),
+        routing_inventory: id === undefined ? undefined : routing.inventory.get(id),
+        routing_cooldown_until: id === undefined ? undefined : routing.cooldowns.get(id),
+      };
     });
   } catch {
     return undefined;
   } finally {
-    database?.close();
+    database.close();
   }
+}
+
+/** Buka database Zenith dan baca data routing-nya dalam satu kali akses. */
+function openDatabase(path: string): SqliteDatabase | undefined {
+  if (!existsSync(path)) return undefined;
+  try {
+    const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
+      DatabaseSync: new (file: string, options?: { readOnly?: boolean }) => SqliteDatabase;
+    };
+    return new DatabaseSync(path, { readOnly: true });
+  } catch {
+    return undefined;
+  }
+}
+
+function openZenithDb(path: string): { database: SqliteDatabase; routing: ZenithRoutingData } | undefined {
+  const database = openDatabase(path);
+  if (!database) return undefined;
+  return { database, routing: readZenithRoutingData(database) };
+}
+
+/**
+ * Nama akun dari header `X-Zenith-Account`, yaitu nama koneksi yang melayani
+ * request. Header dicocokkan tanpa membedakan huruf besar-kecil.
+ */
+export function servedAccountFromHeaders(
+  headers: Readonly<Record<string, string>>,
+  now: Date,
+): ServedAccount | undefined {
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === "x-zenith-account");
+  const accountName = entry?.[1]?.trim();
+  if (!accountName) return undefined;
+  return { accountName, observedAt: now.getTime() };
+}
+
+/**
+ * Koneksi yang melayani request terakhir untuk provider dan model ini, dari
+ * `usage_history`. `model` berbentuk bare (tanpa prefix router), sama seperti
+ * yang tercatat di database.
+ */
+export function readLastServedAccount(
+  provider: string,
+  model: string,
+  dbPath?: string,
+): ServedAccount | undefined {
+  const path = dbPath === undefined ? zenithDbPath() : dbPath;
+  if (!path) return undefined;
+  const database = openDatabase(path);
+  if (!database) return undefined;
+  try {
+    const rows = database
+      .prepare(
+        "SELECT connection_id, timestamp FROM usage_history " +
+          "WHERE provider = ? AND model = ? AND connection_id IS NOT NULL ORDER BY id DESC LIMIT 1",
+      )
+      .all(provider, model);
+    const record = asRecord(rows[0]);
+    const connectionId = finite(record?.connection_id);
+    const observedAt = finite(record?.timestamp);
+    if (connectionId === undefined || observedAt === undefined) return undefined;
+    return { connectionId, observedAt };
+  } catch {
+    return undefined;
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * Data routing untuk payload dari `/api/quota`. Endpoint itu tidak mengirim
+ * lock, inventory, maupun cooldown, jadi keduanya digabung di sini.
+ */
+function readZenithRouting(path: string | undefined): ZenithRoutingData {
+  if (!path) return EMPTY_ROUTING;
+  const opened = openZenithDb(path);
+  if (!opened) return EMPTY_ROUTING;
+  try {
+    return opened.routing;
+  } finally {
+    opened.database.close();
+  }
+}
+
+/** Gabungkan data routing ke payload `/api/quota` yang sudahdinormalkan. */
+function applyRouting(
+  payload: readonly unknown[],
+  routing: ZenithRoutingData,
+): readonly unknown[] {
+  if (routing.locks.size === 0 && routing.inventory.size === 0 && routing.cooldowns.size === 0) {
+    return payload;
+  }
+  return payload.map((entry) => {
+    const record = asRecord(entry);
+    const id = record ? finite(record.id) : undefined;
+    if (!record || id === undefined) return entry;
+    const locks = routing.locks.get(id);
+    const inventory = routing.inventory.get(id);
+    const cooldownUntil = routing.cooldowns.get(id);
+    if (!locks && !inventory && cooldownUntil === undefined) return entry;
+    return {
+      ...record,
+      routing_locks: locks,
+      routing_inventory: inventory,
+      routing_cooldown_until: cooldownUntil,
+    };
+  });
 }
 
 /**
@@ -360,6 +578,7 @@ export async function fetchZenithQuotas(options: ZenithFetchOptions = {}): Promi
   }
 
   const fetchImpl = options.fetchImpl ?? fetch;
+  const dbPath = options.dbPath === undefined ? zenithDbPath() : options.dbPath;
   try {
     const response = await fetchImpl(`${options.baseUrl ?? zenithBaseUrl()}/api/quota`, {
       headers: { Accept: "application/json" },
@@ -367,10 +586,12 @@ export async function fetchZenithQuotas(options: ZenithFetchOptions = {}): Promi
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload: unknown = await response.json();
-    writeCache(cachePath, { version: 1, fetchedAt: now.getTime(), payload });
-    return parsePayload(payload, now, false);
+    // Endpoint ini tidak mengirim lock, inventory, maupun cooldown, jadi datanya
+    // diambil dari database Zenith yang sama.
+    const routed = applyRouting(Array.isArray(payload) ? payload : [], readZenithRouting(dbPath ?? undefined));
+    writeCache(cachePath, { version: 1, fetchedAt: now.getTime(), payload: routed });
+    return parsePayload(routed, now, false);
   } catch {
-    const dbPath = options.dbPath === undefined ? zenithDbPath() : options.dbPath;
     const fromDb = dbPath ? readZenithDb(dbPath) : undefined;
     if (fromDb) {
       writeCache(cachePath, { version: 1, fetchedAt: now.getTime(), payload: fromDb });
