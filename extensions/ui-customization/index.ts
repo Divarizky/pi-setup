@@ -430,7 +430,11 @@ export default function uiCustomization(pi: ExtensionAPI) {
       width: number,
       theme: Theme,
     ): string[] {
-      const directory = theme.fg("text", formatDirectory(ctx.cwd));
+      const sessionName = ctx.sessionManager.getSessionName?.();
+      const directoryLabel = sessionName
+        ? `${formatDirectory(ctx.cwd)} • ${sessionName}`
+        : formatDirectory(ctx.cwd);
+      const directory = theme.fg("text", directoryLabel);
       const fileLabel = gitInfo.changedFiles === 1 ? "file" : "files";
       let git = gitInfo.branch
         ? `${gitInfo.branch} · ${gitInfo.changedFiles} ${fileLabel}`
@@ -506,6 +510,10 @@ export default function uiCustomization(pi: ExtensionAPI) {
       updateModelInfo(ctx, ctx.model, ctx.thinkingLevel ?? "off");
     }
     install(ctx);
+  });
+
+  pi.on("session_info_changed", (_event) => {
+    requestRender?.();
   });
 
   pi.on("session_shutdown", (_event, ctx) => {

@@ -83,6 +83,7 @@ npm run test:git-info
 npm run test:run-summaries
 npm run test:subagents
 npm run test:todos
+npm run sync:runtime
 ```
 
 `extensions/subagents` memakai Biome dan test suite sendiri. Extension yang dikelola Orca (`extensions/orca-*.ts`) dikelola di luar repository.
