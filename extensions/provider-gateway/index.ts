@@ -38,6 +38,8 @@ import {
 import {
   isClaudeInstallDeclined,
   setClaudeInstallDeclined,
+  isClaudeLoggedOut,
+  setClaudeLoggedOut,
 } from "./claude/config.js";
 
 /**
@@ -738,6 +740,7 @@ async function gatewayLogin(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pro
 
     if (choice === CHOICE_CLAUDE) {
       await gatewayClaudeLogin(ctx);
+      setClaudeLoggedOut(false);
       return;
     }
 
@@ -828,9 +831,11 @@ async function gatewayLogout(pi: ExtensionAPI, ctx: ExtensionCommandContext): Pr
     }
   } else if (choice === CHOICE_CLAUDE) {
     // Kredensial milik CLI (~/.claude/.credentials.json), bukan auth.json.
-    // Bersihkan sisa OAuth direct lama bila ada, lalu unregister dua ID.
+    // Bersihkan sisa OAuth direct lama bila ada, tandai status logout di config,
+    // lalu unregister provider agar disembunyikan dari /models.
     delete auth[ANTHROPIC_PROVIDER_ID];
     await writeAuthFile(auth);
+    setClaudeLoggedOut(true);
     unregisterClaudeProvider(pi);
     try { pi.unregisterProvider(ANTHROPIC_PROVIDER_ID); } catch { /* sisa ID lama */ }
   } else if (choice === CHOICE_OPENAI_CODEX) {
@@ -900,7 +905,8 @@ export default function (pi: ExtensionAPI): void {
     }
   }
 
-  // Claude Pro/Max didaftarkan sedini mungkin (fase load) kalau CLI tersedia.
+  // Claude Pro/Max didaftarkan sedini mungkin (fase load) kalau CLI tersedia
+  // dan user belum pernah logout eksplisit via gateway-logout.
   // Tanpa ini, model default `claude` di settings.json gagal di-resolve saat
   // startup dan Pi diam-diam jatuh ke provider lain; user harus /reload.
   // Setelan claude-gateway.json dimuat lebih awal agar
@@ -908,7 +914,7 @@ export default function (pi: ExtensionAPI): void {
   try {
     primeClaudeProviderSettings(process.cwd());
   } catch { /* setelan rusak: pakai default */ }
-  if (!isClaudeProviderRegistered()) {
+  if (!isClaudeProviderRegistered() && !isClaudeLoggedOut()) {
     try {
       const claudeCli = claudeCliStatusSync();
       if (claudeCli.installed) registerClaudeProvider(pi);
@@ -922,7 +928,12 @@ export default function (pi: ExtensionAPI): void {
       logStartup("load:claude", { error: error instanceof Error ? error.message : String(error) });
     }
   } else {
-    logStartup("load:claude", { registered: true, alreadyRegistered: true, elapsedMs: Date.now() - LOAD_STARTED_AT });
+    logStartup("load:claude", {
+      registered: isClaudeProviderRegistered(),
+      alreadyRegistered: isClaudeProviderRegistered(),
+      loggedOut: isClaudeLoggedOut(),
+      elapsedMs: Date.now() - LOAD_STARTED_AT,
+    });
   }
 
   // Teruskan rewrite history (compact/tree) ke mirror sesi Claude agar query
@@ -955,7 +966,8 @@ export default function (pi: ExtensionAPI): void {
     // Provider Claude yang sudah terdaftar di fase load tidak perlu di-probe
     // lagi: spawn `claude --version` (~120 ms di Windows) tidak memberi
     // informasi baru, dan probe nyata tetap terjadi saat turn pertama.
-    if (!isClaudeProviderRegistered()) {
+    // Jika user sudah logout secara eksplisit, jangan auto-probe atau daftarkan ulang.
+    if (!isClaudeProviderRegistered() && !isClaudeLoggedOut()) {
       try {
         if (await isClaudeCliInstalled()) {
           registerClaudeProvider(pi);

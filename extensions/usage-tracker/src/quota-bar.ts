@@ -685,7 +685,7 @@ export function renderQuotaBar(
   const suffix = age ? `${base} · stale ${age}` : base;
 
   const accountFull = matched.usage.label?.trim() || matched.usage.provider;
-  const limitFull = matched.limit.label?.trim();
+  const limitFull = matched.limit.label?.trim().replace(TIER_LABEL_SUFFIX, "").trim();
 
   // Susun label kiri (akun) dan kanan (limit + status pemakaian) bertingkat
   // sesuai lebar terminal agar progress rail tetap memiliki ruang visual.

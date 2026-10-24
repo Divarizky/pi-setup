@@ -13,6 +13,8 @@ export interface Config {
 	startupNoticeShown?: string;
 	/** Whether user declined automatic Claude CLI installation prompt at startup. */
 	claudeInstallDeclined?: boolean;
+	/** Whether user explicitly logged out from Claude in provider-gateway. */
+	claudeLoggedOut?: boolean;
 	askClaude?: {
 		enabled?: boolean;
 		name?: string;
@@ -86,6 +88,26 @@ export function markStartupNoticeShown(): string {
 export function isClaudeInstallDeclined(): boolean {
 	const config = tryParseJson(globalConfigPath());
 	return Boolean(config.claudeInstallDeclined);
+}
+
+export function isClaudeLoggedOut(): boolean {
+	const config = tryParseJson(globalConfigPath());
+	return Boolean(config.claudeLoggedOut);
+}
+
+export function setClaudeLoggedOut(loggedOut: boolean): void {
+	const path = globalConfigPath();
+	let existing: Partial<Config> = {};
+	if (existsSync(path)) {
+		try {
+			existing = JSON.parse(readFileSync(path, "utf-8"));
+		} catch {
+			existing = {};
+		}
+	}
+	const next = { ...existing, claudeLoggedOut: loggedOut };
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(path, `${JSON.stringify(next, null, 2)}\n`);
 }
 
 export function setClaudeInstallDeclined(declined: boolean): void {
