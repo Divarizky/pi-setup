@@ -12,6 +12,7 @@
 
 import { exec, execFile, execFileSync } from "node:child_process";
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -170,7 +171,14 @@ function errorMessage(err: unknown): string {
 }
 function resultErrorText(message: SDKMessage): string | undefined {
   const r = message as SDKMessage & { subtype?: string; is_error?: boolean; result?: string; errors?: unknown; error?: unknown };
-  if (r.subtype === "success") return r.is_error ? r.result || "Claude Code reported an error" : undefined;
+  if (r.subtype === "success") {
+    if (!r.is_error) return undefined;
+    const text = r.result || "Claude Code reported an error";
+    if (text.includes("Not logged in") || text.includes("not logged in")) {
+      return "Claude CLI belum login. Jalankan `claude login` di terminal Anda.";
+    }
+    return text;
+  }
   if (Array.isArray(r.errors) && r.errors.length) return r.errors.map(String).join("\n");
   if (typeof r.error === "string") return r.error;
   return `Claude Code failed: ${r.subtype ?? "unknown result"}`;
@@ -909,7 +917,11 @@ async function runClaudeQuery(
       promptStream.fail(error instanceof Error ? error : new Error(String(error)));
       if (queryCtx.turnOutput) {
         queryCtx.turnOutput.stopReason = options?.signal?.aborted ? "aborted" : "error";
-        queryCtx.turnOutput.errorMessage ??= error instanceof Error ? error.message : String(error);
+        let errMsg = error instanceof Error ? error.message : String(error);
+        if (errMsg.includes("Not logged in") || errMsg.includes("not logged in")) {
+          errMsg = "Claude CLI belum login. Jalankan `claude login` di terminal Anda.";
+        }
+        queryCtx.turnOutput.errorMessage ??= errMsg;
       }
       if (!isReentrant && queryCtx.activeQuery === sdkQuery) {
         queryCtx.releasePendingToolCalls("Query ended");
@@ -1049,32 +1061,64 @@ function isRealExecutable(filePath: string): boolean {
 }
 
 // Kandidat path absolut CLI claude, sesuai urutan prioritas:
-// 1. claude.exe global (npm i -g @anthropic-ai/claude-code). Catatan: di
-//    Windows path ini sering hanya shim npm ~500 byte (bukan PE asli) yang
-//    tidak bisa di-spawn langsung tanpa shell -> ditolak isRealExecutable.
-// 2. Shim .cmd global — valid, tapi HANYA lewat shell (cmd.exe).
+// 1. Binary dari PATH (mis. /opt/homebrew/bin/claude di macOS, atau claude.exe di Windows).
+// 2. Lokasi instalasi global umum per platform (mis. Homebrew, npm global).
 // 3. Binary bawaan SDK (claude-agent-sdk-<platform>-<arch>/claude.exe).
-// Prioritas ini penting: shim global bisa lebih baru dari binary SDK,
-// tapi spawn tanpa shell wajib path PE asli. Dipakai sebagai fallback saat
-// PATH proses Pi tidak memuat %APPDATA%\npm.
-function globalClaudeExePath(): string | null {
-  const appData = process.env.APPDATA;
-  if (appData) {
-    const p = join(appData, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
-    if (isRealExecutable(p)) return p;
-  }
+function findClaudeExecutableCandidates(): string[] {
+  const candidates: string[] = [];
   const ext = process.platform === "win32" ? ".exe" : "";
-  const sdkPkgBinary = join(
-    homedir(),
-    ".pi",
-    "agent",
-    "npm",
-    "node_modules",
-    "@anthropic-ai",
-    `claude-agent-sdk-${process.platform}-${process.arch}`,
-    `claude${ext}`,
+  const separator = process.platform === "win32" ? ";" : ":";
+  const names = process.platform === "win32" ? ["claude.exe"] : ["claude"];
+
+  // 1. Dari direktori PATH
+  for (const dir of (process.env.PATH ?? "").split(separator)) {
+    if (!dir) continue;
+    for (const name of names) {
+      candidates.push(join(dir, name));
+    }
+  }
+
+  // 2. Lokasi instalasi global umum per platform
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA;
+    if (appData) {
+      candidates.push(join(appData, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"));
+    }
+    const localAppData = process.env.LOCALAPPDATA;
+    if (localAppData) {
+      candidates.push(join(localAppData, "Programs", "claude", "claude.exe"));
+    }
+  } else {
+    candidates.push(
+      "/opt/homebrew/bin/claude",
+      "/usr/local/bin/claude",
+      join(homedir(), ".local", "bin", "claude"),
+      join(homedir(), ".npm-global", "bin", "claude"),
+      "/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe",
+      "/usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe",
+    );
+  }
+
+  // 3. Binary bawaan SDK @anthropic-ai/claude-agent-sdk-<platform>-<arch>
+  const pkgName = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}`;
+  try {
+    const req = createRequire(import.meta.url);
+    const pkgJson = req.resolve(`${pkgName}/package.json`);
+    candidates.push(join(dirname(pkgJson), `claude${ext}`));
+  } catch { /* opsional: package belum tentu terpasang */ }
+
+  candidates.push(
+    join(homedir(), ".pi", "agent", "node_modules", pkgName, `claude${ext}`),
+    join(homedir(), ".pi", "agent", "npm", "node_modules", pkgName, `claude${ext}`),
   );
-  if (isRealExecutable(sdkPkgBinary)) return sdkPkgBinary;
+
+  return candidates;
+}
+
+function globalClaudeExePath(): string | null {
+  for (const candidate of findClaudeExecutableCandidates()) {
+    if (isRealExecutable(candidate)) return candidate;
+  }
   return null;
 }
 
@@ -1117,15 +1161,22 @@ function probeExecutable(filePath: string, shell: boolean): boolean {
 // error ramah — jangan biarkan SDK spawn buta.
 let cachedClaudeExecutable: string | null | undefined;
 function resolveClaudeExecutable(): string | undefined {
-  if (providerSettings.pathToClaudeCodeExecutable && isRealExecutable(providerSettings.pathToClaudeCodeExecutable)) {
+  if (
+    providerSettings.pathToClaudeCodeExecutable &&
+    isRealExecutable(providerSettings.pathToClaudeCodeExecutable) &&
+    probeExecutable(providerSettings.pathToClaudeCodeExecutable, false)
+  ) {
     return providerSettings.pathToClaudeCodeExecutable;
   }
   if (cachedClaudeExecutable !== undefined) return cachedClaudeExecutable ?? undefined;
-  const direct = globalClaudeExePath();
-  if (direct && probeExecutable(direct, false)) {
-    cachedClaudeExecutable = direct;
-    return direct;
+
+  for (const candidate of findClaudeExecutableCandidates()) {
+    if (isRealExecutable(candidate) && probeExecutable(candidate, false)) {
+      cachedClaudeExecutable = candidate;
+      return candidate;
+    }
   }
+
   // Shim .cmd tidak bisa dipakai SDK (spawn tanpa shell) — jangan kembalikan
   // sebagai executable; hanya catat agar pesan error menyebutkannya.
   cachedClaudeExecutable = null;
@@ -1157,10 +1208,29 @@ async function checkClaudeCli(): Promise<{ path: string; version: string; logged
     const version = clean ? (clean.startsWith("v") ? clean : `v${clean}`) : "CLI";
     let loggedIn = false;
     try {
-      await runClaudeCli(["doctor"]);
-      loggedIn = true;
-    } catch {
-      loggedIn = false;
+      const out = await runClaudeCli(["auth", "status"]);
+      try {
+        const parsed = JSON.parse(out);
+        loggedIn = Boolean(parsed.loggedIn);
+      } catch {
+        loggedIn = true;
+      }
+    } catch (e: any) {
+      if (e?.stdout) {
+        try {
+          const parsed = JSON.parse(e.stdout);
+          loggedIn = Boolean(parsed.loggedIn);
+        } catch {
+          loggedIn = false;
+        }
+      } else {
+        try {
+          const doc = await runClaudeCli(["doctor"]);
+          loggedIn = !doc.includes("Not signed in") && !doc.includes("not signed in");
+        } catch {
+          loggedIn = false;
+        }
+      }
     }
     return { path: resolveClaudeExecutable() ?? "claude", version, loggedIn };
   } catch (e) {
