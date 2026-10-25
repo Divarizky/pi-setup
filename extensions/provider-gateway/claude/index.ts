@@ -11,7 +11,7 @@
 // Login = `claude login` sekali di terminal. Tanpa token di auth.json.
 
 import { exec, execFile, execFileSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -823,6 +823,7 @@ async function runClaudeQuery(
   const extraArgs: Record<string, string | null> = { model: cliModel };
   if (strictMcpConfigEnabled) extraArgs["strict-mcp-config"] = null;
   if (effort) extraArgs["thinking-display"] = "summarized";
+  ensureClaudeConfigDir();
   const childEnv = { ...process.env, ...CC_CHILD_ENV };
   const queryOptions: NonNullable<Parameters<typeof query>[0]["options"]> = {
     cwd,
@@ -964,6 +965,7 @@ async function runIsolatedSummary(
     const promptText = extractUserPrompt(context.messages);
     if (!promptText) throw new Error("runIsolatedSummary: one-off summary without a user prompt");
     const cwd = process.cwd();
+    ensureClaudeConfigDir();
     const claudeExecutable = resolveClaudeExecutable();
     if (!claudeExecutable) {
       stream.push({ type: "error", reason: "error", error: newAssistantOutput(model, "", "error", "Claude CLI tidak bisa dijalankan dari proses Pi. Install via `npm i -g @anthropic-ai/claude-code`, lalu `claude login`.") });
@@ -1187,9 +1189,49 @@ function resolveClaudeExecutable(): string | undefined {
 // shell), jadi argumen divalidasi ketat: tanpa metakarakter shell apa pun.
 const SHELL_SAFE_ARG = /^[A-Za-z0-9_@%+=:,./\\-]+$/;
 
+function resolveClaudeConfigDir(): string | undefined {
+  if (process.env.CLAUDE_CONFIG_DIR && existsSync(process.env.CLAUDE_CONFIG_DIR)) {
+    return process.env.CLAUDE_CONFIG_DIR;
+  }
+  if (providerSettings.claudeConfigDir && existsSync(providerSettings.claudeConfigDir)) {
+    return providerSettings.claudeConfigDir;
+  }
+
+  // Deteksi Orca managed profile pointer jika ada (Orca mengisolasi profil per akun)
+  const orcaPointerCandidates = [
+    process.env.ORCA_CLAUDE_PROFILE_POINTER,
+    join(homedir(), "Library", "Application Support", "orca", "claude-profiles", "selected-host"),
+    join(homedir(), ".config", "orca", "claude-profiles", "selected-host"),
+    process.env.APPDATA ? join(process.env.APPDATA, "orca", "claude-profiles", "selected-host") : undefined,
+  ].filter(Boolean) as string[];
+
+  for (const pointerPath of orcaPointerCandidates) {
+    try {
+      if (existsSync(pointerPath)) {
+        const targetDir = readFileSync(pointerPath, "utf-8").trim();
+        if (targetDir && existsSync(targetDir)) {
+          return targetDir;
+        }
+      }
+    } catch { /* abaikan jika pointer tidak terbaca */ }
+  }
+
+  return undefined;
+}
+
+function ensureClaudeConfigDir(): string | undefined {
+  const dir = resolveClaudeConfigDir();
+  if (dir && !process.env.CLAUDE_CONFIG_DIR) {
+    process.env.CLAUDE_CONFIG_DIR = dir;
+  }
+  return dir;
+}
+
 async function runClaudeCli(args: string[]): Promise<string> {
   const exe = resolveClaudeExecutable();
-  if (exe) return (await execFileAsync(exe, args, { timeout: 20_000 })).stdout;
+  ensureClaudeConfigDir();
+  const env = { ...process.env, ...CC_CHILD_ENV };
+  if (exe) return (await execFileAsync(exe, args, { timeout: 20_000, env })).stdout;
   for (const arg of args) {
     if (!SHELL_SAFE_ARG.test(arg)) {
       throw new Error(`Argumen CLI tidak aman dijalankan lewat shell: ${JSON.stringify(arg)}`);
@@ -1197,7 +1239,7 @@ async function runClaudeCli(args: string[]): Promise<string> {
   }
   // Tanpa path absolut, paksa lewat shell agar shim npm (claude.cmd) ikut
   // terresolve via PATHEXT — execFile tanpa shell tidak bisa spawn .cmd.
-  return (await execAsync(`claude ${args.join(" ")}`, { timeout: 20_000 })).stdout;
+  return (await execAsync(`claude ${args.join(" ")}`, { timeout: 20_000, env })).stdout;
 }
 
 async function checkClaudeCli(): Promise<{ path: string; version: string; loggedIn: boolean }> {
@@ -1352,6 +1394,7 @@ function findClaudeOnPath(): string | null {
  * binary yang rusak tetap ditolak sebelum SDK di-spawn.
  */
 function claudeCliStatusSync(): { installed: boolean; path: string | null } {
+  ensureClaudeConfigDir();
   const candidates = [
     providerSettings.pathToClaudeCodeExecutable,
     globalClaudeExePath(),
@@ -1374,6 +1417,7 @@ function claudeCliStatusSync(): { installed: boolean; path: string | null } {
  */
 export function primeClaudeProviderSettings(cwd: string): void {
   providerSettings = loadConfig(cwd).provider ?? {};
+  ensureClaudeConfigDir();
 }
 
 export function registerClaudeProvider(pi: ExtensionAPI): void {
