@@ -30,7 +30,7 @@ class MemoryTest(unittest.TestCase):
 
     def run_cmd(self, *args, stdin=None, cwd=None):
         return subprocess.run([sys.executable, str(SCRIPT), *args], input=stdin, text=True,
-                              capture_output=True, env=self.env, cwd=cwd or self.repo)
+                              capture_output=True, env=self.env, cwd=cwd or self.repo, encoding="utf-8")
 
     def run_ok(self, *args, stdin=None, cwd=None):
         r = self.run_cmd(*args, stdin=stdin, cwd=cwd)
@@ -234,6 +234,64 @@ class MemoryTest(unittest.TestCase):
         self.assertTrue(any((self.vault / ".trash").glob("agent-memory-migration-*/memory")))
         lint = self.run_cmd("lint")
         self.assertNotIn("link rusak", lint.stdout)
+
+    def test_save_existing_note_without_section_requires_replace_body(self):
+        self.save_note()
+        # Simpan ulang tanpa --section dan tanpa --replace-body harus ditolak
+        r = self.run_cmd("save", "--path", "projects/awi-smd-v3/notes/sync-retry",
+                         stdin="## TL;DR\n- Timpa tanpa izin.\n")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--replace-body", r.stderr)
+
+        # Dengan --replace-body diperbolehkan
+        out = self.run_ok("save", "--path", "projects/awi-smd-v3/notes/sync-retry",
+                          "--replace-body", stdin="## TL;DR\n- Timpa penuh sah.\n")
+        self.assertIn("diperbarui", out)
+        note = (self.vault / "projects/awi-smd-v3/notes/sync-retry.md").read_text(encoding="utf-8")
+        self.assertIn("Timpa penuh sah", note)
+
+    def test_bom_handling_in_read_and_parse(self):
+        # Buat file ber-BOM
+        bom_path = self.vault / "core/bom-test.md"
+        content = "\ufeff---\ntype: core\nstatus: active\n---\n# BOM Test\n\n## TL;DR\n- Catatan ber-BOM.\n"
+        bom_path.write_text(content, encoding="utf-8")
+
+        # Harus bisa dibaca oleh read dan lint tanpa error frontmatter
+        out = self.run_ok("read", "core/bom-test")
+        self.assertIn("Catatan ber-BOM", out)
+        lint = self.run_ok("lint")
+        self.assertNotIn("tidak ada frontmatter", lint)
+
+    def test_move_to_trash_and_warn_references(self):
+        self.save_note()
+        # projects/awi-smd-v3/awi-smd-v3.md menautkan ke sync-retry
+        out = self.run_ok("move", "projects/awi-smd-v3/notes/sync-retry", ".trash/sync-retry-old")
+        self.assertIn("dipindah ke trash", out)
+        self.assertIn("PERINGATAN", out)
+        self.assertTrue((self.vault / ".trash/sync-retry-old.md").exists())
+        self.assertFalse((self.vault / "projects/awi-smd-v3/notes/sync-retry.md").exists())
+
+    def test_atomic_write_concurrency_and_unique_tmp(self):
+        import concurrent.futures
+        # Jalankan save concurrent ke beberapa note berbeda
+        def _save_i(i: int):
+            return self.run_cmd("save", "--type", "note", "--title", f"Conc-{i}",
+                                stdin=f"## TL;DR\n- Concurrency test {i}.\n")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+            results = list(ex.map(_save_i, range(6)))
+        for r in results:
+            self.assertEqual(r.returncode, 0, msg=r.stderr)
+        # Pastikan tidak ada sisa file .tmp yang tertinggal
+        tmp_files = list(self.vault.rglob("*.tmp"))
+        self.assertEqual(len(tmp_files), 0, msg=f"tmp files left: {tmp_files}")
+
+    def test_two_extension_copies_identical(self):
+        repo_ext = Path(__file__).resolve().parents[3] / "extensions" / "agent-memory.ts"
+        skill_ext = Path(__file__).resolve().parents[1] / "pi-extension" / "agent-memory.ts"
+        self.assertTrue(repo_ext.exists(), f"missing: {repo_ext}")
+        self.assertTrue(skill_ext.exists(), f"missing: {skill_ext}")
+        self.assertEqual(repo_ext.read_text(encoding="utf-8"), skill_ext.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

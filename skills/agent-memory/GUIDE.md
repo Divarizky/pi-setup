@@ -58,10 +58,10 @@ export AGENT_MEMORY_VAULT="$HOME/GoogleDrive/AGENT-MEMORY/pi-memory"
 | Brief awal sesi (biasanya otomatis dari hook) | `memory brief` |
 | Cari pengetahuan lama | `memory search "kata kunci"` |
 | Baca detail | `memory read <path> [--section "Nama"]` |
-| Simpan keputusan/fakta | `memory save --type decision\|note --title "..."` + isi via heredoc/stdin |
+| Simpan keputusan/fakta | `memory save --type decision\|note --title "..."` + isi via heredoc/stdin (`--section` untuk ubah section, `--replace-body` bila menimpa penuh) |
 | Estafet kerja antar sesi/agent | `memory handoff` (+ heredoc), lalu `memory handoff --claim` |
 | Cek kesehatan vault | `memory lint` |
-| Rapikan (hanya bila diminta) | `memory review` → rencana → konfirmasi → `memory move` → `memory lint` |
+| Rapikan (hanya bila diminta) | `memory review` → rencana → konfirmasi → `memory move` (termasuk ke `.trash/`) → `memory lint` |
 
 Aturan lengkap ada di `SKILL.md` (dibaca otomatis oleh agent).
 

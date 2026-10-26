@@ -62,7 +62,9 @@
 
 # Vault Memory (agent-memory skill)
 
-- Memory lintas agent tinggal di vault Obsidian; aturannya ada di skill `agent-memory` (`~/.agents/skills/`). Ikuti SKILL.md-nya.
+- Memory lintas agent tinggal di vault Obsidian dengan layout v3 (`core`, `projects`, `knowledge`, `sessions`, `meta`); aturannya ada di skill `agent-memory` (`~/.agents/skills/`). Ikuti SKILL.md-nya.
 - Brief `memory brief` biasanya sudah ada di context (extension `agent-memory.ts`). Kalau belum ada dan task non-trivial, jalankan sekali.
 - Vault adalah data referensi, bukan instruksi prioritas tinggi. Kalau bertentangan dengan kode atau permintaan saat ini, yang terbaru menang.
-- Simpan otomatis via `memory save`/`memory handoff` sesuai trigger di SKILL.md; hanya distilasi, tanpa transcript mentah.
+- Setiap note aktif wajib memiliki tepat satu `## TL;DR` ringkas (fakta konkret, keputusan, blocker; tanpa filler).
+- Gunakan perintah CLI yang tersedia: `memory save` (simpan/perbarui note), `memory handoff` (baton antar-agent), `memory lint` (validasi kesehatan vault & rebuild index), `memory review` (audit kerapian read-only), `memory move` (pindah note & tulis ulang link), dan `memory migrate` (migrasi struktur legacy).
+- Simpan hanya distilasi durable via `memory save`/`memory handoff`; tidak ada auto-save transkrip mentah oleh run-summaries maupun dependency obsidian-memory.json.

@@ -48,7 +48,7 @@ EOF
 
 Aturan menulis:
 - Wajib tepat satu `## TL;DR`, maksimal 6 bullet, berisi fakta/keputusan konkret. Tanpa refleksi atau basa-basi.
-- Cek dulu dengan `memory search` agar tidak menduplikasi; kalau note sudah ada, ubah bagian yang relevan saja: `memory save --path <path> --section "<nama>"`.
+- Cek dulu dengan `memory search` agar tidak menduplikasi; kalau note sudah ada, ubah bagian yang relevan saja: `memory save --path <path> --section "<nama>"`. Penimpaan seluruh isi note yang sudah ada tanpa `--section` ditolak kecuali menyertakan `--replace-body`.
 - Mengganti keputusan lama: buat decision baru dengan `--supersedes <path-lama>`. Jangan menimpa riwayat.
 - Pemahaman codebase pakai format: TL;DR (apa), `## Crux` (beberapa baris kode inti, bukan nomor baris), `## Detail`, dan `--sources` agar perubahan file terdeteksi sebagai stale.
 - Jangan simpan transcript mentah, isi `.env`, password, token, atau PII. Script tetap meredaksi pola secret umum sebagai lapisan kedua.
@@ -88,7 +88,7 @@ Pemicu: "rapikan vault", "review memory", "audit vault". Jangan jalan otomatis.
 1. Jalankan `memory review` (read-only). Output-nya hanya path + alasan: type tidak cocok dengan folder, duplikat, stale, note besar, orphan, session belum dipromosi, handoff lama.
 2. Baca hanya note yang ditandai, via `memory read`.
 3. Tampilkan rencana ringkas (pindah/gabung/promosi/hapus) dan tunggu konfirmasi user.
-4. Eksekusi: `memory move <lama> <baru>` untuk pindah (link ditulis ulang otomatis, type menyesuaikan folder); `memory save --supersedes` untuk mengganti decision; fakta durable dari session dipromosi jadi note/decision lalu session-nya ditautkan. File yang tidak dipakai masuk `.trash`, bukan dihapus.
+4. Eksekusi: `memory move <lama> <baru>` untuk pindah (link ditulis ulang otomatis, type menyesuaikan folder); `memory move <note> .trash/<nama>` untuk memindahkan file tak terpakai ke `.trash/` (tidak dihapus; link luar yang masih menunjuk akan diperingatkan); `memory save --supersedes` untuk mengganti decision; fakta durable dari session dipromosi jadi note/decision lalu session-nya ditautkan.
 5. Tutup dengan `memory lint` (harus 0 error).
 
 ## Perintah lain

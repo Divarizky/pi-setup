@@ -18,6 +18,8 @@ import re
 import shutil
 import subprocess
 import sys
+import time
+import uuid
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -110,12 +112,29 @@ del _stream
 
 def write_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    # newline="\n": selalu LF di semua OS supaya file tidak bolak-balik CRLF/LF
-    # saat vault disunting bergantian dari Windows dan macOS/Linux.
-    with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(text)
-    os.replace(tmp, path)
+    unique_suffix = f"{os.getpid()}-{uuid.uuid4().hex[:8]}.tmp"
+    tmp = path.with_name(f".{path.name}.{unique_suffix}")
+    try:
+        # newline="\n": selalu LF di semua OS supaya file tidak bolak-balik CRLF/LF
+        # saat vault disunting bergantian dari Windows dan macOS/Linux.
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+
+        attempts = 3
+        for i in range(attempts):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if i == attempts - 1:
+                    raise
+                time.sleep(0.05 * (2 ** i))
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def die(message: str, code: int = 2) -> None:
@@ -215,6 +234,8 @@ def _scalar(raw: str):
 
 
 def parse_fm(text: str) -> tuple[dict, str]:
+    if text.startswith("\ufeff"):
+        text = text[1:]
     match = FM_RE.match(text)
     if not match:
         return {}, text
@@ -309,7 +330,7 @@ class Note:
         self.vault = vault
         self.path = path
         self.rel = path.relative_to(vault).as_posix()
-        self.text = path.read_text(encoding="utf-8", errors="replace")
+        self.text = path.read_text(encoding="utf-8-sig", errors="replace")
         self.fm, self.body = parse_fm(self.text)
 
     @property
@@ -886,8 +907,10 @@ def cmd_save(args) -> None:
         fm = dict(note.fm)
         if args.section:
             body = replace_section(note.body, args.section, content)
-        else:
+        elif getattr(args, "replace_body", False):
             body = content if content.lstrip().startswith("# ") else f"# {note.title}\n\n{content}"
+        else:
+            die(f"note sudah ada ({path.relative_to(vault)}). Gunakan --section untuk memperbarui section tertentu, atau --replace-body bila benar-benar ingin menimpa seluruh isi.")
     else:
         if args.section:
             die(f"--section butuh note yang sudah ada: {path.relative_to(vault)}")
@@ -1162,12 +1185,15 @@ def cmd_move(args) -> None:
     src = Note(vault, resolve_note(vault, args.old))
     new_rel = args.new if args.new.endswith(".md") else args.new + ".md"
     dst = vault / new_rel
+    is_trash = new_rel.startswith(".trash/") or new_rel == ".trash"
+
     if dst.exists() and not args.force:
         die(f"target sudah ada: {new_rel} (pakai --force untuk timpa)")
-    if new_rel.split("/", 1)[0] not in TOP_DIRS or "/.trash/" in f"/{new_rel}":
-        die(f"target harus di dalam {TOP_DIRS}: {new_rel}")
+    if not is_trash and (new_rel.split("/", 1)[0] not in TOP_DIRS or "/.trash/" in f"/{new_rel}"):
+        die(f"target harus di dalam {TOP_DIRS} atau .trash/: {new_rel}")
     if dst.resolve() == src.path.resolve():
         die("sumber dan target sama")
+
     old_key, new_key = src.key, new_rel[:-3]
     fm = dict(src.fm)
     parts = new_rel.split("/")
@@ -1184,6 +1210,21 @@ def cmd_move(args) -> None:
     fm["updated"] = today()
     write_atomic(dst, dump_fm(fm) + src.body.lstrip("\n"))
     src.path.unlink()
+
+    if is_trash:
+        referencing = []
+        for note in iter_notes(vault, include_meta=True):
+            for raw in LINK_RE.findall(note.body):
+                target = raw.split("|", 1)[0].split("#", 1)[0].strip().removesuffix(".md")
+                if target == old_key:
+                    referencing.append(note.rel)
+                    break
+        msg = f"dipindah ke trash: {old_key}.md → {new_rel}"
+        if referencing:
+            msg += f" · PERINGATAN: {len(referencing)} note masih merujuk ke note ini ({', '.join(referencing)})"
+        print(msg)
+        return
+
     rewritten = 0
     for note in iter_notes(vault, include_meta=True):
         if note.path.resolve() == dst.resolve():
@@ -1363,7 +1404,7 @@ def cmd_migrate(args) -> None:
     for path, rel, target, kind, flags in plan:
         if not target:
             continue
-        fm, body = parse_fm(path.read_text(encoding="utf-8", errors="replace"))
+        fm, body = parse_fm(path.read_text(encoding="utf-8-sig", errors="replace"))
         body, n = rewrite_links(body, mapping, valid)
         link_changes += n
         write_atomic(vault / target, dump_fm(migrate_fm(fm, kind, target)) + body.lstrip("\n"))
@@ -1427,6 +1468,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--topic", help="topik untuk type knowledge")
     p.add_argument("--path", help="ubah note yang sudah ada (path relatif vault)")
     p.add_argument("--section", help="ganti/tambah satu section saja")
+    p.add_argument("--replace-body", action="store_true", help="timpa seluruh isi note yang sudah ada tanpa --section")
     p.add_argument("--tags", help="dipisah koma")
     p.add_argument("--sources", help="file repo dipisah koma; hash dicatat untuk deteksi stale")
     p.add_argument("--supersedes", help="decision lama yang digantikan")
