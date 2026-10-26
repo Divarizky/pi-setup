@@ -48,6 +48,11 @@ EOF
 
 Aturan menulis:
 - Wajib tepat satu `## TL;DR`, maksimal 6 bullet, berisi fakta/keputusan konkret. Tanpa refleksi atau basa-basi.
+- Gaya penulisan body:
+  * Wajib naratif untuk tipe `decision`, `incident`, `history`, `review`, dan `audit`: gunakan paragraf mengalir (2-4 kalimat padat) dengan urutan konteks → tindakan/keputusan → alasan teknis → konsekuensi. Kalimat sebab-akibat harus eksplisit ("karena", "sehingga", "maka"), bukan menumpuk bullet telegrafik.
+  * Bullet dan tabel di body hanya untuk data yang memang terstruktur: daftar path berkas, konfigurasi, urutan langkah eksekusi, atau matriks perbandingan.
+  * Boleh tetap telegrafik/bullet: note `core/*`, berkas indeks/hub proyek, dan glosarium.
+  * Kronologi/riwayat disusun berurutan per tanggal (format DD-MM-YYYY) di awal paragraf naratif, bukan bullet poin harian.
 - Cek dulu dengan `memory search` agar tidak menduplikasi; kalau note sudah ada, ubah bagian yang relevan saja: `memory save --path <path> --section "<nama>"`. Penimpaan seluruh isi note yang sudah ada tanpa `--section` ditolak kecuali menyertakan `--replace-body`.
 - Mengganti keputusan lama: buat decision baru dengan `--supersedes <path-lama>`. Jangan menimpa riwayat.
 - Pemahaman codebase pakai format: TL;DR (apa), `## Crux` (beberapa baris kode inti, bukan nomor baris), `## Detail`, dan `--sources` agar perubahan file terdeteksi sebagai stale.
