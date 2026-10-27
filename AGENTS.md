@@ -62,6 +62,7 @@ RFC 2119 applies in full: MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL.
 # Skills & Delegation
 
 - Read the relevant skill before using it.
+- MUST use the `prompt-authoring` skill when writing or editing AGENTS.md, SYSTEM.md, SKILL.md, prompt templates, or extension tool descriptions.
 - `SKILL.md` contains instructions, not narration; one instruction per bullet.
 - Relative paths inside `SKILL.md` resolve against the skill directory, not cwd.
 - Use subagents only for complex, investigative, or independent tasks.
