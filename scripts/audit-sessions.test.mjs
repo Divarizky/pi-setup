@@ -244,6 +244,101 @@ test("parseSessionContent mendeteksi berhenti kosong setelah toolResult", () => 
   assert.strictEqual(result.emptyStops[0].id, "empty-asst-1");
 });
 
+test("parseSessionContent mendeteksi rincian stopReason pada Pola 2 (stop, aborted, error)", () => {
+  // Tiga giliran assistant kosong setelah toolResult dengan stopReason berbeda:
+  // 1. stopReason: "stop" (memiliki blok thinking) diikuti user message
+  // 2. stopReason: "aborted" (tanpa thinking) diikuti user message
+  // 3. stopReason: "error" di akhir sesi
+  const jsonlLines = [
+    // Putaran 1: stop
+    JSON.stringify({
+      type: "message",
+      id: "tr1",
+      message: {
+        role: "toolResult",
+        toolName: "read",
+        isError: false,
+        content: [{ type: "text", text: "read ok" }],
+      },
+    }),
+    JSON.stringify({
+      type: "message",
+      id: "asst-stop",
+      message: {
+        role: "assistant",
+        stopReason: "stop",
+        content: [{ type: "thinking", thinking: "sedang berpikir..." }],
+      },
+    }),
+    JSON.stringify({
+      type: "message",
+      id: "user1",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "lanjutkan" }],
+      },
+    }),
+    // Putaran 2: aborted
+    JSON.stringify({
+      type: "message",
+      id: "tr2",
+      message: {
+        role: "toolResult",
+        toolName: "bash",
+        isError: false,
+        content: [{ type: "text", text: "bash ok" }],
+      },
+    }),
+    JSON.stringify({
+      type: "message",
+      id: "asst-aborted",
+      message: {
+        role: "assistant",
+        stopReason: "aborted",
+        content: [],
+      },
+    }),
+    JSON.stringify({
+      type: "message",
+      id: "user2",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "coba lagi" }],
+      },
+    }),
+    // Putaran 3: error (di ujung sesi)
+    JSON.stringify({
+      type: "message",
+      id: "tr3",
+      message: {
+        role: "toolResult",
+        toolName: "execute",
+        isError: false,
+        content: [{ type: "text", text: "exec ok" }],
+      },
+    }),
+    JSON.stringify({
+      type: "message",
+      id: "asst-error",
+      message: {
+        role: "assistant",
+        stopReason: "error",
+        content: [],
+      },
+    }),
+  ].join("\n");
+
+  const result = parseSessionContent(jsonlLines, "fixture-stop-reasons.jsonl");
+
+  assert.strictEqual(result.emptyStops.length, 3);
+  assert.strictEqual(result.emptyStops[0].stopReason, "stop");
+  assert.strictEqual(result.emptyStops[0].hasThinkingText, true);
+  assert.strictEqual(result.emptyStops[1].stopReason, "aborted");
+  assert.strictEqual(result.emptyStops[1].hasThinkingText, false);
+  assert.strictEqual(result.emptyStops[2].stopReason, "error");
+  assert.strictEqual(result.emptyStops[2].hasThinkingText, false);
+});
+
 test("parseSessionContent melewati baris rusak tanpa crash dan menghitung skippedLines", () => {
   const jsonlLines = [
     JSON.stringify({ type: "session", id: "s1" }),

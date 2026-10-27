@@ -91,14 +91,17 @@ export function parseSessionContent(rawContent, filePath = "unknown") {
       const parsedMsg = {
         id: record.id || `line-${lineCount}`,
         role,
+        stopReason: record.message.stopReason ?? null,
         content,
         toolCalls: [],
         text: "",
+        hasThinkingText: false,
         toolResult: null,
       };
 
       if (role === "assistant") {
         const textParts = [];
+        const thinkingParts = [];
         for (const item of content) {
           if (item?.type === "toolCall") {
             toolCallCount++;
@@ -122,9 +125,20 @@ export function parseSessionContent(rawContent, filePath = "unknown") {
             allToolCalls.push(tcEntry);
           } else if (item?.type === "text" && typeof item.text === "string") {
             textParts.push(item.text);
+          } else if (item?.type === "thinking") {
+            const thinkStr =
+              typeof item.thinking === "string"
+                ? item.thinking
+                : typeof item.text === "string"
+                  ? item.text
+                  : "";
+            if (thinkStr.trim()) {
+              thinkingParts.push(thinkStr);
+            }
           }
         }
         parsedMsg.text = textParts.join("");
+        parsedMsg.hasThinkingText = thinkingParts.join("").trim().length > 0;
       } else if (role === "toolResult") {
         toolResultCount++;
         const toolName = record.message.toolName || "unknown";
@@ -204,6 +218,8 @@ export function parseSessionContent(rawContent, filePath = "unknown") {
           emptyStops.push({
             id: msg.id,
             filePath,
+            stopReason: msg.stopReason || "tidak diketahui",
+            hasThinkingText: msg.hasThinkingText,
           });
         }
       }
@@ -308,6 +324,10 @@ export async function auditDirectory(sessionsDir) {
   // Pola 2: Berhenti kosong
   let emptyStopIncidents = 0;
   const emptyStopAffectedSessions = new Set();
+  const emptyStopAffectedSessionsByStopReason = {};
+  const emptyStopByStopReason = {};
+  let emptyStopStopWithThinking = 0;
+  let emptyStopStopWithoutThinking = 0;
   const sampleEmptyStopIds = [];
 
   // Pola 3: Error beruntun total per ambang
@@ -370,6 +390,22 @@ export async function auditDirectory(sessionsDir) {
     for (const es of sessionData.emptyStops) {
       emptyStopIncidents++;
       emptyStopAffectedSessions.add(fileIdx);
+
+      const reason = es.stopReason || "tidak diketahui";
+      emptyStopByStopReason[reason] = (emptyStopByStopReason[reason] || 0) + 1;
+      if (!emptyStopAffectedSessionsByStopReason[reason]) {
+        emptyStopAffectedSessionsByStopReason[reason] = new Set();
+      }
+      emptyStopAffectedSessionsByStopReason[reason].add(fileIdx);
+
+      if (reason === "stop") {
+        if (es.hasThinkingText) {
+          emptyStopStopWithThinking++;
+        } else {
+          emptyStopStopWithoutThinking++;
+        }
+      }
+
       if (sampleEmptyStopIds.length < 15) {
         sampleEmptyStopIds.push(es.id);
       }
@@ -468,6 +504,29 @@ export async function auditDirectory(sessionsDir) {
         incidents: emptyStopIncidents,
         affectedSessions: emptyStopAffectedSessions.size,
         affectedPercent: pct(emptyStopAffectedSessions.size),
+        byStopReason: Object.fromEntries(
+          Object.entries(emptyStopByStopReason).map(([reason, count]) => [
+            reason,
+            {
+              incidents: count,
+              affectedSessions:
+                emptyStopAffectedSessionsByStopReason[reason]?.size || 0,
+              affectedPercent: pct(
+                emptyStopAffectedSessionsByStopReason[reason]?.size || 0,
+              ),
+            },
+          ]),
+        ),
+        stopReasonStopDetail: {
+          incidents: emptyStopByStopReason["stop"] || 0,
+          affectedSessions:
+            emptyStopAffectedSessionsByStopReason["stop"]?.size || 0,
+          affectedPercent: pct(
+            emptyStopAffectedSessionsByStopReason["stop"]?.size || 0,
+          ),
+          withThinkingText: emptyStopStopWithThinking,
+          withoutThinkingText: emptyStopStopWithoutThinking,
+        },
         sampleIds: sampleEmptyStopIds,
       },
       consecutiveErrors: {
@@ -562,9 +621,33 @@ export function formatTextReport(data) {
   lines.push(
     "--------------------------------------------------------------------------------",
   );
-  lines.push(`Jumlah kejadian : ${p.emptyStops.incidents}`);
+  lines.push(`Total kejadian   : ${p.emptyStops.incidents}`);
   lines.push(
-    `Sesi terdampak  : ${p.emptyStops.affectedSessions} (${p.emptyStops.affectedPercent}%)`,
+    `Total sesi terdampak : ${p.emptyStops.affectedSessions} (${p.emptyStops.affectedPercent}%)`,
+  );
+  lines.push("");
+  lines.push("Rincian per stopReason:");
+  lines.push("stopReason       | Kejadian | Sesi Terdampak | % Sesi Terdampak");
+  lines.push("-----------------+----------+----------------+-----------------");
+  const stopReasons = Object.keys(p.emptyStops.byStopReason).sort();
+  for (const reason of stopReasons) {
+    const dataReason = p.emptyStops.byStopReason[reason];
+    const rCol = reason.padEnd(16);
+    const kej = String(dataReason.incidents).padStart(8);
+    const ses = String(dataReason.affectedSessions).padStart(14);
+    const pct = `${dataReason.affectedPercent}%`.padStart(15);
+    lines.push(`${rCol} | ${kej} | ${ses} | ${pct}`);
+  }
+  const stopDetail = p.emptyStops.stopReasonStopDetail;
+  lines.push("");
+  lines.push(
+    `Khusus stopReason="stop": ${stopDetail.incidents} kejadian (${stopDetail.affectedSessions} sesi, ${stopDetail.affectedPercent}%)`,
+  );
+  lines.push(
+    `  - Memiliki blok thinking: ${stopDetail.withThinkingText} kejadian`,
+  );
+  lines.push(
+    `  - Tanpa blok thinking   : ${stopDetail.withoutThinkingText} kejadian`,
   );
   lines.push(
     `Contoh ID baris : ${p.emptyStops.sampleIds.slice(0, 10).join(", ") || "-"}`,
