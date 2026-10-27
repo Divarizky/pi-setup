@@ -1019,9 +1019,10 @@ def cmd_handoff(args) -> None:
     content, redacted = redact(read_stdin())
     if not any(section_span(content, s, exact=True) for s in ("Done", "Failed", "Next")):
         die("handoff butuh minimal satu section: ## Done, ## Failed, ## Next")
-    ensure_hub(vault, f"projects/{slug}", "project", slug)
+    hub = ensure_hub(vault, f"projects/{slug}", "project", slug)
+    hub_key = hub.relative_to(vault).as_posix()[:-3]
     fm = {"type": "handoff", "project": slug, "status": "open", "agent": agent, "updated": stamp()}
-    body = f"# Handoff {slug}\n\n{content.strip()}\n\n## Links\n- [[projects/{slug}/index]]\n"
+    body = f"# Handoff {slug}\n\n{content.strip()}\n\n## Links\n- [[{hub_key}]]\n"
     write_atomic(path, dump_fm(fm) + body)
     print(f"handoff disimpan: {path.relative_to(vault).as_posix()} (status open)")
     if redacted:

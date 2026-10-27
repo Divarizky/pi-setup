@@ -186,6 +186,13 @@ class MemoryTest(unittest.TestCase):
         self.assertIn("claimed", out)
         self.assertNotIn("Handoff open", self.run_ok("brief"))
 
+    def test_handoff_links_to_existing_hub_and_lints_clean(self):
+        self.run_ok("handoff", stdin="## Next\n- Lanjut.\n")
+        note = (self.vault / "projects/awi-smd-v3/handoff.md").read_text(encoding="utf-8")
+        self.assertIn("[[projects/awi-smd-v3/awi-smd-v3]]", note)
+        self.assertNotIn("/index]]", note)
+        self.assertIn("0 error", self.run_ok("lint"))
+
     def test_brief_respects_budget(self):
         for i in range(12):
             self.run_ok("save", "--type", "core", "--title", f"Pref {i}",
