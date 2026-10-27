@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "audit:sessions": "node scripts/audit-sessions.mjs",
     "check": "tsc --noEmit",
     "check:extensions": "node scripts/check-extensions.mjs",
     "test:git-info": "npm --prefix extensions/git-info test",
