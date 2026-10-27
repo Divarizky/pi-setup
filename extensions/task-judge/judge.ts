@@ -123,19 +123,158 @@ export function isDocumentFile(
   return normalized.includes(ext);
 }
 
+export const NON_VALIDATING_PREFIXES: readonly string[] = [
+  "echo",
+  "printf",
+  "grep",
+  "rg",
+  "cat",
+  "git",
+];
+
+export function splitCommandSegments(command: string): string[] {
+  if (typeof command !== "string" || !command.trim()) return [];
+
+  const segments: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  let i = 0;
+
+  while (i < command.length) {
+    const char = command[i];
+
+    if (quote) {
+      if (char === "\\" && quote === '"' && i + 1 < command.length) {
+        current += char + command[i + 1];
+        i += 2;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      current += char;
+      i++;
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char;
+      current += char;
+      i++;
+      continue;
+    }
+
+    // Check for comments outside quotes
+    if (char === "#") {
+      // Discard rest of the line until newline
+      const nextNewline = command.indexOf("\n", i);
+      if (nextNewline === -1) {
+        break; // rest of string is comment
+      }
+      // Push segment up to here if non-empty
+      if (current.trim()) {
+        segments.push(current.trim());
+      }
+      current = "";
+      i = nextNewline + 1;
+      continue;
+    }
+
+    // Check for separators outside quotes: &&, ||, ;, |, \n, \r
+    if (
+      (char === "&" && command[i + 1] === "&") ||
+      (char === "|" && command[i + 1] === "|")
+    ) {
+      if (current.trim()) {
+        segments.push(current.trim());
+      }
+      current = "";
+      i += 2;
+      continue;
+    }
+
+    if (char === ";" || char === "|" || char === "\n" || char === "\r") {
+      if (current.trim()) {
+        segments.push(current.trim());
+      }
+      current = "";
+      i++;
+      continue;
+    }
+
+    current += char;
+    i++;
+  }
+
+  if (current.trim()) {
+    segments.push(current.trim());
+  }
+
+  return segments;
+}
+
+export function cleanSegment(segment: string): string {
+  let cleaned = segment.trim();
+
+  // Strip leading variable assignments like FOO=1 BAR=2
+  while (/^[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+/.test(cleaned)) {
+    cleaned = cleaned.replace(/^[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+/, "").trim();
+  }
+
+  // Strip leading path traversal like ./ or .\
+  if (cleaned.startsWith("./") || cleaned.startsWith(".\\")) {
+    cleaned = cleaned.slice(2).trim();
+  }
+
+  return cleaned;
+}
+
 export function isValidationCommand(
   command: string,
   patterns: readonly string[] = DEFAULT_VALIDATION_PATTERNS,
 ): boolean {
   if (typeof command !== "string" || !command.trim()) return false;
-  return patterns.some((pattern) => {
-    try {
-      return new RegExp(pattern).test(command);
-    } catch {
-      return false;
+
+  const segments = splitCommandSegments(command);
+  if (segments.length === 0) return false;
+
+  for (const rawSegment of segments) {
+    const segment = cleanSegment(rawSegment);
+    if (!segment) continue;
+
+    // Check non-validating prefixes first (e.g. echo, cat, git, grep, etc.)
+    const hasForbiddenPrefix = NON_VALIDATING_PREFIXES.some((prefix) => {
+      const re = new RegExp(String.raw`^${prefix}(?:\s+|$)`, "i");
+      return re.test(segment);
+    });
+    if (hasForbiddenPrefix) {
+      continue;
     }
-  });
+
+    // Must match at the start of the segment
+    const isMatch = patterns.some((pattern) => {
+      try {
+        // Strip leading \b or ^ from pattern if any, then anchor at start
+        let normalized = pattern;
+        if (normalized.startsWith(String.raw`\b`)) {
+          normalized = normalized.slice(2);
+        } else if (normalized.startsWith("^")) {
+          normalized = normalized.slice(1);
+        }
+        return new RegExp(String.raw`^${normalized}`).test(segment);
+      } catch {
+        return false;
+      }
+    });
+
+    if (isMatch) {
+      return true;
+    }
+  }
+
+  return false;
 }
+
 
 export function evaluateRun(
   state: TaskJudgeState,

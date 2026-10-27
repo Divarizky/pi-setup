@@ -141,7 +141,7 @@ test("pola perintah validasi default cocok dengan contoh nyata", () => {
   }
 });
 
-test("pola perintah validasi default tidak cocok dengan perintah non-validasi", () => {
+test("pola perintah validasi default tidak cocok dengan perintah non-validasi dan false positives", () => {
   const nonMatchingCommands = [
     "ls",
     "ls -la",
@@ -153,6 +153,11 @@ test("pola perintah validasi default tidak cocok dengan perintah non-validasi", 
     "npm run start",
     "cat README.md",
     "echo 'hello world'",
+    // Kasus false positive yang disebutkan owner:
+    "echo npm test",
+    "grep -r 'pytest' .",
+    'git commit -m "run npm run check later"',
+    "cat package.json # npm test",
   ];
 
   for (const cmd of nonMatchingCommands) {
@@ -163,6 +168,49 @@ test("pola perintah validasi default tidak cocok dengan perintah non-validasi", 
     );
   }
 });
+
+test("pola perintah validasi cocok untuk chaining, pipe, dan multi-line", () => {
+  const trueCases = [
+    "npm run check",
+    "cd x && npm run check",
+    "npm run check 2>&1 | tail -5",
+    "node --test a.test.ts",
+    "npm test && echo ok",
+  ];
+
+  for (const cmd of trueCases) {
+    assert.equal(
+      isValidationCommand(cmd),
+      true,
+      `Harusnya cocok sebagai validasi: ${cmd}`,
+    );
+  }
+});
+
+test("pola perintah validasi sadar tanda kutip yang memuat pemisah shell", () => {
+  // Simbol && atau ; di dalam tanda kutip bukan pemisah segmen
+  assert.equal(
+    isValidationCommand('git commit -m "fix && npm test"'),
+    false,
+    "&& di dalam kutip tidak boleh memicu validasi",
+  );
+  assert.equal(
+    isValidationCommand("git commit -m 'test; npm test'"),
+    false,
+    "; di dalam kutip tidak boleh memicu validasi",
+  );
+  assert.equal(
+    isValidationCommand('echo "npm test && cargo test"'),
+    false,
+    "perintah di dalam echo ber-quote tidak boleh dihitung",
+  );
+  assert.equal(
+    isValidationCommand('node -e "const x = 1; console.log(x);" && npm test'),
+    true,
+    "; di dalam -e string tidak boleh memotong sebelum && npm test",
+  );
+});
+
 
 test("dukungan konfigurasi kustom untuk docExtensions dan validationPatterns", () => {
   assert.equal(isDocumentFile("foo.custom", [".custom"]), true);
