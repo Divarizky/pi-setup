@@ -15,7 +15,7 @@ export const DEFAULT_VALIDATION_PATTERNS: readonly string[] = [
   String.raw`\bnode\s+--test\b`,
   String.raw`\bpytest\b`,
   String.raw`\bpy(?:thon(?:\d+)?)?\s+-m\s+pytest\b`,
-  String.raw`\bgradlew(?:\.bat)?\s+(test|build|check)\b`,
+  String.raw`\bgradlew(?:\.bat)?\s+(?:test|build|check|assemble|lint)[A-Za-z0-9_]*\b`,
   String.raw`\bcargo\s+(test|check|build)\b`,
   String.raw`\bgo\s+test\b`,
 ];

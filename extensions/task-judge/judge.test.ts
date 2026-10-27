@@ -211,6 +211,44 @@ test("pola perintah validasi sadar tanda kutip yang memuat pemisah shell", () =>
   );
 });
 
+test("pola perintah validasi Gradle mendukung task spesifik (test, build, check, assemble, lint)", () => {
+  const gradleTrueCases = [
+    "./gradlew testDebugUnitTest",
+    "gradlew.bat testDebugUnitTest",
+    ".\\gradlew testDebugUnitTest",
+    "gradlew assembleDebug",
+    "./gradlew lintDebug",
+    "gradlew test",
+    "./gradlew test",
+    "gradlew.bat build",
+    "gradlew check",
+  ];
+
+  for (const cmd of gradleTrueCases) {
+    assert.equal(
+      isValidationCommand(cmd),
+      true,
+      `Harusnya cocok sebagai validasi Gradle: ${cmd}`,
+    );
+  }
+
+  const gradleFalseCases = [
+    "./gradlew clean",
+    "./gradlew tasks",
+    "echo gradlew testDebugUnitTest",
+    "cat gradlew # testDebugUnitTest",
+  ];
+
+  for (const cmd of gradleFalseCases) {
+    assert.equal(
+      isValidationCommand(cmd),
+      false,
+      `Tidak boleh cocok sebagai validasi Gradle: ${cmd}`,
+    );
+  }
+});
+
+
 
 test("dukungan konfigurasi kustom untuk docExtensions dan validationPatterns", () => {
   assert.equal(isDocumentFile("foo.custom", [".custom"]), true);
