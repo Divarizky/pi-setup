@@ -1,7 +1,14 @@
 ---
 name: prompt-authoring
-description: Write and review instruction texts for LLMs, including AGENTS.md, SYSTEM.md, SKILL.md, prompt templates, and tool descriptions.
+description: Use when writing or reviewing instruction texts read by LLMs, including AGENTS.md, SYSTEM.md, SKILL.md, prompt templates, or tool descriptions.
 ---
+
+<critical>
+- MUST align normative terms with the RFC 2119 glossary in AGENTS.md.
+- NEVER use weak modals or polite filler for mandatory constraints.
+- MUST enforce verification through external tools or tests rather than self-critique.
+- MUST place critical blocks at the top and bottom of documents longer than 60 lines.
+</critical>
 
 # Prompt Authoring
 
@@ -17,7 +24,7 @@ Standard operating procedure for authoring and reviewing instruction files read 
 
 Align language strictly with the RFC 2119 glossary in repo AGENTS.md (`<system-conventions>`).
 
-| Keyword | Operational meaning | Prohibited alternatives |
+| Keyword | Operational meaning | Weak forms (do not use) |
 |---|---|---|
 | MUST / REQUIRED | Absolute requirement | try to, ideally, consider, please make sure |
 | MUST NOT / NEVER | Absolute prohibition | try not to, avoid if possible |
@@ -82,3 +89,10 @@ Answer each question with YES or NO during prompt review:
 5. External verification: Are completion claims gated by actual tool or test execution rather than pure self-reflection?
 6. Actionable negatives: Does every prohibited behavior provide a concrete approved path or fallback?
 7. Tool description boundary: Do tool descriptions focus strictly on trigger conditions without leaking implementation details?
+
+<critical>
+- MUST align normative terms with the RFC 2119 glossary in AGENTS.md.
+- NEVER use weak modals or polite filler for mandatory constraints.
+- MUST enforce verification through external tools or tests rather than self-critique.
+- MUST place critical blocks at the top and bottom of documents longer than 60 lines.
+</critical>
