@@ -4,7 +4,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 
 ## What's Included
 
-**Extensions (11)**
+**Extensions (12)**
 
 - `agent-memory` — Injeksi read-only `memory brief` ke system prompt dari vault Obsidian bersama (via skill `agent-memory`)
 - `provider-gateway` — Unified provider gateway (9Router, OpenCode Zen, ZenRoute, Claude Pro/Max CLI, Antigravity, OpenAI Codex) dengan auto-deteksi CLI dan dukungan `node:sqlite`
@@ -14,11 +14,12 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `git-info` — Git branch, changes, PR status in footer
 - `run-summaries` — Auto-summarize agent runs
 - `subagents` — Background Pi subagents, workflows, worktrees, dan Agent Control (v2) dengan display name `General`
+- `task-judge` — Peringatan bila agent mengedit kode tanpa validasi sukses sebelum berhenti (mode warn, log JSONL)
 - `todos` — Todo tracking with overlay widget
 - `ui-customization` — Custom tool rendering (read, bash, edit, write), thinking shimmer, working message, header/footer, dan penyesuaian tema
 - `usage-tracker` — Provider quota & session usage dashboard (Claude CLI OAuth, 9Router, Codex, Zen)
 
-**Skills (15)**
+**Skills (16)**
 
 - `ask-me` — Grill + router (main entry for ambiguous requests)
 - `bug-diagnosis` — 6-phase disciplined bug diagnosis
@@ -30,6 +31,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `improve-architecture` — Deepening scan + interview
 - `merge-conflict` — Resolusi konflik Git terstruktur dan aman
 - `project-migration` — Project migration workflow
+- `prompt-authoring` — Panduan menulis teks instruksi untuk LLM: AGENTS.md, SYSTEM.md, SKILL.md, prompt template, deskripsi tool
 - `prototype` — Throwaway prototypes (LOGIC/UI)
 - `setup-workflow` — Initialize `.workspace/` for project-aware mode
 - `status` — Snapshot current workflow state
@@ -142,7 +144,10 @@ Perintah verifikasi repositori:
 - `npm run check`: typecheck seluruh ekstensi (`tsc --noEmit`)
 - `npm run check:extensions`: smoke test dan pemeriksaan paket ekstensi
 - `npm run test:subagents`: test suite untuk `subagents` (Vitest)
+- `npm run test:task-judge`: unit test untuk `task-judge`
+- `npm run test:todos`: unit test untuk `todos`
 - `npm run test:ui-customization`: unit test untuk `ui-customization`
 - `npm run format:check`: verifikasi format kode via Prettier
+- `npm run audit:sessions`: audit baca-saja atas log sesi Pi
 
 `subagents` saat ini versi `2.0.0`, memakai Biome dan Vitest. Perintah utama manajemen subagent adalah `/subagents` dengan agen bawaan `@general`, `@build`, dan `@explore`. Extension yang dikelola Orca (`extensions/orca-*.ts`) dihasilkan oleh host Orca secara dinamis dan diabaikan dari repo ini.

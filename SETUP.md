@@ -83,6 +83,8 @@ npm run test:git-info
 npm run test:run-summaries
 npm run test:subagents
 npm run test:todos
+npm run test:task-judge
+npm run test:audit-sessions
 npm run sync:runtime
 ```
 
