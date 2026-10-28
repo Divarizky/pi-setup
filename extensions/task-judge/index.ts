@@ -10,6 +10,7 @@ import {
   getEffectiveDocExtensions,
   getEffectiveValidationPatterns,
   getJudgeMode,
+  getNestedJudgeSettings,
 } from "./config.ts";
 import {
   createInitialState,
@@ -22,6 +23,74 @@ import {
   type TaskJudgeState,
 } from "./judge.ts";
 import { appendJudgeLog } from "./logger.ts";
+import {
+  type CompletionLike,
+  extractText,
+  runNestedJudge,
+} from "./nested-judge.ts";
+
+async function judgeNested(
+  state: TaskJudgeState,
+  event: AgentBeforeSettleEvent,
+  ctx: ExtensionContext,
+) {
+  try {
+    return await runJudgeNested(state, event, ctx);
+  } catch (err) {
+    // Fail-open: kegagalan judge lapis 2 tidak boleh menimpa keputusan lapis 1
+    return {
+      verdict: "tidak_diketahui" as const,
+      reason: (err as Error)?.message ?? "error",
+      model: "",
+      elapsedMs: 0,
+      timedOut: false,
+    };
+  }
+}
+
+async function runJudgeNested(
+  state: TaskJudgeState,
+  event: AgentBeforeSettleEvent,
+  ctx: ExtensionContext,
+) {
+  const settings = getNestedJudgeSettings();
+  if (!settings.enabled) return undefined;
+  const model = ctx.modelRegistry.find(settings.provider, settings.modelId);
+  const label = `${settings.provider}:${settings.modelId}`;
+  if (!model) {
+    return {
+      verdict: "tidak_diketahui" as const,
+      reason: "model_not_found",
+      model: label,
+      elapsedMs: 0,
+      timedOut: false,
+    };
+  }
+  const editedPaths = [...new Set(state.edits.map((e) => e.path))];
+  const validationCommands = state.validations.map((v) => v.command);
+  const lastAssistantText = lastAssistantTextOf(event.context.llmMessages);
+  const result = await runNestedJudge(
+    { editedPaths, validationCommands, lastAssistantText },
+    (prompt, signal) =>
+      ctx.modelRegistry.complete(
+        model,
+        { messages: [{ role: "user", content: prompt, timestamp: Date.now() }] },
+        { signal },
+      ) as Promise<CompletionLike>,
+    settings.timeoutMs,
+    ctx.signal,
+  );
+  return { ...result, model: label };
+}
+
+function lastAssistantTextOf(messages: readonly unknown[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as { role?: string; content?: unknown };
+    if (m?.role !== "assistant") continue;
+    return extractText(m.content);
+  }
+  return "";
+}
 
 export default function taskJudgeExtension(pi: ExtensionAPI): void {
   let state: TaskJudgeState = createInitialState();
@@ -82,6 +151,13 @@ export default function taskJudgeExtension(pi: ExtensionAPI): void {
         });
         const sessionId = ctx.sessionManager?.getSessionId?.();
 
+        // Judge lapis 2: hanya untuk run tidak terverifikasi, bukan mode off, opsional, fail-open.
+        // Hasilnya dicatat saja dan tidak mengubah keputusan lapis 1.
+        let nestedJudge: Awaited<ReturnType<typeof judgeNested>> | undefined;
+        if (evaluation.decision === "tidak_terverifikasi" && mode !== "off") {
+          nestedJudge = await judgeNested(state, event, ctx);
+        }
+
         // Tulis log durable untuk setiap keputusan run
         appendJudgeLog({
           timestamp: new Date().toISOString(),
@@ -90,6 +166,7 @@ export default function taskJudgeExtension(pi: ExtensionAPI): void {
           editCount: evaluation.editCount,
           hasSuccessfulValidation: evaluation.hasSuccessfulValidation,
           mode,
+          nestedJudge,
         });
 
         // Bila mode off, jangan lakukan notifikasi UI

@@ -1,0 +1,5 @@
+{
+  "loop": "Pemanggilan {tool} dengan argumen yang sama sudah diulang berturut-turut. Panggilan ini diblokir. Ubah pendekatan atau argumen sebelum mencoba lagi.",
+  "emptyStop": "Respons terakhir kosong setelah hasil tool, dan tugas belum dinyatakan selesai. Lanjutkan tugas, atau jelaskan blocker secara singkat.",
+  "consecutiveErrors": "Tool gagal {count} kali berturut-turut. Periksa penyebab error sebelum mencoba lagi dengan pendekatan yang sama."
+}

@@ -12,6 +12,44 @@ export interface TaskJudgeConfig {
   mode?: JudgeMode | string;
   docExtensions?: string[];
   validationPatterns?: string[];
+  nestedJudge?: {
+    enabled?: boolean;
+    model?: string;
+    timeoutMs?: number;
+  };
+}
+
+export const DEFAULT_NESTED_JUDGE_MODEL = "zenith:ag/gemini-3.8-flash";
+export const DEFAULT_NESTED_JUDGE_TIMEOUT_MS = 20000;
+
+export interface NestedJudgeSettings {
+  enabled: boolean;
+  provider: string;
+  modelId: string;
+  timeoutMs: number;
+}
+
+/** Judge lapis 2 nonaktif kecuali owner mengaktifkannya di config. */
+export function getNestedJudgeSettings(): NestedJudgeSettings {
+  const raw = loadConfig().nestedJudge ?? {};
+  const spec =
+    typeof raw.model === "string" && raw.model.trim()
+      ? raw.model.trim()
+      : DEFAULT_NESTED_JUDGE_MODEL;
+  // Format "provider:modelId"; modelId boleh memuat "/" (mis. ag/gemini-3.8-flash)
+  const separator = spec.indexOf(":");
+  const provider = separator > 0 ? spec.slice(0, separator) : "";
+  const modelId = separator > 0 ? spec.slice(separator + 1) : "";
+  const timeoutMs =
+    typeof raw.timeoutMs === "number" && raw.timeoutMs > 0
+      ? raw.timeoutMs
+      : DEFAULT_NESTED_JUDGE_TIMEOUT_MS;
+  return {
+    enabled: raw.enabled === true,
+    provider,
+    modelId,
+    timeoutMs,
+  };
 }
 
 function expandTilde(p: string): string {

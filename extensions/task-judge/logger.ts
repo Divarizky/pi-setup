@@ -13,6 +13,13 @@ export interface DecisionLogEntry {
   hasSuccessfulValidation: boolean;
   mode: JudgeMode;
   error?: string;
+  nestedJudge?: {
+    verdict: "terverifikasi" | "tidak_terverifikasi" | "tidak_diketahui";
+    reason?: string;
+    model: string;
+    elapsedMs: number;
+    timedOut: boolean;
+  };
 }
 
 export function resolveAgentDir(): string {
