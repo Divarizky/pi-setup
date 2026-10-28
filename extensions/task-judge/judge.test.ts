@@ -5,7 +5,9 @@ import {
   DEFAULT_DOC_EXTENSIONS,
   DEFAULT_VALIDATION_PATTERNS,
   evaluateRun,
+  extractShellCommand,
   isDocumentFile,
+  isTrackedEditPath,
   isValidationCommand,
   recordEdit,
   recordValidation,
@@ -173,7 +175,8 @@ test("pola perintah validasi cocok untuk chaining, pipe, dan multi-line", () => 
   const trueCases = [
     "npm run check",
     "cd x && npm run check",
-    "npm run check 2>&1 | tail -5",
+    "set -o pipefail; npm run check 2>&1 | tail -5",
+    "git diff | head; npm test",
     "node --test a.test.ts",
     "npm test && echo ok",
   ];
@@ -185,6 +188,60 @@ test("pola perintah validasi cocok untuk chaining, pipe, dan multi-line", () => 
       `Harusnya cocok sebagai validasi: ${cmd}`,
     );
   }
+});
+
+test("validasi yang dipipe tanpa pipefail tidak dihitung karena exit code milik perintah terakhir", () => {
+  for (const cmd of [
+    "npm run check 2>&1 | tail -5",
+    "npm test | grep -v warn",
+    "cd x && pytest -q | tail -3",
+  ]) {
+    assert.equal(isValidationCommand(cmd), false, `Tidak boleh dihitung: ${cmd}`);
+  }
+});
+
+test("perintah validasi nyata dari sesi Pi Windows dikenali", () => {
+  for (const cmd of [
+    "npm.cmd run test:task-judge",
+    "npm.cmd test",
+    'cmd /c "node --test tests/dashboard*.test.js"',
+    "cmd /c npm test",
+    "timeout 120 npm test",
+    "npm --prefix extensions/task-judge test",
+    "py -3 -m pytest",
+    "./gradlew :app:testDebugUnitTest",
+    "pnpm test",
+    "npx vitest run",
+  ]) {
+    assert.equal(isValidationCommand(cmd), true, `Harusnya cocok: ${cmd}`);
+  }
+  assert.equal(isValidationCommand("cmd /c dir"), false);
+  assert.equal(isValidationCommand("timeout 5 echo npm test"), false);
+});
+
+test("extractShellCommand membaca bash dan execute shell, mengabaikan runtime non-shell", () => {
+  assert.equal(extractShellCommand("bash", { command: "npm test" }), "npm test");
+  assert.equal(extractShellCommand("execute", { script: "npm test" }), "npm test");
+  assert.equal(
+    extractShellCommand("execute", { runtime: "powershell", script: "npm test" }),
+    "npm test",
+  );
+  assert.equal(
+    extractShellCommand("execute", { runtime: "python", script: "npm test" }),
+    undefined,
+  );
+  assert.equal(extractShellCommand("read", { command: "npm test" }), undefined);
+});
+
+test("edit di luar cwd atau di dalam .git tidak dihitung sebagai edit proyek", () => {
+  const cwd = process.platform === "win32" ? "C:\\proj\\app" : "/proj/app";
+  assert.equal(isTrackedEditPath("src/a.ts", cwd), true);
+  assert.equal(isTrackedEditPath("../other/a.ts", cwd), false);
+  assert.equal(
+    isTrackedEditPath(process.platform === "win32" ? "C:\\tmp\\x.js" : "/tmp/x.js", cwd),
+    false,
+  );
+  assert.equal(isTrackedEditPath(".git/worktrees/T1/ultron-os/STATUS", cwd), false);
 });
 
 test("pola perintah validasi sadar tanda kutip yang memuat pemisah shell", () => {

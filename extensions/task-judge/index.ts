@@ -14,6 +14,8 @@ import {
 import {
   createInitialState,
   evaluateRun,
+  extractShellCommand,
+  isTrackedEditPath,
   isValidationCommand,
   recordEdit,
   recordValidation,
@@ -28,17 +30,21 @@ export default function taskJudgeExtension(pi: ExtensionAPI): void {
     state = createInitialState();
   });
 
-  pi.on("tool_result", (event: ToolResultEvent, _ctx: ExtensionContext) => {
+  pi.on("tool_result", (event: ToolResultEvent, ctx: ExtensionContext) => {
     try {
       if (event.toolName === "edit" || event.toolName === "write") {
-        if (!event.isError && typeof event.input?.path === "string") {
-          state = recordEdit(state, event.input.path);
+        const path = event.input?.path;
+        if (
+          !event.isError &&
+          typeof path === "string" &&
+          isTrackedEditPath(path, ctx.cwd)
+        ) {
+          state = recordEdit(state, path);
         }
-      } else if (event.toolName === "bash") {
-        const command =
-          typeof event.input?.command === "string" ? event.input.command : "";
+      } else {
+        const command = extractShellCommand(event.toolName, event.input);
         const patterns = getEffectiveValidationPatterns();
-        if (isValidationCommand(command, patterns)) {
+        if (command && isValidationCommand(command, patterns)) {
           state = recordValidation(state, command, !event.isError);
         }
       }

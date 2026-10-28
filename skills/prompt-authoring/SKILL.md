@@ -22,7 +22,7 @@ Standard operating procedure for authoring and reviewing instruction files read 
 
 ## Normative Language
 
-Align language strictly with the RFC 2119 glossary in repo AGENTS.md (`<system-conventions>`).
+Align language strictly with the RFC 2119 glossary in the active AGENTS.md (`<system-conventions>`).
 
 | Keyword | Operational meaning | Weak forms (do not use) |
 |---|---|---|
@@ -75,8 +75,8 @@ LLM attention fades across long contexts. Use `<critical>` blocks to sandwich vi
 ## Tool Description Authoring
 
 - Document ONLY when and why to invoke the tool; omit internal implementation mechanics.
-- Provide between 3 and 8 clear usage examples.
-- MUST place the canonical invocation syntax at the end of the description.
+- MAY add 1 to 5 short usage examples when the trigger condition is ambiguous.
+- NEVER restate parameter types or required fields already enforced by the schema; describe parameter semantics in the schema field description instead.
 
 ## Review Checklist
 
@@ -88,7 +88,7 @@ Answer each question with YES or NO during prompt review:
 4. Reasoning compatibility: Does the prompt avoid forcing explicit chain-of-thought on reasoning models?
 5. External verification: Are completion claims gated by actual tool or test execution rather than pure self-reflection?
 6. Actionable negatives: Does every prohibited behavior provide a concrete approved path or fallback?
-7. Tool description boundary: Do tool descriptions focus strictly on trigger conditions without leaking implementation details?
+7. Tool description boundary: Do tool descriptions focus on trigger conditions without leaking implementation details or restating the schema?
 
 <critical>
 - MUST align normative terms with the RFC 2119 glossary in AGENTS.md.

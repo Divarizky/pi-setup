@@ -92,7 +92,7 @@ RFC 2119 applies in full: MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL.
 - Every active note MUST have exactly one concise `## TL;DR` (concrete facts, decisions, blockers; no filler).
 - Use the available CLI commands: `memory save` (store/update a note), `memory handoff` (cross-agent baton), `memory lint` (vault health check and index rebuild), `memory review` (read-only tidiness audit), `memory move` (move a note and rewrite links), and `memory migrate` (legacy structure migration).
 - Save only durable distillations via `memory save`/`memory handoff`; run-summaries and the obsidian-memory.json dependency do NOT auto-save raw transcripts.
-- Changes under `skills/agent-memory/` in this repo MUST be synced to both runtime copies: `~/.agents/skills/agent-memory/` and the Google Drive skill mirror (Windows: `G:\My Drive\AGENT-MEMORY\agent-memory-skill\`).
+- Changes under `skills/agent-memory/` in the `pi-setup` repo MUST be synced to both runtime copies: `~/.agents/skills/agent-memory/` and the Google Drive skill mirror (Windows: `G:\My Drive\AGENT-MEMORY\agent-memory-skill\`).
 - Sync the whole skill folder, not only `SKILL.md`, and exclude `__pycache__/`, `bin/`, and `desktop.ini`.
 
 <critical>

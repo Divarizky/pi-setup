@@ -1,4 +1,4 @@
-import { extname } from "node:path";
+import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export const DEFAULT_DOC_EXTENSIONS: readonly string[] = [
   ".md",
@@ -8,14 +8,16 @@ export const DEFAULT_DOC_EXTENSIONS: readonly string[] = [
 ];
 
 export const DEFAULT_VALIDATION_PATTERNS: readonly string[] = [
-  String.raw`\bnpm\s+run\s+(check|test|lint|build)\b`,
-  String.raw`\bnpm\s+test\b`,
+  String.raw`\bnpm(?:\.cmd)?\s+(?:--prefix\s+\S+\s+)?run\s+(check|test|lint|build)\b`,
+  String.raw`\bnpm(?:\.cmd)?\s+(?:--prefix\s+\S+\s+)?test\b`,
+  String.raw`\b(?:pnpm|yarn|bun)\s+(?:run\s+)?(?:check|test|lint|build)\b`,
+  String.raw`\b(?:npx\s+)?(?:vitest|jest)\b`,
   String.raw`\bnpx\s+tsc\b`,
   String.raw`\btsc\s+--noEmit\b`,
   String.raw`\bnode\s+--test\b`,
   String.raw`\bpytest\b`,
-  String.raw`\bpy(?:thon(?:\d+)?)?\s+-m\s+pytest\b`,
-  String.raw`\bgradlew(?:\.bat)?\s+(?:test|build|check|assemble|lint)[A-Za-z0-9_]*\b`,
+  String.raw`\bpy(?:thon(?:\d+(?:\.\d+)?)?)?(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+pytest\b`,
+  String.raw`\bgradlew(?:\.bat)?\s+(?::?[\w-]+:)*(?:test|build|check|assemble|lint)[A-Za-z0-9_]*\b`,
   String.raw`\bcargo\s+(test|check|build)\b`,
   String.raw`\bgo\s+test\b`,
 ];
@@ -123,6 +125,43 @@ export function isDocumentFile(
   return normalized.includes(ext);
 }
 
+/**
+ * Edit di luar cwd (scratch di /tmp) atau di dalam .git (STATUS/REPORT worker)
+ * tidak dihitung sebagai perubahan kode proyek.
+ */
+export function isTrackedEditPath(filePath: string, cwd: string): boolean {
+  if (typeof filePath !== "string" || !filePath.trim()) return false;
+  if (typeof cwd !== "string" || !cwd.trim()) return true;
+  const rel = relative(resolve(cwd), resolve(cwd, filePath.trim()));
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return false;
+  return !rel.split(sep).includes(".git");
+}
+
+const SHELL_RUNTIMES = new Set(["shell", "bash", "powershell"]);
+
+/**
+ * Mengambil teks perintah shell dari input tool bash atau execute.
+ * Mengembalikan undefined untuk tool lain atau runtime non-shell.
+ */
+export function extractShellCommand(
+  toolName: string,
+  input: unknown,
+): string | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const args = input as Record<string, unknown>;
+  if (toolName === "bash") {
+    return typeof args.command === "string" ? args.command : undefined;
+  }
+  if (toolName === "execute") {
+    const runtime = args.runtime ?? "shell";
+    if (typeof runtime !== "string" || !SHELL_RUNTIMES.has(runtime)) {
+      return undefined;
+    }
+    return typeof args.script === "string" ? args.script : undefined;
+  }
+  return undefined;
+}
+
 export const NON_VALIDATING_PREFIXES: readonly string[] = [
   "echo",
   "printf",
@@ -132,10 +171,23 @@ export const NON_VALIDATING_PREFIXES: readonly string[] = [
   "git",
 ];
 
+interface CommandSegment {
+  text: string;
+  /** Output segmen dialirkan ke perintah lain lewat `|`. */
+  pipedOut: boolean;
+}
+
 export function splitCommandSegments(command: string): string[] {
+  return splitDetailed(command).map((segment) => segment.text);
+}
+
+function splitDetailed(command: string): CommandSegment[] {
   if (typeof command !== "string" || !command.trim()) return [];
 
-  const segments: string[] = [];
+  const segments: CommandSegment[] = [];
+  const push = (text: string, pipedOut = false) => {
+    if (text.trim()) segments.push({ text: text.trim(), pipedOut });
+  };
   let current = "";
   let quote: string | null = null;
   let i = 0;
@@ -171,10 +223,7 @@ export function splitCommandSegments(command: string): string[] {
       if (nextNewline === -1) {
         break; // rest of string is comment
       }
-      // Push segment up to here if non-empty
-      if (current.trim()) {
-        segments.push(current.trim());
-      }
+      push(current);
       current = "";
       i = nextNewline + 1;
       continue;
@@ -185,18 +234,21 @@ export function splitCommandSegments(command: string): string[] {
       (char === "&" && command[i + 1] === "&") ||
       (char === "|" && command[i + 1] === "|")
     ) {
-      if (current.trim()) {
-        segments.push(current.trim());
-      }
+      push(current);
       current = "";
       i += 2;
       continue;
     }
 
-    if (char === ";" || char === "|" || char === "\n" || char === "\r") {
-      if (current.trim()) {
-        segments.push(current.trim());
-      }
+    if (char === "|") {
+      push(current, true);
+      current = "";
+      i++;
+      continue;
+    }
+
+    if (char === ";" || char === "\n" || char === "\r") {
+      push(current);
       current = "";
       i++;
       continue;
@@ -206,11 +258,31 @@ export function splitCommandSegments(command: string): string[] {
     i++;
   }
 
-  if (current.trim()) {
-    segments.push(current.trim());
-  }
+  push(current);
 
   return segments;
+}
+
+const WRAPPER_PREFIXES: readonly RegExp[] = [
+  /^cmd(?:\.exe)?\s+\/[cC]\s+/,
+  /^timeout\s+(?:-\S+\s+)*\d+[smhd]?\s+/,
+];
+
+function stripWrappers(segment: string): string {
+  let current = segment;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const re of WRAPPER_PREFIXES) {
+      if (re.test(current)) {
+        current = current.replace(re, "").trim();
+        changed = true;
+      }
+    }
+    const quoted = /^(["'])(.*)\1$/.exec(current);
+    if (changed && quoted) current = quoted[2].trim();
+  }
+  return current;
 }
 
 export function cleanSegment(segment: string): string {
@@ -220,6 +292,9 @@ export function cleanSegment(segment: string): string {
   while (/^[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+/.test(cleaned)) {
     cleaned = cleaned.replace(/^[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"[^"]*"|\S+)\s+/, "").trim();
   }
+
+  // Strip wrapper seperti `cmd /c` dan `timeout 120`
+  cleaned = stripWrappers(cleaned);
 
   // Strip leading path traversal like ./ or .\
   if (cleaned.startsWith("./") || cleaned.startsWith(".\\")) {
@@ -235,10 +310,15 @@ export function isValidationCommand(
 ): boolean {
   if (typeof command !== "string" || !command.trim()) return false;
 
-  const segments = splitCommandSegments(command);
+  const segments = splitDetailed(command);
   if (segments.length === 0) return false;
 
-  for (const rawSegment of segments) {
+  // Tanpa pipefail, exit code pipeline milik perintah terakhir (mis. tail),
+  // sehingga kegagalan validasi yang dipipe bisa tersamar.
+  const hasPipefail = /\bset\s+-[a-z]*o\s+pipefail\b/.test(command);
+
+  for (const { text: rawSegment, pipedOut } of segments) {
+    if (pipedOut && !hasPipefail) continue;
     const segment = cleanSegment(rawSegment);
     if (!segment) continue;
 
