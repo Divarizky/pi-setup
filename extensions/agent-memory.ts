@@ -7,7 +7,8 @@
 // menunggu paling lama BRIEF_WAIT_MS. Brief dikunci untuk satu sesi.
 //
 // Catatan: import hanya untuk tipe TypeScript (dihapus saat kompilasi), kecuali
-// modul fs/promises dan os yang dipakai untuk cache disk.
+// modul fs, fs/promises, dan os yang dipakai untuk cache disk dan deteksi Drive.
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -39,11 +40,20 @@ function skillScript(): string {
     return j("G:", "My Drive", "AGENT-MEMORY", "agent-memory-skill", "memory.py");
   }
   if (process.platform === "darwin") {
-    return j(
-      home, "Library", "CloudStorage",
-      "GoogleDrive-divarizky28@gmail.com", "My Drive",
-      "AGENT-MEMORY", "agent-memory-skill", "memory.py",
-    );
+    // Akun Google Drive tidak di-hardcode: pakai folder GoogleDrive-* pertama
+    // yang berisi skill; bila tidak ada, jatuh ke ~/.agents/skills di bawah.
+    const cloud = j(home, "Library", "CloudStorage");
+    try {
+      for (const entry of readdirSync(cloud).sort()) {
+        if (!entry.startsWith("GoogleDrive-")) continue;
+        const candidate = j(
+          cloud, entry, "My Drive", "AGENT-MEMORY", "agent-memory-skill", "memory.py",
+        );
+        if (existsSync(candidate)) return candidate;
+      }
+    } catch {
+      // CloudStorage tidak ada: lanjut ke fallback lokal.
+    }
   }
   return j(home, ".agents", "skills", "agent-memory", "memory.py");
 }

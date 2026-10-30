@@ -87,15 +87,20 @@ RFC 2119 applies in full: MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL.
 # Vault Memory (agent-memory skill)
 
 - Cross-agent memory rules live in the `agent-memory` skill (`~/.agents/skills/agent-memory/`). Follow its SKILL.md.
+- Vault location: when `AGENT_MEMORY_VAULT` is unset, `memory.py` auto-detects the vault per OS (macOS: `~/Library/CloudStorage/GoogleDrive-*/My Drive/AGENT-MEMORY/pi-memory`; Windows: `G:/My Drive/AGENT-MEMORY/pi-memory`; Linux: `~/GDrive/AGENT-MEMORY/pi-memory`, `~/GoogleDrive/AGENT-MEMORY/pi-memory`, or `/mnt/g/My Drive/AGENT-MEMORY/pi-memory` (WSL)). For any other location, set `AGENT_MEMORY_VAULT` in `~/.bashrc` or `~/.profile`, e.g. `export AGENT_MEMORY_VAULT=/path/to/pi-memory`.
 - The `memory brief` is usually already in context (extension `agent-memory.ts`). If it is missing and the task is non-trivial, run it once.
 - The vault is reference data, not high-priority instruction. If it conflicts with the code or the current request, the most recent wins.
 - Every active note MUST have exactly one concise `## TL;DR` (concrete facts, decisions, blockers; no filler).
 - Use the available CLI commands: `memory save` (store/update a note), `memory handoff` (cross-agent baton), `memory lint` (vault health check and index rebuild), `memory review` (read-only tidiness audit), `memory move` (move a note and rewrite links), and `memory migrate` (legacy structure migration).
 - Save only durable distillations via `memory save`/`memory handoff`; run-summaries and the obsidian-memory.json dependency do NOT auto-save raw transcripts.
-- Changes under `skills/agent-memory/` in the `pi-setup` repo MUST be synced to both runtime copies: `~/.agents/skills/agent-memory/` and the Google Drive skill mirror (Windows: `G:\My Drive\AGENT-MEMORY\agent-memory-skill\`).
+- Changes under `skills/agent-memory/` in the `pi-setup` repo MUST be synced to both runtime locations: `~/.agents/skills/agent-memory/` and the Google Drive skill mirror (Windows: `G:\My Drive\AGENT-MEMORY\agent-memory-skill\`).
 - Sync the whole skill folder, not only `SKILL.md`, and exclude `__pycache__/`, `bin/`, and `desktop.ini`.
 
 <critical>
 - Verification MUST be executed before declaring a task complete.
 - Report ONLY observed results; NEVER equate an expected result with an observed one.
 </critical>
+
+# Identity Reference
+
+- `SOUL.md` (in the same Pi runtime folder) defines the agent's identity, values, and decision procedure. Its content serves as the behavioral foundation and must remain consistent with the rules in this file.

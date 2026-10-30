@@ -104,7 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/Divarizky/pi-setup/main/install.sh 
 bash /tmp/pi-install.sh
 ```
 
-Installer menempatkan resource runtime Pi (`extensions/`, `skills/`, `prompts/`, `themes/`, dan `node_modules/`) ke root agent Pi, tanpa metadata Git atau file setup repository. State pribadi tetap dipertahankan. Skill eksternal dari `.agents/skills` dan package Pi tambahan dikelola terpisah. Untuk direktori lama, gunakan mode repair di [SETUP.md](SETUP.md).
+Installer menempatkan resource runtime Pi (`extensions/`, `prompts/`, `themes/`, dan `node_modules/`) ke root agent Pi dan `skills/` ke `~/.agents/skills/`, tanpa metadata Git atau file setup repository. State pribadi tetap dipertahankan. Skill eksternal lain di `~/.agents/skills/` dan package Pi tambahan dikelola terpisah. Untuk direktori lama, gunakan mode repair di [SETUP.md](SETUP.md).
 
 ### Instal manual
 

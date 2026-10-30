@@ -45,7 +45,10 @@ cleanup() { rm -rf "$STAGE_DIR"; }
 trap cleanup EXIT
 
 # Only these repository paths are deployed into the Pi agent directory.
-PI_ITEMS=(AGENTS.md extensions skills prompts themes APPEND_SYSTEM.md SYSTEM.md node_modules)
+PI_ITEMS=(AGENTS.md SOUL.md extensions prompts themes APPEND_SYSTEM.md SYSTEM.md node_modules)
+# Skills go to the cross-tool Agent Skills location, not into AGENT_DIR.
+# Only skills shipped by the repository are replaced; other skills there are kept.
+SKILLS_DIR="$HOME/.agents/skills"
 # Repository metadata and development/install files are never deployed.
 CLEAN_ITEMS=(
   .git .github .gitignore README.md SETUP.md install.sh install.ps1
@@ -88,6 +91,17 @@ if [[ "$REPAIR" == true && -e "$AGENT_DIR" ]]; then
     mkdir -p "$(dirname "$destination")"
     cp -a "$source" "$destination"
   done
+  # Lokasi skill lama, plus skill di tujuan baru yang akan diganti oleh repository.
+  if [[ -e "$AGENT_DIR/skills" || -L "$AGENT_DIR/skills" ]]; then
+    cp -a "$AGENT_DIR/skills" "$BACKUP_DIR/skills"
+  fi
+  for source in "$STAGE_DIR/repo/skills"/*; do
+    [[ -e "$source" || -L "$source" ]] || continue
+    target="$SKILLS_DIR/$(basename "$source")"
+    [[ -e "$target" || -L "$target" ]] || continue
+    mkdir -p "$BACKUP_DIR/agents-skills"
+    cp -a "$target" "$BACKUP_DIR/agents-skills/$(basename "$source")"
+  done
   printf '%s\n' "${CLEAN_ITEMS[@]}" > "$BACKUP_DIR/excluded-items.txt"
   printf '%s\n' "${PI_ITEMS[@]}" > "$BACKUP_DIR/pi-items.txt"
   printf '%s\n' "${STATE_ITEMS[@]}" > "$BACKUP_DIR/state-items.txt"
@@ -109,19 +123,30 @@ for item in "${PI_ITEMS[@]}"; do
   cp -a "$source" "$destination"
 done
 
-# Merge skill lokal yang tidak ada di repository (mis. skill pribadi/shared).
-if [[ "$REPAIR" == true && -d "$BACKUP_DIR/skills" && -d "$AGENT_DIR/skills" ]]; then
-  for item in "$BACKUP_DIR/skills"/* "$BACKUP_DIR/skills"/.[!.]*; do
+# Deploy skill repository ke SKILLS_DIR; skill lain di sana tidak disentuh.
+mkdir -p "$SKILLS_DIR"
+for source in "$STAGE_DIR/repo/skills"/*; do
+  [[ -e "$source" || -L "$source" ]] || continue
+  name="$(basename "$source")"
+  rm -rf "${SKILLS_DIR:?}/$name"
+  cp -a "$source" "$SKILLS_DIR/$name"
+done
+
+# Pindahkan skill lokal dari lokasi lama yang belum ada di tujuan (isinya sudah di-backup).
+if [[ "$REPAIR" == true && -d "$AGENT_DIR/skills" ]]; then
+  for item in "$AGENT_DIR/skills"/* "$AGENT_DIR/skills"/.[!.]*; do
     [[ -e "$item" || -L "$item" ]] || continue
     name="$(basename "$item")"
-    [[ -e "$AGENT_DIR/skills/$name" || -L "$AGENT_DIR/skills/$name" ]] && continue
-    cp -a "$item" "$AGENT_DIR/skills/$name"
+    [[ -e "$SKILLS_DIR/$name" || -L "$SKILLS_DIR/$name" ]] && continue
+    cp -a "$item" "$SKILLS_DIR/$name"
   done
+  rm -rf "$AGENT_DIR/skills"
 fi
 
-for item in extensions skills prompts node_modules; do
+for item in extensions prompts node_modules; do
   [[ -e "$AGENT_DIR/$item" ]] || { echo "Instalasi tidak lengkap: $item tidak ditemukan." >&2; exit 1; }
 done
+[[ -d "$SKILLS_DIR" ]] || { echo "Instalasi tidak lengkap: $SKILLS_DIR tidak ditemukan." >&2; exit 1; }
 
 if [[ "$REPAIR" == true ]]; then
   echo "Repair selesai. State pribadi tetap berada di $AGENT_DIR."

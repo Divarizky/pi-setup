@@ -293,6 +293,19 @@ class MemoryTest(unittest.TestCase):
         tmp_files = list(self.vault.rglob("*.tmp"))
         self.assertEqual(len(tmp_files), 0, msg=f"tmp files left: {tmp_files}")
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "kandidat vault Linux")
+    def test_linux_autodetects_gdrive_vault_without_env(self):
+        # Mencegah regresi: vault di ~/GDrive tidak terdeteksi bila AGENT_MEMORY_VAULT kosong.
+        with tempfile.TemporaryDirectory() as home:
+            vault = Path(home) / "GDrive" / "AGENT-MEMORY" / "pi-memory"
+            vault.mkdir(parents=True)
+            env = {k: v for k, v in os.environ.items() if k != "AGENT_MEMORY_VAULT"}
+            env.update(HOME=home, AGENT_MEMORY_AGENT="test")
+            r = subprocess.run([sys.executable, str(SCRIPT), "init"], text=True, capture_output=True,
+                               env=env, cwd=home, encoding="utf-8")
+            self.assertEqual(r.returncode, 0, msg=r.stderr)
+            self.assertTrue((vault / "core").is_dir(), msg="init harus menulis ke vault hasil deteksi")
+
     def test_two_extension_copies_identical(self):
         repo_ext = Path(__file__).resolve().parents[3] / "extensions" / "agent-memory.ts"
         skill_ext = Path(__file__).resolve().parents[1] / "pi-extension" / "agent-memory.ts"

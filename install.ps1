@@ -22,7 +22,10 @@ $BackupDir = Join-Path $BackupRoot $Stamp
 $StageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("pi-setup-" + [guid]::NewGuid().ToString("N"))
 
 # Hanya path ini yang dideploy ke direktori agent Pi.
-$PiItems = @("AGENTS.md", "extensions", "skills", "prompts", "themes", "APPEND_SYSTEM.md", "SYSTEM.md", "node_modules")
+$PiItems = @("AGENTS.md", "SOUL.md", "extensions", "prompts", "themes", "APPEND_SYSTEM.md", "SYSTEM.md", "node_modules")
+# Skill dipasang ke lokasi Agent Skills lintas tool, bukan ke dalam AgentDir.
+# Hanya skill bawaan repository yang diganti; skill lain di sana dipertahankan.
+$SkillsDir = Join-Path $HOME ".agents\skills"
 # Metadata repository dan file development/installer tidak dideploy.
 $CleanItems = @(
   ".git", ".github", ".gitignore", "README.md", "SETUP.md",
@@ -66,6 +69,22 @@ try {
         Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
       }
     }
+    # Lokasi skill lama, plus skill di tujuan baru yang akan diganti oleh repository.
+    $OldSkills = Join-Path $AgentDir "skills"
+    if (Test-Path -LiteralPath $OldSkills) {
+      Copy-Item -LiteralPath $OldSkills -Destination (Join-Path $BackupDir "skills") -Recurse -Force
+    }
+    $RepoSkills = Join-Path $StageDir "skills"
+    if (Test-Path -LiteralPath $RepoSkills) {
+      Get-ChildItem -LiteralPath $RepoSkills -Force | ForEach-Object {
+        $Target = Join-Path $SkillsDir $_.Name
+        if (Test-Path -LiteralPath $Target) {
+          $Backup = Join-Path $BackupDir "agents-skills"
+          New-Item -ItemType Directory -Force -Path $Backup | Out-Null
+          Copy-Item -LiteralPath $Target -Destination (Join-Path $Backup $_.Name) -Recurse -Force
+        }
+      }
+    }
     $CleanItems | Set-Content -LiteralPath (Join-Path $BackupDir "excluded-items.txt")
     $PiItems | Set-Content -LiteralPath (Join-Path $BackupDir "pi-items.txt")
     $StateItems | Set-Content -LiteralPath (Join-Path $BackupDir "state-items.txt")
@@ -93,22 +112,36 @@ try {
     }
   }
 
-  # Merge skill lokal yang tidak ada di repository (mis. skill pribadi/shared).
-  $BackupSkills = Join-Path $BackupDir "skills"
-  $TargetSkills = Join-Path $AgentDir "skills"
-  if ($Repair -and (Test-Path -LiteralPath $BackupSkills) -and (Test-Path -LiteralPath $TargetSkills)) {
-    Get-ChildItem -LiteralPath $BackupSkills -Force | ForEach-Object {
-      $Destination = Join-Path $TargetSkills $_.Name
+  # Deploy skill repository ke SkillsDir; skill lain di sana tidak disentuh.
+  New-Item -ItemType Directory -Force -Path $SkillsDir | Out-Null
+  $RepoSkills = Join-Path $StageDir "skills"
+  if (Test-Path -LiteralPath $RepoSkills) {
+    Get-ChildItem -LiteralPath $RepoSkills -Force | ForEach-Object {
+      $Destination = Join-Path $SkillsDir $_.Name
+      if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Recurse -Force }
+      Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
+    }
+  }
+
+  # Pindahkan skill lokal dari lokasi lama yang belum ada di tujuan (isinya sudah di-backup).
+  $OldSkills = Join-Path $AgentDir "skills"
+  if ($Repair -and (Test-Path -LiteralPath $OldSkills)) {
+    Get-ChildItem -LiteralPath $OldSkills -Force | ForEach-Object {
+      $Destination = Join-Path $SkillsDir $_.Name
       if (-not (Test-Path -LiteralPath $Destination)) {
         Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
       }
     }
+    Remove-Item -LiteralPath $OldSkills -Recurse -Force
   }
 
-  foreach ($Item in @("extensions", "skills", "prompts", "node_modules")) {
+  foreach ($Item in @("extensions", "prompts", "node_modules")) {
     if (-not (Test-Path -LiteralPath (Join-Path $AgentDir $Item))) {
       throw "Instalasi tidak lengkap: $Item tidak ditemukan."
     }
+  }
+  if (-not (Test-Path -LiteralPath $SkillsDir)) {
+    throw "Instalasi tidak lengkap: $SkillsDir tidak ditemukan."
   }
 
   if ($Repair) {
