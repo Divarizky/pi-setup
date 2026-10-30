@@ -127,7 +127,6 @@ export default function failureRecoveryExtension(pi: ExtensionAPI): void {
         if (event.outcome === "aborted") return;
         const config = loadConfig();
         if (!config.emptyStop.enabled) return;
-        if (!event.context.canContinue) return;
         if (!isEmptyStop(event.context.llmMessages)) return;
         if (!claimContinuation(state, config.emptyStop.maxRetries)) return;
         return {
