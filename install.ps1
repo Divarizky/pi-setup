@@ -22,7 +22,7 @@ $BackupDir = Join-Path $BackupRoot $Stamp
 $StageDir = Join-Path ([System.IO.Path]::GetTempPath()) ("pi-setup-" + [guid]::NewGuid().ToString("N"))
 
 # Hanya path ini yang dideploy ke direktori agent Pi.
-$PiItems = @("AGENTS.md", "SOUL.md", "extensions", "prompts", "themes", "APPEND_SYSTEM.md", "SYSTEM.md", "node_modules")
+$PiItems = @("AGENTS.md", "extensions", "prompts", "themes", "APPEND_SYSTEM.md", "SYSTEM.md", "node_modules")
 # Skill dipasang ke lokasi Agent Skills lintas tool, bukan ke dalam AgentDir.
 # Hanya skill bawaan repository yang diganti; skill lain di sana dipertahankan.
 $SkillsDir = Join-Path $HOME ".agents\skills"

@@ -38,6 +38,10 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `to-requirements` — Synthesize approved requirements into SRS and feature work cards
 - `to-tasks` — Break approved feature work into vertical-slice tasks
 
+**Identity (referensi)**
+
+- `identity/` — Arsip `AGENTS.md` dan `SOUL.md` sebelum digabung. Hanya referensi, tidak ikut dideploy oleh installer.
+
 ### Dev Workflow Architecture
 
 ```mermaid

@@ -20,7 +20,7 @@ Script memasang repository langsung ke direktori global Pi:
 - Windows: `$HOME\.pi\agent`
 - Override resmi Pi: `PI_CODING_AGENT_DIR`
 
-Script menjalankan `npm ci` di staging lalu hanya menempatkan resource runtime Pi (`AGENTS.md`, `SOUL.md`, `extensions/`, `prompts/`, `themes/`, dan `node_modules/`) ke agent directory. Folder `skills/` dipasang ke `~/.agents/skills/`, bukan ke agent directory. Metadata Git, README, lockfile, `package.json`, TypeScript config, dan script installer tidak ikut dideploy.
+Script menjalankan `npm ci` di staging lalu hanya menempatkan resource runtime Pi (`AGENTS.md`, `extensions/`, `prompts/`, `themes/`, dan `node_modules/`) ke agent directory. Folder `skills/` dipasang ke `~/.agents/skills/`, bukan ke agent directory. Metadata Git, README, lockfile, `package.json`, TypeScript config, dan script installer tidak ikut dideploy.
 
 State pribadi seperti `auth.json`, `settings.json`, session, model store, `bin/`, `npm/`, `run-summaries.config.json`, dan konfigurasi `.pi/subagents.*` tidak ditimpa. Pada mode repair, skill lama di `~/.pi/agent/skills/` yang belum ada di `~/.agents/skills/` dipindahkan ke sana. Skill lain di `~/.agents/skills/`, termasuk skill eksternal, tidak diganti; hanya skill yang ada di repo ini yang ditimpa.
 
