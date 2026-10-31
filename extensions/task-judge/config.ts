@@ -19,7 +19,7 @@ export interface TaskJudgeConfig {
   };
 }
 
-export const DEFAULT_NESTED_JUDGE_MODEL = "zenith:ag/gemini-3.8-flash";
+export const DEFAULT_NESTED_JUDGE_MODEL = "zenith-router:ag/gemini-3.8-flash";
 export const DEFAULT_NESTED_JUDGE_TIMEOUT_MS = 20000;
 
 export interface NestedJudgeSettings {
