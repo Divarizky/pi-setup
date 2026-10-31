@@ -15,6 +15,7 @@
     "test:audit-sessions": "node --test scripts/audit-sessions.test.mjs",
     "test:task-judge": "npm --prefix extensions/task-judge test",
     "test:ui-customization": "node --test --experimental-strip-types extensions/ui-customization/src/*.test.ts",
+    "test:zenith-router": "npm --prefix extensions/zenith-router test",
     "format:check": "prettier --check \"extensions/{copy-all/**/*.{ts,tsx},dashboard-state/**/*.{ts,tsx}}\" \"scripts/*.mjs\" \"*.json\"",
     "sync:runtime": "node scripts/sync-runtime.mjs"
   },

@@ -4,7 +4,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 
 ## What's Included
 
-**Extensions (11)**
+**Extensions (12)**
 
 - `agent-memory` — Injeksi read-only `memory brief` ke system prompt dari vault Obsidian bersama (via skill `agent-memory`)
 - `ask-user` — Multiple choice questions for the model
@@ -17,6 +17,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `todos` — Todo tracking with overlay widget
 - `ui-customization` — Custom tool rendering (read, bash, edit, write), thinking shimmer, working message, header/footer, dan penyesuaian tema
 - `usage-tracker` — Provider quota & session usage dashboard (Claude CLI OAuth, 9Router, Codex, Zen)
+- `zenith-router` — Integrasi provider Zenith Router, gateway status reporter, dan publisher quota untuk usage-tracker
 
 **Skills (16)**
 
@@ -149,6 +150,7 @@ Perintah verifikasi repositori:
 - `npm run test:subagents`: test suite untuk `subagents` (Vitest)
 - `npm run test:task-judge`: unit test untuk `task-judge`
 - `npm run test:todos`: unit test untuk `todos`
+- `npm run test:zenith-router`: unit test untuk `zenith-router`
 - `npm run test:ui-customization`: unit test untuk `ui-customization`
 - `npm run format:check`: verifikasi format kode via Prettier
 - `npm run audit:sessions`: audit baca-saja atas log sesi Pi
