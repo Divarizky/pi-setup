@@ -190,6 +190,7 @@ const ROUTER_TRANSPORT_ALIASES: Record<string, string> = {
   "9router": "9router",
   zenith: "zenith",
   zenroute: "zenith",
+  "zenith-router": "zenith",
 };
 
 /**

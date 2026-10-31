@@ -29,6 +29,8 @@ import type { ModelInventoryEntry, ModelLock, ProviderUsage, ServedAccount, Usag
 export const ZENITH_PROVIDER_ID = "zenith";
 /** ID auth lama; provider-gateway masih membacanya sebagai cadangan. */
 export const ZENITH_LEGACY_PROVIDER_ID = "zenroute";
+/** Provider id Pi untuk extension pi-zenith-router (gateway yang sama, id berbeda). */
+export const ZENITH_ROUTER_PROVIDER_ID = "zenith-router";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:20120";
 const DEFAULT_MAX_AGE_MS = 60_000;
@@ -45,7 +47,11 @@ let cacheWriteSequence = 0;
 const MODEL_KEYED_PROVIDERS: ReadonlySet<string> = new Set(["antigravity", "kiro", "xkiro"]);
 
 export function isZenithProvider(providerId: string): boolean {
-  return providerId === ZENITH_PROVIDER_ID || providerId === ZENITH_LEGACY_PROVIDER_ID;
+  return (
+    providerId === ZENITH_PROVIDER_ID
+    || providerId === ZENITH_LEGACY_PROVIDER_ID
+    || providerId === ZENITH_ROUTER_PROVIDER_ID
+  );
 }
 
 /** Base URL Zenith, sejalan dengan provider-gateway. */
