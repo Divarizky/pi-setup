@@ -51,6 +51,7 @@ Urutan prioritas:
 | "migrasi", "pindah project lama", "port ke project baru" | `setup-workflow` → `project-migration` |
 | "review perubahan ini", "cek diff sejak X", "vet sebelum commit" | `code-review` |
 | "handoff", "compact sesi ini", "lanjut di sesi lain" | `handoff` |
+| "buat issue", "bikin issue github", "file bug report", "convert task ke issue" | `github-issue` |
 | "gua lagi di mana", "status", "lagi ngerjain apa" | `status` |
 | "coba explore", "test ide", "spike", "prototype", "ragu desain" | `prototype` (tanya: logic/state atau visual/layout?) |
 | Ambigu, >1 skill match | **General Grill** dulu |

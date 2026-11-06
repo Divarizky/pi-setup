@@ -63,7 +63,8 @@ ask-me
   ├─ merge conflict → merge-conflict → git-commit
   ├─ desain belum jelas → prototype (project mode: work card via to-requirements pattern dulu) → to-tasks / implement
   ├─ arsitektur → improve-architecture → to-tasks / implement (refactor satu langkah boleh langsung implement)
-  └─ migrasi → setup-workflow → project-migration → implement / bug-diagnosis
+  ├─ migrasi → setup-workflow → project-migration → implement / bug-diagnosis
+  └─ buat issue GitHub → github-issue (dari task, requirement, atau bug-diagnosis)
 ```
 
 `setup-workflow` adalah persiapan opsional untuk workflow biasa, tetapi wajib sebelum `project-migration`.
@@ -95,6 +96,7 @@ Klasifikasi risiko dan detail confirmation gate mengikuti [shared/PROMPT-DESIGN.
 | Review diff | `code-review` |
 | Commit perubahan | `git-commit` |
 | Resolve merge conflict | `merge-conflict` |
+| Buat issue GitHub | `github-issue` |
 | Cek progres | `status` |
 | Pindah sesi | `handoff` |
 | Butuh persistence lintas sesi | `setup-workflow` |

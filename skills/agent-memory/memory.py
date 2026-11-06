@@ -48,6 +48,7 @@ def default_vault_candidates() -> list[str]:
             str(home / "GoogleDrive/AGENT-MEMORY/pi-memory"),
         ]
     return [
+        str(home / ".local/share/agent-memory/AGENT-MEMORY/pi-memory"),  # salinan lokal bisync
         str(home / "GDrive/AGENT-MEMORY/pi-memory"),
         str(home / "GoogleDrive/AGENT-MEMORY/pi-memory"),
         "/mnt/g/My Drive/AGENT-MEMORY/pi-memory",  # WSL dengan Drive ter-mount
