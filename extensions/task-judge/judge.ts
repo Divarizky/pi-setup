@@ -418,6 +418,10 @@ const FAILURE_OUTPUT_PATTERNS: readonly RegExp[] = [
   /^npm ERR!/m,
   /\bFAILED\b/,
   /\b[1-9]\d*\s+(?:failed|failing)\b/i,
+  /^---\s*FAIL:/m,
+  /\bFAIL\b/,
+  /\bBUILD FAILED\b/,
+  /\bCompilation failed\b/i,
 ];
 
 export function outputIndicatesFailure(output: string): boolean {

@@ -760,3 +760,14 @@ test("pipefail atau PIPESTATUS membuat exit code dipercaya, tanpa membaca output
   );
   assert.equal(resolveValidationSuccess("npm test", true, ""), false);
 });
+
+test("pola kegagalan runner go/gradle/kompilasi juga dikenali pada pipeline tanpa pipefail", () => {
+  assert.equal(
+    resolveValidationSuccess("go test ./... | grep FAIL", false, "--- FAIL: TestSomething (0.01s)"),
+    false,
+  );
+  assert.equal(
+    resolveValidationSuccess("./gradlew test | tail", false, "BUILD FAILED in 2s"),
+    false,
+  );
+});
