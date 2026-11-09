@@ -20,6 +20,7 @@ import {
 	evictSession,
 	getActiveRenderSession,
 	getRenderState,
+	getTodos,
 	replaceState,
 	replayFromBranch,
 	setActiveRenderSession,
@@ -27,6 +28,7 @@ import {
 } from "./state/store.ts";
 import { registerTodoTool } from "./tool.ts";
 import { registerTodosCommand } from "./command.ts";
+import { buildReminderMessage, shouldRemindPendingTodos } from "./state/reminder.ts";
 import { TOOL_NAME } from "./types.ts";
 import type { TodosOverlay } from "./overlay/widget.ts";
 
@@ -41,6 +43,22 @@ function formatError(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
 }
 
+/** Text of the last assistant message, or "" when none carries text.
+ * An empty result is fail-closed in shouldRemindPendingTodos (no reminder). */
+function lastAssistantText(messages: readonly unknown[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i] as { role?: unknown; content?: unknown } | undefined;
+		if (message?.role !== "assistant") continue;
+		if (typeof message.content === "string") return message.content;
+		if (!Array.isArray(message.content)) return "";
+		return message.content
+			.filter((block: { type?: unknown; text?: unknown }) => block?.type === "text" && typeof block.text === "string")
+			.map((block: { text: string }) => block.text)
+			.join("\n");
+	}
+	return "";
+}
+
 export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () => import("./overlay/widget.ts")) {
 	// Initial locale from config (read once at init; /lang switches live).
 	setLocale(getConfigLocale());
@@ -50,6 +68,8 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 	let uiCtx: ExtensionUIContext | undefined;
 	const uiSessions = new Map<string, ExtensionUIContext>();
 	let lifecycleGeneration = 0;
+	// Completion reminders sent per session during the current user-initiated run.
+	const reminderCounters = new Map<string, number>();
 
 	async function updateTodoOverlay(
 		resetCompletedDisplayState = false,
@@ -148,6 +168,7 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 		}
 		// The shutting-down session's own data slot is always evicted.
 		evictSession(s);
+		reminderCounters.delete(s);
 		uiSessions.delete(s);
 		// Overlay teardown is sid-gated: only the foreground's own shutdown
 		// (or an unknown/stale sid) tears it down and clears the pointer.
@@ -194,5 +215,45 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 
 	pi.on("agent_start", async () => {
 		todoOverlay?.hideCompletedTasksFromPreviousTurn();
+	});
+
+	// A new user prompt starts a fresh reminder budget. Continuations that
+	// Pi requests itself are not "user" runs, so they keep counting.
+	pi.on("before_agent_start", (event, ctx) => {
+		if (event.messageType === "user") reminderCounters.delete(sid(ctx));
+	});
+
+	// Fail-open: an error here must never block the agent from settling.
+	pi.on("agent_before_settle", async (event, ctx) => {
+		if (event.outcome === "aborted") return;
+		try {
+			const id = sid(ctx);
+			const tasks = getTodos(id);
+			if (!tasks.some((t) => t.status === "pending" || t.status === "in_progress")) return;
+
+			const reminderCount = reminderCounters.get(id) ?? 0;
+			const lastText = lastAssistantText(event.context.llmMessages);
+			if (!shouldRemindPendingTodos({ tasks, lastAssistantText: lastText, reminderCount, maxRetries: 3 })) return;
+
+			reminderCounters.set(id, reminderCount + 1);
+			const pendingCount = tasks.filter((t) => t.status === "pending").length;
+			const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
+			return {
+				// Returned entries replace the proposal, so keep earlier handlers' entries.
+				entries: [
+					...event.entries,
+					{
+						type: "custom_message",
+						customType: "todos-reminder",
+						content: buildReminderMessage(pendingCount, inProgressCount),
+						display: true,
+					},
+				],
+				continue: true,
+			};
+		} catch (e) {
+			console.warn(`[todos] completion reminder skipped (fail-open): ${formatError(e)}`);
+			return;
+		}
 	});
 }
