@@ -2,7 +2,7 @@
 description: Review diff git saat ini (staged dan uncommitted) melalui subagent reviewer
 argument-hint: "[fokus-opsional]"
 ---
-Review diff git di repo ini${1:+ dengan fokus pada $@}.
+Review diff git di repo ini. Fokus tambahan: ${@:-tidak ada}.
 
 Langkah:
 1. Jalankan `git status --short` dan `git diff HEAD --stat`. Jika tidak ada perubahan tracked maupun untracked, laporkan "Tidak ada diff untuk di-review" lalu berhenti.
