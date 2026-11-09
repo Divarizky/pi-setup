@@ -11,6 +11,7 @@ import {
   getEffectiveValidationPatterns,
   getJudgeMode,
   getNestedJudgeSettings,
+  getPrewalkTemplate,
 } from "./config.ts";
 import {
   createInitialState,
@@ -92,11 +93,22 @@ function lastAssistantTextOf(messages: readonly unknown[]): string {
   return "";
 }
 
+/** Batas penolakan settle per prompt user pada mode enforce, mencegah loop tak berujung. */
+const ENFORCE_MAX_RETRIES = 2;
+
 export default function taskJudgeExtension(pi: ExtensionAPI): void {
   let state: TaskJudgeState = createInitialState();
+  // Jumlah penolakan settle per sesi sejak prompt user terakhir.
+  // Continuation yang diminta Pi sendiri tidak mereset counter ini.
+  const enforceRetries = new Map<string, number>();
 
   pi.on("agent_start", (_event: AgentStartEvent, _ctx: ExtensionContext) => {
     state = createInitialState();
+  });
+
+  pi.on("before_agent_start", (event, ctx: ExtensionContext) => {
+    if (event.messageType !== "user") return;
+    enforceRetries.delete(ctx.sessionManager?.getSessionId?.() ?? "");
   });
 
   pi.on("tool_result", (event: ToolResultEvent, ctx: ExtensionContext) => {
@@ -174,13 +186,46 @@ export default function taskJudgeExtension(pi: ExtensionAPI): void {
           return;
         }
 
-        // Dalam mode warn: tampilkan notifikasi UI bila run tidak terverifikasi
-        if (evaluation.decision === "tidak_terverifikasi") {
+        if (evaluation.decision !== "tidak_terverifikasi") return;
+
+        // Mode enforce: tolak settle dan minta asisten menjalankan checklist prewalk
+        if (mode === "enforce") {
+          const sid = ctx.sessionManager?.getSessionId?.() ?? "";
+          const used = enforceRetries.get(sid) ?? 0;
+          if (used >= ENFORCE_MAX_RETRIES) {
+            ctx.ui.notify(
+              "Batas retry enforce task-judge tercapai; sesi diselesaikan tanpa validasi sukses.",
+              "warning",
+            );
+            return;
+          }
+          enforceRetries.set(sid, used + 1);
           ctx.ui.notify(
-            "Peringatan task-judge: file diedit tanpa perintah validasi yang sukses setelah edit terakhir.",
-            "warning",
+            "Penyelesaian ditolak task-judge (mode enforce): file diedit tanpa validasi sukses setelah edit terakhir.",
+            "error",
           );
+          const checklistText = getPrewalkTemplate();
+          const enforcementMessage = `Peringatan task-judge (Mode Enforce): Terdapat modifikasi berkas tanpa perintah validasi yang sukses setelah edit terakhir.\n\n${checklistText}`;
+          return {
+            // Entri yang sudah ada dari handler lain tetap dipertahankan
+            entries: [
+              ...(event.entries ?? []),
+              {
+                type: "custom_message",
+                customType: "task-judge-enforcement",
+                content: enforcementMessage,
+                display: true,
+              },
+            ],
+            continue: true,
+          };
         }
+
+        // Mode warn: tampilkan notifikasi UI bila run tidak terverifikasi
+        ctx.ui.notify(
+          "Peringatan task-judge: file diedit tanpa perintah validasi yang sukses setelah edit terakhir.",
+          "warning",
+        );
       } catch (err) {
         // Fail-closed untuk pengambilan keputusan
         try {

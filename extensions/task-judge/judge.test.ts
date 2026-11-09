@@ -434,3 +434,187 @@ test("readPrewalkTemplate fail-safe ke fallback saat berkas hilang atau rusak", 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+type JudgeHandler = (event: any, ctx: any) => unknown;
+
+/** Memuat extension terhadap pi palsu dan mengembalikan handler yang terdaftar. */
+async function loadTaskJudgeHandlers(): Promise<Record<string, JudgeHandler>> {
+  const { default: taskJudgeExtension } = await import("./index.ts");
+  const handlers: Record<string, JudgeHandler> = {};
+  taskJudgeExtension({
+    on: (name: string, handler: JudgeHandler) => {
+      handlers[name] = handler;
+    },
+  } as never);
+  return handlers;
+}
+
+/** Menjalankan fungsi dengan config mode dan direktori log sementara, lalu memulihkan env. */
+async function withJudgeSandbox<T>(
+  mode: string,
+  run: (logPath: string) => Promise<T>,
+): Promise<T> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "task-judge-hook-"));
+  const prevXdg = process.env.XDG_CONFIG_HOME;
+  const prevAgentDir = process.env.PI_CODING_AGENT_DIR;
+  try {
+    fs.mkdirSync(path.join(dir, "config", "task-judge"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "config", "task-judge", "config.json"),
+      JSON.stringify({ mode }),
+    );
+    process.env.XDG_CONFIG_HOME = path.join(dir, "config");
+    process.env.PI_CODING_AGENT_DIR = path.join(dir, "agent");
+    return await run(path.join(dir, "agent", "task-judge.log"));
+  } finally {
+    if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = prevXdg;
+    if (prevAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function makeCtx(sid: string) {
+  const notices: Array<{ message: string; type?: string }> = [];
+  return {
+    notices,
+    ctx: {
+      cwd: "/tmp/task-judge-hook-project",
+      sessionManager: {
+        getSessionId: () => sid,
+        getHeader: () => ({}),
+      },
+      ui: {
+        notify: (message: string, type?: string) => notices.push({ message, type }),
+      },
+    },
+  };
+}
+
+/** Satu edit kode tanpa validasi sesudahnya: keputusan tidak_terverifikasi. */
+async function runUnverifiedEdit(handlers: Record<string, JudgeHandler>, ctx: unknown) {
+  await handlers.agent_start({ type: "agent_start" }, ctx);
+  await handlers.tool_result(
+    { toolName: "edit", input: { path: "src/app.ts" }, isError: false },
+    ctx,
+  );
+}
+
+function settleEvent(entries: unknown[] = []) {
+  return {
+    type: "agent_before_settle",
+    outcome: "completed",
+    entries,
+    continue: false,
+    context: { llmMessages: [], contextMessages: [] },
+  };
+}
+
+test("hook enforce menolak settle dengan continue true dan memuat checklist prewalk", async () => {
+  await withJudgeSandbox("enforce", async () => {
+    const handlers = await loadTaskJudgeHandlers();
+    const { ctx, notices } = makeCtx("sess-enforce");
+    await runUnverifiedEdit(handlers, ctx);
+    const existing = { type: "custom", customType: "other", data: 1 };
+    const result = (await handlers.agent_before_settle(settleEvent([existing]), ctx)) as any;
+
+    assert.equal(result.continue, true);
+    assert.equal(result.entries[0], existing);
+    const enforcement = result.entries[1];
+    assert.equal(enforcement.type, "custom_message");
+    assert.equal(enforcement.customType, "task-judge-enforcement");
+    assert.match(enforcement.content, /Mode Enforce/);
+    assert.match(enforcement.content, /Konsistensi Kontrak & State/);
+    assert.match(enforcement.content, /Bukti Validasi Nyata/);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].type, "error");
+  });
+});
+
+test("hook warn hanya menampilkan peringatan dan tidak menolak settle", async () => {
+  await withJudgeSandbox("warn", async () => {
+    const handlers = await loadTaskJudgeHandlers();
+    const { ctx, notices } = makeCtx("sess-warn");
+    await runUnverifiedEdit(handlers, ctx);
+    const result = await handlers.agent_before_settle(settleEvent(), ctx);
+
+    assert.equal(result, undefined);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].type, "warning");
+  });
+});
+
+test("hook off tidak menampilkan notifikasi dan tidak menolak settle", async () => {
+  await withJudgeSandbox("off", async () => {
+    const handlers = await loadTaskJudgeHandlers();
+    const { ctx, notices } = makeCtx("sess-off");
+    await runUnverifiedEdit(handlers, ctx);
+    const result = await handlers.agent_before_settle(settleEvent(), ctx);
+
+    assert.equal(result, undefined);
+    assert.equal(notices.length, 0);
+  });
+});
+
+test("hook enforce berhenti menolak setelah batas retry tercapai", async () => {
+  await withJudgeSandbox("enforce", async () => {
+    const handlers = await loadTaskJudgeHandlers();
+    const { ctx } = makeCtx("sess-loop");
+    await runUnverifiedEdit(handlers, ctx);
+
+    const results: any[] = [];
+    for (let i = 0; i < 5; i++) {
+      results.push(await handlers.agent_before_settle(settleEvent(), ctx));
+    }
+    const continued = results.filter((r) => r?.continue === true).length;
+    assert.equal(continued, 2);
+    assert.equal(results[2], undefined);
+    assert.equal(results[4], undefined);
+  });
+});
+
+test("hitungan retry direset oleh prompt user baru tetapi tidak oleh continuation", async () => {
+  await withJudgeSandbox("enforce", async () => {
+    const handlers = await loadTaskJudgeHandlers();
+    const { ctx } = makeCtx("sess-reset");
+    await runUnverifiedEdit(handlers, ctx);
+    await handlers.agent_before_settle(settleEvent(), ctx);
+    await handlers.agent_before_settle(settleEvent(), ctx);
+    assert.equal(await handlers.agent_before_settle(settleEvent(), ctx), undefined);
+
+    // Continuation Pi memancarkan agent_start lagi; counter tidak boleh ikut reset.
+    // agent_start mengosongkan state, jadi edit dicatat ulang agar keputusan tetap tidak_terverifikasi.
+    await runUnverifiedEdit(handlers, ctx);
+    assert.equal(await handlers.agent_before_settle(settleEvent(), ctx), undefined);
+
+    // Prompt custom tidak memulai budget baru.
+    await handlers.before_agent_start({ messageType: "custom" }, ctx);
+    await runUnverifiedEdit(handlers, ctx);
+    assert.equal(await handlers.agent_before_settle(settleEvent(), ctx), undefined);
+
+    // Prompt user baru memulai budget retry baru.
+    await handlers.before_agent_start({ messageType: "user" }, ctx);
+    await runUnverifiedEdit(handlers, ctx);
+    const afterUserPrompt = (await handlers.agent_before_settle(settleEvent(), ctx)) as any;
+    assert.equal(afterUserPrompt?.continue, true);
+  });
+});
+
+test("hook enforce fail-open saat handler melempar error", async () => {
+  await withJudgeSandbox("enforce", async () => {
+    const handlers = await loadTaskJudgeHandlers();
+    const { ctx } = makeCtx("sess-failopen");
+    await runUnverifiedEdit(handlers, ctx);
+    const brokenCtx = {
+      ...ctx,
+      ui: {
+        notify: () => {
+          throw new Error("ui rusak");
+        },
+      },
+    };
+    const result = await handlers.agent_before_settle(settleEvent(), brokenCtx);
+    assert.equal(result, undefined);
+  });
+});
