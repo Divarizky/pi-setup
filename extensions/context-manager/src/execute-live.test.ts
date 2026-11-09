@@ -483,17 +483,17 @@ ${"y".repeat(5_000)}` }];
   }).length;
 
   try {
-    // 19 x ~1.250 token masih di bawah budget default 24.000: tidak ada pruning.
-    for (let i = 0; i < 19; i++) await addResult(i);
+    // 31 x ~1.250 token masih di bawah budget default 40.000: tidak ada pruning.
+    for (let i = 0; i < 31; i++) await addResult(i);
     assert.equal(prunedCount(context({ messages }, ctx)), 0);
 
     // Melewati budget: dipangkas sekaligus sampai <= 50% budget.
-    await addResult(19);
+    await addResult(31);
     const afterOverflow = prunedCount(context({ messages }, ctx));
-    assert.ok(afterOverflow >= 10, `pruned ${afterOverflow}`);
+    assert.ok(afterOverflow >= 15, `pruned ${afterOverflow}`);
 
     // Output baru berikutnya tidak memicu pruning tambahan (prefix stabil).
-    await addResult(20);
+    await addResult(32);
     assert.equal(prunedCount(context({ messages }, ctx)), afterOverflow);
   } finally {
     await Promise.all([...outputIds].map((id) => new OutputCache().remove(id)));
@@ -524,7 +524,7 @@ test("pruning decisions survive session resume", async () => {
 
   try {
     createExtension();
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 33; i++) {
       const content = [{ type: "text", text: `result-${i}\n${"y".repeat(5_000)}` }];
       const event = { toolName: "bash", toolCallId: `call-${i}`, input: { command: "cat x" }, content, isError: false };
       const patch = await handlers.get("tool_result")!(event, ctx);

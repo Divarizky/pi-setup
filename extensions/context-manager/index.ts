@@ -24,9 +24,15 @@ import { expandControl } from "./src/expand-control.ts";
 import { collectOutputPreview } from "./src/output-preview.ts";
 import { inspectBlocks, Lines, previewRows, renderFrameBlocks, renderFrameRows } from "./src/output-frame.ts";
 import type { OutputPreview } from "./src/output-preview.ts";
-import { formatContextPercent, selectCompressionMode } from "./src/context-policy.ts";
+import {
+  calculatePruneKeepLimit,
+  formatContextPercent,
+  isLooseContextWindow,
+  selectCompressionMode,
+} from "./src/context-policy.ts";
 import {
   applyBudgetEnvironmentOverride,
+  DEFAULT_PRUNE_LOW_WATERMARK,
   loadContextManagerConfig,
   MAX_CONTEXT_BUDGET_PERCENT,
   MAX_OUTPUT_CHAR_THRESHOLD,
@@ -61,8 +67,8 @@ const MAX_EXECUTION_OUTPUT_CHARS = 100_000;
 const LARGE_OUTPUT_TOOL_NAMES = new Set(["read", "bash", "powershell", "grep", "read_file", "shell"]);
 // Output di bawah ini terlalu kecil untuk layak dipangkas.
 const PRUNE_TRACK_MIN_CHARS = 1_500;
-// Setelah budget terlampaui, pangkas sampai output tersisa <= 50% budget.
-const PRUNE_LOW_WATERMARK = 0.5;
+// Setelah budget terlampaui, pangkas sampai output tersisa <= low watermark budget.
+const PRUNE_LOW_WATERMARK = DEFAULT_PRUNE_LOW_WATERMARK;
 // Custom entry sesi berisi toolCallId yang sudah dipangkas, dipulihkan saat resume.
 const PRUNE_ENTRY_TYPE = "context-manager-prune";
 
@@ -857,12 +863,18 @@ export default function (pi: ExtensionAPI) {
     const budgetTokens = resolveToolOutputBudgetTokens(currentContextManagerConfig(), usage?.contextWindow);
     // Hysteresis: pruning mengubah prefix dan membatalkan prompt cache, jadi
     // baru dilakukan saat budget terlampaui, lalu sekaligus turun ke low-watermark.
+    // Jika context window model sangat besar (>=500k) dan masih longgar (<30%),
+    // tunda pruning agar cache prefix tetap utuh. Fail-safe mengikat untuk window kecil.
     const liveTokens = cachedToolCallIds
       .filter((toolCallId) => !prunedToolResults.has(toolCallId))
       .reduce((sum, toolCallId) => sum + estimateTokens(cachedToolResults.get(toolCallId)!.text), 0);
-    const keepLimit = liveTokens > budgetTokens
-      ? Math.floor(budgetTokens * PRUNE_LOW_WATERMARK)
-      : Number.POSITIVE_INFINITY;
+    const keepLimit = calculatePruneKeepLimit(
+      liveTokens,
+      budgetTokens,
+      usage?.contextWindow,
+      usage?.percent,
+      PRUNE_LOW_WATERMARK,
+    );
     const preservedToolCallIds = new Set<string>();
     let usedTokens = 0;
     let protectedCount = 0;
@@ -927,7 +939,11 @@ export default function (pi: ExtensionAPI) {
           const t = estimateTokens(v.text); keptTokens += t; if (v.priority >= 2) protectedTokens += t;
         }
         if (keptTokens > budgetTokens) {
-          badge = `\n⚠ Budget output tool (~${budgetTokens.toLocaleString("id-ID")} token) terlampaui: kept ~${keptTokens.toLocaleString("id-ID")} token (protected ~${protectedTokens.toLocaleString("id-ID")}).`;
+          if (isLooseContextWindow(usage?.contextWindow, usage?.percent)) {
+            badge = `\nℹ Budget output tool (~${budgetTokens.toLocaleString("id-ID")} token) dilewati: context window model longgar (<30%), kept ~${keptTokens.toLocaleString("id-ID")} token (cache prompt dipertahankan).`;
+          } else {
+            badge = `\n⚠ Budget output tool (~${budgetTokens.toLocaleString("id-ID")} token) terlampaui: kept ~${keptTokens.toLocaleString("id-ID")} token (protected ~${protectedTokens.toLocaleString("id-ID")}).`;
+          }
         }
         if (lastPrunePrefixDirty) badge += "\n↻ Prefix berubah setelah pruning. Teks lebih sedikit belum tentu lebih murah karena cache hit dapat berkurang.";
       } catch {}

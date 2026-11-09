@@ -8,7 +8,8 @@ export const DEFAULT_OUTPUT_CHAR_THRESHOLD = 8_000;
 export const DEFAULT_OUTPUT_LINE_THRESHOLD = 300;
 export const DEFAULT_CONTEXT_BUDGET_PERCENT = 20;
 // Budget absolut: biaya dihitung per token, bukan per persen context window.
-export const DEFAULT_TOOL_OUTPUT_BUDGET_TOKENS = 24_000;
+export const DEFAULT_TOOL_OUTPUT_BUDGET_TOKENS = 40_000;
+export const DEFAULT_PRUNE_LOW_WATERMARK = 0.5;
 export const MIN_TOOL_OUTPUT_BUDGET_TOKENS = 4_000;
 export const MAX_TOOL_OUTPUT_BUDGET_TOKENS = 200_000;
 export const MIN_CONTEXT_BUDGET_PERCENT = 15;

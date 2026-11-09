@@ -317,9 +317,10 @@ test("runScript stops progress updates after cancellation", async () => {
 test("runScript waits for the process tree to stop when cancelled", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "cm-cancel-tree-"));
   const marker = join(cwd, "orphan-ran.txt");
+  const readyMarker = join(cwd, "ready.txt");
   const controller = new AbortController();
-  const descendantScript = `process.on("SIGTERM", () => {}); setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "orphan"), 700);`;
-  const script = `const { spawn } = require("node:child_process"); spawn(process.execPath, ["-e", ${JSON.stringify(descendantScript)}], { stdio: "ignore" }); process.stdout.write("before-cancel\\n"); setTimeout(() => {}, 5_000);`;
+  const descendantScript = `process.on("SIGTERM", () => {}); require("node:fs").writeFileSync(${JSON.stringify(readyMarker)}, "ok"); setTimeout(() => require("node:fs").writeFileSync(${JSON.stringify(marker)}, "orphan"), 700);`;
+  const script = `const { spawn } = require("node:child_process"); const { existsSync } = require("node:fs"); spawn(process.execPath, ["-e", ${JSON.stringify(descendantScript)}], { stdio: "ignore" }); const t = Date.now(); while (!existsSync(${JSON.stringify(readyMarker)}) && Date.now() - t < 2000) {} process.stdout.write("before-cancel\\n"); setTimeout(() => {}, 5_000);`;
 
   try {
     await assert.rejects(
