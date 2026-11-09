@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   createInitialState,
@@ -363,3 +366,71 @@ test("logger: appendJudgeLog menulis baris JSON dengan struktur yang valid", asy
   }
 });
 
+
+function withTaskJudgeConfig<T>(
+  config: string | null,
+  run: () => T,
+): T {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "task-judge-cfg-"));
+  const previous = process.env.XDG_CONFIG_HOME;
+  try {
+    if (config !== null) {
+      fs.mkdirSync(path.join(dir, "task-judge"), { recursive: true });
+      fs.writeFileSync(path.join(dir, "task-judge", "config.json"), config);
+    }
+    process.env.XDG_CONFIG_HOME = dir;
+    return run();
+  } finally {
+    if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previous;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("getJudgeMode mengenali mode enforce dari config", async () => {
+  const { getJudgeMode } = await import("./config.ts");
+  const mode = withTaskJudgeConfig('{"mode":"enforce"}', () => getJudgeMode());
+  assert.equal(mode, "enforce");
+});
+
+test("getJudgeMode mengembalikan off dan warn untuk nilai yang dikenal", async () => {
+  const { getJudgeMode } = await import("./config.ts");
+  assert.equal(withTaskJudgeConfig('{"mode":"off"}', () => getJudgeMode()), "off");
+  assert.equal(withTaskJudgeConfig('{"mode":"warn"}', () => getJudgeMode()), "warn");
+});
+
+test("getJudgeMode fallback ke warn untuk mode tidak valid atau kosong", async () => {
+  const { getJudgeMode } = await import("./config.ts");
+  assert.equal(withTaskJudgeConfig('{"mode":"ENFORCE"}', () => getJudgeMode()), "warn");
+  assert.equal(withTaskJudgeConfig('{"mode":"strict"}', () => getJudgeMode()), "warn");
+  assert.equal(withTaskJudgeConfig('{"mode":42}', () => getJudgeMode()), "warn");
+  assert.equal(withTaskJudgeConfig("{}", () => getJudgeMode()), "warn");
+  assert.equal(withTaskJudgeConfig(null, () => getJudgeMode()), "warn");
+});
+
+test("getPrewalkTemplate membaca templates.json dan memuat tiga cek verifikasi", async () => {
+  const { getPrewalkTemplate } = await import("./config.ts");
+  const text = getPrewalkTemplate();
+  assert.match(text, /Konsistensi Kontrak & State/);
+  assert.match(text, /Batasan Lingkup \(Scope Isolation\)/);
+  assert.match(text, /Bukti Validasi Nyata/);
+});
+
+test("readPrewalkTemplate fail-safe ke fallback saat berkas hilang atau rusak", async () => {
+  const { readPrewalkTemplate } = await import("./config.ts");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "task-judge-tpl-"));
+  try {
+    const missing = readPrewalkTemplate(path.join(dir, "absent.json"));
+    const broken = path.join(dir, "broken.json");
+    fs.writeFileSync(broken, "{not json");
+    const brokenText = readPrewalkTemplate(broken);
+    const empty = path.join(dir, "empty.json");
+    fs.writeFileSync(empty, JSON.stringify({ prewalkChecklist: "   " }));
+    const emptyText = readPrewalkTemplate(empty);
+    assert.equal(missing, brokenText);
+    assert.equal(missing, emptyText);
+    assert.match(missing, /MUST menjalankan validasi/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

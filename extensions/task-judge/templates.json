@@ -1,0 +1,3 @@
+{
+  "prewalkChecklist": "Sebelum mengakhiri sesi, MUST menjalankan checklist verifikasi berikut secara berurutan.\n1. Konsistensi Kontrak & State: MUST memastikan tanda tangan fungsi, tipe data, dan transisi state selaras di seluruh berkas yang disentuh.\n2. Batasan Lingkup (Scope Isolation): MUST memastikan tidak ada modifikasi pada berkas yang tidak relevan di luar scope task.\n3. Bukti Validasi Nyata: MUST menjalankan tes unit, linter, atau perintah build yang relevan dan melaporkan output aktualnya. NEVER menyatakan selesai tanpa hasil eksekusi."
+}

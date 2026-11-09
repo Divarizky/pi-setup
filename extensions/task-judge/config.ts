@@ -1,12 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_DOC_EXTENSIONS,
   DEFAULT_VALIDATION_PATTERNS,
 } from "./judge.ts";
 
-export type JudgeMode = "warn" | "off";
+export type JudgeMode = "warn" | "off" | "enforce";
 
 export interface TaskJudgeConfig {
   mode?: JudgeMode | string;
@@ -97,8 +98,31 @@ export function loadConfig(): TaskJudgeConfig {
 export function getJudgeMode(): JudgeMode {
   const raw = loadConfig().mode;
   if (raw === "off") return "off";
-  // Default warn; tolak nilai lain seperti "enforce" secara aman dan kembali ke "warn"
+  if (raw === "enforce") return "enforce";
+  // Default warn; nilai kosong atau tidak valid kembali ke "warn" secara aman
   return "warn";
+}
+
+const TEMPLATES_PATH = fileURLToPath(new URL("./templates.json", import.meta.url));
+
+const PREWALK_FALLBACK =
+  "Sebelum mengakhiri sesi, MUST menjalankan validasi yang relevan (tes, linter, atau build) dan melaporkan hasil aktualnya.";
+
+/** Membaca template prewalk checklist; kembali ke fallback bila berkas tidak terbaca. */
+export function readPrewalkTemplate(path: string): string {
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf-8")) as {
+      prewalkChecklist?: unknown;
+    };
+    const value = parsed?.prewalkChecklist;
+    return typeof value === "string" && value.trim() ? value : PREWALK_FALLBACK;
+  } catch {
+    return PREWALK_FALLBACK;
+  }
+}
+
+export function getPrewalkTemplate(): string {
+  return readPrewalkTemplate(TEMPLATES_PATH);
 }
 
 export function getEffectiveDocExtensions(): readonly string[] {
