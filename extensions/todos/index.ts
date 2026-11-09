@@ -29,6 +29,13 @@ import {
 import { registerTodoTool } from "./tool.ts";
 import { registerTodosCommand } from "./command.ts";
 import { buildReminderMessage, shouldRemindPendingTodos } from "./state/reminder.ts";
+import {
+	buildInactivityNudgeMessage,
+	DEFAULT_NUDGE_THRESHOLD,
+	recordToolExecution,
+	shouldSendInactivityNudge,
+	type NudgeState,
+} from "./state/nudge.ts";
 import { TOOL_NAME } from "./types.ts";
 import type { TodosOverlay } from "./overlay/widget.ts";
 
@@ -70,6 +77,8 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 	let lifecycleGeneration = 0;
 	// Completion reminders sent per session during the current user-initiated run.
 	const reminderCounters = new Map<string, number>();
+	// Inactivity nudge state per session. An absent slot means the default state.
+	const nudgeStates = new Map<string, NudgeState>();
 
 	async function updateTodoOverlay(
 		resetCompletedDisplayState = false,
@@ -169,6 +178,7 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 		// The shutting-down session's own data slot is always evicted.
 		evictSession(s);
 		reminderCounters.delete(s);
+		nudgeStates.delete(s);
 		uiSessions.delete(s);
 		// Overlay teardown is sid-gated: only the foreground's own shutdown
 		// (or an unknown/stale sid) tears it down and clears the pointer.
@@ -215,6 +225,31 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 
 	pi.on("agent_start", async () => {
 		todoOverlay?.hideCompletedTasksFromPreviousTurn();
+	});
+
+	// Counts consecutive mutating tool calls per session. Non-blocking: the nudge
+	// is queued as a steer message and does not start a turn or alter the result.
+	pi.on("tool_result", (event, ctx) => {
+		try {
+			const id = sid(ctx);
+			const hasActiveTodos = getTodos(id).some((t) => t.status === "pending" || t.status === "in_progress");
+			const previous = nudgeStates.get(id) ?? { mutationCount: 0, hasActiveTodos: false };
+			let state = recordToolExecution({ ...previous, hasActiveTodos }, event.toolName, Boolean(event.isError));
+			if (shouldSendInactivityNudge(state, DEFAULT_NUDGE_THRESHOLD)) {
+				pi.sendMessage(
+					{
+						customType: "todos-nudge",
+						content: buildInactivityNudgeMessage(state.mutationCount),
+						display: true,
+					},
+					{ deliverAs: "steer" },
+				);
+				state = { ...state, mutationCount: 0 };
+			}
+			nudgeStates.set(id, state);
+		} catch (e) {
+			console.warn(`[todos] inactivity nudge skipped (fail-open): ${formatError(e)}`);
+		}
 	});
 
 	// A new user prompt starts a fresh reminder budget. Continuations that
