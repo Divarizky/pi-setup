@@ -310,6 +310,80 @@ test("pola perintah validasi Gradle mendukung task spesifik (test, build, check,
 
 
 
+test("pola runner validasi tambahan dikenali sebagai validasi", () => {
+  const runnerCases = [
+    "mvn test",
+    "mvnw verify",
+    "./mvnw.cmd test",
+    "dotnet test",
+    "make test",
+    "make check",
+    "make lint",
+    "make verify",
+    "phpunit",
+    "vendor/bin/phpunit --filter Foo",
+    "rspec spec/models",
+    "bundle exec rspec",
+    "mix test",
+    "swift test",
+    "flutter test",
+    "deno test",
+    "deno check main.ts",
+    "deno lint",
+    "ctest --output-on-failure",
+    "tox -e py312",
+    "eslint src",
+    "npx eslint .",
+    "ruff check .",
+    "mypy src",
+    "biome check .",
+    "npx biome ci",
+    "prettier --check .",
+    "npx prettier --check src",
+    "python -m unittest",
+    "python3 -m unittest discover",
+    "bun test",
+  ];
+
+  for (const cmd of runnerCases) {
+    assert.equal(
+      isValidationCommand(cmd),
+      true,
+      `Harusnya cocok sebagai validasi: ${cmd}`,
+    );
+  }
+});
+
+test("perintah baca-saja yang menyebut runner baru tidak dihitung sebagai validasi", () => {
+  const readOnlyCases = [
+    "echo test",
+    "echo mvn test",
+    "echo make test",
+    "echo eslint .",
+    "cat tests.log",
+    "cat mypy.ini",
+    "ls tests/",
+    "ls ctest",
+    "grep -r pytest .",
+    "grep -rn mvn test pom.xml",
+    "rg eslint src",
+    "make --version",
+    "make build",
+    "prettier --write .",
+    "ruff format .",
+    "bun run dev",
+    "dotnet build",
+  ];
+
+  for (const cmd of readOnlyCases) {
+    assert.equal(
+      isValidationCommand(cmd),
+      false,
+      `Tidak boleh dihitung sebagai validasi: ${cmd}`,
+    );
+  }
+});
+
 test("dukungan konfigurasi kustom untuk docExtensions dan validationPatterns", () => {
   assert.equal(isDocumentFile("foo.custom", [".custom"]), true);
   assert.equal(isDocumentFile("foo.md", [".custom"]), false);
