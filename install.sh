@@ -45,7 +45,7 @@ cleanup() { rm -rf "$STAGE_DIR"; }
 trap cleanup EXIT
 
 # Only these repository paths are deployed into the Pi agent directory.
-PI_ITEMS=(AGENTS.md extensions prompts themes APPEND_SYSTEM.md SYSTEM.md node_modules)
+PI_ITEMS=(AGENTS.md extensions agents prompts themes APPEND_SYSTEM.md SYSTEM.md node_modules)
 # Skills go to the cross-tool Agent Skills location, not into AGENT_DIR.
 # Only skills shipped by the repository are replaced; other skills there are kept.
 SKILLS_DIR="$HOME/.agents/skills"
