@@ -128,9 +128,10 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 		parameters: TodoParamsSchema,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const result = applyTaskMutation(getState(sid(ctx)), params.action, params as TaskMutationParams);
+			const action = params.action as TaskAction;
+			const result = applyTaskMutation(getState(sid(ctx)), action, params as TaskMutationParams);
 			commitState(sid(ctx), result.state);
-			return buildToolResult(params.action, params as TaskMutationParams, result.state, result.op);
+			return buildToolResult(action, params as TaskMutationParams, result.state, result.op);
 		},
 
 		// renderCall reflects the FOREGROUND slot, not the calling session's — the

@@ -34,3 +34,6 @@ extensions/herdr-agent-state.ts
 # Editors
 .vscode/
 .idea/
+
+# Orchest runtime state (lokal per mesin)
+.the-orchest/

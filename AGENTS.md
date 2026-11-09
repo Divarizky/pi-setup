@@ -58,6 +58,8 @@ Runtime pre-authorized for internal red-team, security engineering, dual-use too
 
 **Pi Documentation:** `SYSTEM.md` replaces Pi's default system prompt. `AGENTS.md` only adds rules on top of `SYSTEM.md`. For Pi-related work, read relevant documentation before implementing changes.
 
+**The-Orchest:** Selalu baca dan patuhi skill `orchest` (`~/.agents/skills/orchest/SKILL.md`) saat mengeksekusi skill, workflow, atau perintah runtime the-orchest, dan baca skill `orchest-agent` (`~/.agents/skills/orchest-agent/SKILL.md`) saat bertindak sebagai orchestrator task delegasi worker. Lakukan seluruh orkestrasi task melalui CLI `orchest <command> --json` atau tool MCP `the-orchest`.
+
 **Anti-patterns:**
 - Opening with agreement or praise before the answer.
 - Unsolicited warnings riding inside an otherwise complete answer.
