@@ -15,6 +15,7 @@ export const DEFAULT_VALIDATION_PATTERNS: readonly string[] = [
   String.raw`\bnpx\s+tsc\b`,
   String.raw`\btsc\s+--noEmit\b`,
   String.raw`\bnode\s+--test\b`,
+  String.raw`\bnode\s+--check\b`,
   String.raw`\bpytest\b`,
   String.raw`\bpy(?:thon(?:\d+(?:\.\d+)?)?)?(?:\s+-\d+(?:\.\d+)?)?\s+-m\s+pytest\b`,
   String.raw`\bgradlew(?:\.bat)?\s+(?::?[\w-]+:)*(?:test|build|check|assemble|lint)[A-Za-z0-9_]*\b`,
@@ -323,6 +324,29 @@ export function cleanSegment(segment: string): string {
   return cleaned;
 }
 
+/** Filter baca-saja yang lazim dipakai model untuk menampilkan output validasi. */
+const PASSIVE_PIPE_FILTER =
+  /^(?:tail|head|grep|rg|cat|awk|sed|less|more|wc)(?:\s|$)/;
+/** `sed -i` dan `sed --in-place` menulis ke berkas, jadi bukan filter pasif. */
+const SED_IN_PLACE = /^sed\s(?:.*\s)?(?:-[a-zA-Z]*i|--in-place\b)/;
+
+function isPassivePipeFilter(segment: string): boolean {
+  const cleaned = cleanSegment(segment);
+  return PASSIVE_PIPE_FILTER.test(cleaned) && !SED_IN_PLACE.test(cleaned);
+}
+
+/**
+ * Memeriksa seluruh penerima pipa yang berawal dari segmen `index`.
+ * Setiap penerima harus filter pasif; penerima tak dikenal membatalkan pengakuan.
+ */
+function hasPassivePipeline(segments: CommandSegment[], index: number): boolean {
+  for (let k = index + 1; k < segments.length; k++) {
+    if (!isPassivePipeFilter(segments[k].text)) return false;
+    if (!segments[k].pipedOut) return true;
+  }
+  return false;
+}
+
 export function isValidationCommand(
   command: string,
   patterns: readonly string[] = DEFAULT_VALIDATION_PATTERNS,
@@ -333,11 +357,20 @@ export function isValidationCommand(
   if (segments.length === 0) return false;
 
   // Tanpa pipefail, exit code pipeline milik perintah terakhir (mis. tail),
-  // sehingga kegagalan validasi yang dipipe bisa tersamar.
+  // sehingga kegagalan validasi yang dipipe bisa tersamar. Pengecualian:
+  // penerima berupa filter pasif, atau command memeriksa PIPESTATUS.
   const hasPipefail = /\bset\s+-[a-z]*o\s+pipefail\b/.test(command);
+  const checksPipestatus = /\$\{PIPESTATUS|\$pipestatus/.test(command);
 
-  for (const { text: rawSegment, pipedOut } of segments) {
-    if (pipedOut && !hasPipefail) continue;
+  for (const [index, { text: rawSegment, pipedOut }] of segments.entries()) {
+    if (
+      pipedOut &&
+      !hasPipefail &&
+      !checksPipestatus &&
+      !hasPassivePipeline(segments, index)
+    ) {
+      continue;
+    }
     const segment = cleanSegment(rawSegment);
     if (!segment) continue;
 

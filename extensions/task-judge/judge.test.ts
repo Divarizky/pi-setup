@@ -193,13 +193,59 @@ test("pola perintah validasi cocok untuk chaining, pipe, dan multi-line", () => 
   }
 });
 
-test("validasi yang dipipe tanpa pipefail tidak dihitung karena exit code milik perintah terakhir", () => {
+test("validasi yang dipipe ke perintah aktif non-filter tanpa pipefail tidak dihitung", () => {
   for (const cmd of [
-    "npm run check 2>&1 | tail -5",
-    "npm test | grep -v warn",
-    "cd x && pytest -q | tail -3",
+    "npm test | node runner.js",
+    "npm test | rm -rf dist",
+    "npm test | tail -5 | rm -rf dist",
+    "npm test | grep x | sh",
   ]) {
     assert.equal(isValidationCommand(cmd), false, `Tidak boleh dihitung: ${cmd}`);
+  }
+});
+
+test("validasi yang dipipe ke filter pasif tetap diakui tanpa pipefail", () => {
+  for (const cmd of [
+    "node --test tests/*.test.js 2>&1 | tail -5",
+    'npm test 2>&1 | grep -E "^# (pass|fail)"',
+    "npm run check | head -n 20",
+    "python -m pytest 2>&1 | cat",
+    "npm run check 2>&1 | tail -5",
+    "cd x && pytest -q | tail -3",
+    "npm test | grep -v warn | wc -l",
+  ]) {
+    assert.equal(isValidationCommand(cmd), true, `Harusnya cocok: ${cmd}`);
+  }
+});
+
+test("validasi yang dipipe tetap diakui jika pipefail atau PIPESTATUS diperiksa", () => {
+  assert.equal(
+    isValidationCommand("set -o pipefail; npm test | node runner.js"),
+    true,
+  );
+  assert.equal(
+    isValidationCommand('npm test | node runner.js; echo "${PIPESTATUS[0]}"'),
+    true,
+  );
+  assert.equal(
+    isValidationCommand("npm test | node runner.js; echo $pipestatus[1]"),
+    true,
+  );
+});
+
+test("validasi yang dipipe ke sed -i tidak dihitung sebagai filter pasif", () => {
+  assert.equal(
+    isValidationCommand("npm test | sed -i 's/a/b/' log.txt"),
+    false,
+  );
+});
+
+test("node --check diakui sebagai perintah validasi", () => {
+  for (const cmd of [
+    "node --check index.js",
+    "node --check index.js 2>&1 | tail -2",
+  ]) {
+    assert.equal(isValidationCommand(cmd), true, `Harusnya cocok: ${cmd}`);
   }
 });
 
