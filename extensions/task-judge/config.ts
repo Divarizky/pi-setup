@@ -6,6 +6,10 @@ import {
   DEFAULT_DOC_EXTENSIONS,
   DEFAULT_VALIDATION_PATTERNS,
 } from "./judge.ts";
+import {
+  detectProjectValidationPatterns,
+  type ReadProjectFile,
+} from "./project-validation.ts";
 
 export type JudgeMode = "warn" | "off" | "enforce";
 
@@ -133,10 +137,21 @@ export function getEffectiveDocExtensions(): readonly string[] {
   return DEFAULT_DOC_EXTENSIONS;
 }
 
-export function getEffectiveValidationPatterns(): readonly string[] {
+const readProjectFileUtf8: ReadProjectFile = (path) =>
+  readFileSync(path, "utf-8");
+
+/**
+ * Pola validasi efektif: config user bila valid (menggantikan penuh),
+ * selain itu gabungan default dan pola yang dideteksi dari proyek `cwd`.
+ */
+export function getEffectiveValidationPatterns(
+  cwd: string = process.cwd(),
+  readFile: ReadProjectFile = readProjectFileUtf8,
+): readonly string[] {
   const raw = loadConfig().validationPatterns;
   if (Array.isArray(raw) && raw.every((item) => typeof item === "string")) {
     return raw;
   }
-  return DEFAULT_VALIDATION_PATTERNS;
+  const detected = detectProjectValidationPatterns(cwd, readFile);
+  return [...new Set([...DEFAULT_VALIDATION_PATTERNS, ...detected])];
 }
