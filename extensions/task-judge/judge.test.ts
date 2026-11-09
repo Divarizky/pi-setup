@@ -14,6 +14,7 @@ import {
   isValidationCommand,
   recordEdit,
   recordValidation,
+  resolveValidationSuccess,
 } from "./judge.ts";
 
 test("run tanpa edit menghasilkan dikecualikan", () => {
@@ -737,4 +738,25 @@ test("hook enforce fail-open saat handler melempar error", async () => {
     const result = await handlers.agent_before_settle(settleEvent(), brokenCtx);
     assert.equal(result, undefined);
   });
+});
+
+test("validasi dipipe tanpa pipefail gagal dicatat gagal bila output memuat penanda kegagalan", () => {
+  const piped = "node --check broken.js 2>&1 | tail -3";
+  assert.equal(
+    resolveValidationSuccess(piped, false, "SyntaxError: Unexpected token"),
+    false,
+  );
+  assert.equal(
+    resolveValidationSuccess("node --test t.js 2>&1 | tail -5", false, "# fail 2"),
+    false,
+  );
+  assert.equal(resolveValidationSuccess(piped, false, ""), true);
+});
+
+test("pipefail atau PIPESTATUS membuat exit code dipercaya, tanpa membaca output", () => {
+  assert.equal(
+    resolveValidationSuccess("set -o pipefail; npm test | tail", false, "# fail 2"),
+    true,
+  );
+  assert.equal(resolveValidationSuccess("npm test", true, ""), false);
 });

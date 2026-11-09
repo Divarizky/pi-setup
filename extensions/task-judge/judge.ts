@@ -408,6 +408,53 @@ export function isValidationCommand(
 }
 
 
+/** Penanda kegagalan umum pada output runner (dipakai saat exit code pipeline tidak bisa dipercaya). */
+const FAILURE_OUTPUT_PATTERNS: readonly RegExp[] = [
+  /^#\s*fail\s+[1-9]/im,
+  /^not ok\b/m,
+  /\berror TS\d+/,
+  /\bSyntaxError\b/,
+  /\bAssertionError\b/,
+  /^npm ERR!/m,
+  /\bFAILED\b/,
+  /\b[1-9]\d*\s+(?:failed|failing)\b/i,
+];
+
+export function outputIndicatesFailure(output: string): boolean {
+  if (typeof output !== "string" || !output) return false;
+  return FAILURE_OUTPUT_PATTERNS.some((re) => re.test(output));
+}
+
+/**
+ * True bila perintah validasi dipipe tanpa pipefail/PIPESTATUS, sehingga
+ * exit code tool hanya mencerminkan perintah terakhir pipa.
+ */
+export function hasMaskedExitCode(
+  command: string,
+  patterns: readonly string[] = DEFAULT_VALIDATION_PATTERNS,
+): boolean {
+  if (typeof command !== "string") return false;
+  if (/\bset\s+-[a-z]*o\s+pipefail\b/.test(command)) return false;
+  if (/\$\{PIPESTATUS|\$pipestatus/.test(command)) return false;
+  return splitDetailed(command).some(
+    ({ text, pipedOut }) => pipedOut && isValidationCommand(text, patterns),
+  );
+}
+
+/** Menentukan sukses validasi; pada pipa tanpa status, output juga diperiksa. */
+export function resolveValidationSuccess(
+  command: string,
+  isError: boolean,
+  output: string,
+  patterns: readonly string[] = DEFAULT_VALIDATION_PATTERNS,
+): boolean {
+  if (isError) return false;
+  if (hasMaskedExitCode(command, patterns) && outputIndicatesFailure(output)) {
+    return false;
+  }
+  return true;
+}
+
 export function evaluateRun(
   state: TaskJudgeState,
   options?: EvaluateOptions,

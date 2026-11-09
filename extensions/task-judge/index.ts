@@ -21,6 +21,7 @@ import {
   isValidationCommand,
   recordEdit,
   recordValidation,
+  resolveValidationSuccess,
   type TaskJudgeState,
 } from "./judge.ts";
 import { appendJudgeLog } from "./logger.ts";
@@ -126,7 +127,12 @@ export default function taskJudgeExtension(pi: ExtensionAPI): void {
         const command = extractShellCommand(event.toolName, event.input);
         const patterns = getEffectiveValidationPatterns();
         if (command && isValidationCommand(command, patterns)) {
-          state = recordValidation(state, command, !event.isError);
+          const output = extractText(event.content);
+          state = recordValidation(
+            state,
+            command,
+            resolveValidationSuccess(command, event.isError, output, patterns),
+          );
         }
       }
     } catch (err) {
