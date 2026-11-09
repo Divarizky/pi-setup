@@ -13,6 +13,7 @@
     "test:subagents": "npm --prefix extensions/subagents test",
     "test:todos": "node --test --experimental-strip-types extensions/todos/reducer.test.ts extensions/todos/index.test.ts extensions/todos/state/*.test.ts",
     "test:audit-sessions": "node --test scripts/audit-sessions.test.mjs",
+    "test:classify-cache-breaks": "node --test scripts/classify-cache-breaks.test.mjs",
     "test:task-judge": "npm --prefix extensions/task-judge test",
     "test:ui-customization": "node --test --experimental-strip-types extensions/ui-customization/src/*.test.ts",
     "test:zenith-router": "npm --prefix extensions/zenith-router test",
