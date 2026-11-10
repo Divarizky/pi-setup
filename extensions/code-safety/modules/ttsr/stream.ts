@@ -66,11 +66,18 @@ export function registerStreamGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
 
   function handleViolation(v: Violation, ctx: ExtensionContext): void {
     const rule = v.rule;
+    // retry true bila pelanggaran ini memicu giliran koreksi. Batas retry
+    // yang sama dicek ulang di agent_settled, dan counter tidak berubah selama giliran.
+    const triggersRetry =
+      rule.action === "abort" &&
+      !state.abortedThisTurn &&
+      state.retriesForUserMessage < MAX_RETRIES_PER_USER_MESSAGE;
     deps.log({
       ts: Date.now(),
       rule: rule.name,
       action: rule.action,
       scope: v.scope,
+      retry: triggersRetry,
       excerpt: buildExcerpt(rule.name, v.match),
     });
 

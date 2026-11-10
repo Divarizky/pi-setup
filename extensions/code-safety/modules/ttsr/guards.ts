@@ -230,6 +230,7 @@ export function registerToolGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
                 rule: rule.name,
                 action: "log",
                 scope: expectedScope,
+                retry: false,
                 excerpt: sanitizeExcerpt(rule.name, matchResult.excerpt),
               };
               deps.log(entry);
@@ -256,6 +257,7 @@ export function registerToolGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
                 rule: rule.name,
                 action: "block",
                 scope: expectedScope,
+                retry: false,
                 excerpt: sanitizeExcerpt(rule.name, matchResult.excerpt),
               };
               deps.log(entry);

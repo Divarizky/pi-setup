@@ -50,6 +50,8 @@ export interface ViolationEntry {
   rule: string;
   action: RuleAction;
   scope: string;
+  /** true bila pelanggaran memicu giliran koreksi lewat abort (FR-10). */
+  retry: boolean;
   excerpt?: string;
 }
 

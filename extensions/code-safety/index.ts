@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerConflictResolver } from "./modules/conflict-resolver/register.ts";
 import { registerFailureRecovery } from "./modules/failure-recovery/register.ts";
 import { registerHashEdit } from "./modules/hash-edit/register.ts";
+import { registerTtsr } from "./modules/ttsr/register.ts";
 
 // Tiap modul didaftarkan dalam try/catch sendiri. Kegagalan satu modul dicatat
 // dan tidak menghentikan pendaftaran modul lain.
@@ -23,4 +24,11 @@ export default function codeSafetyExtension(pi: ExtensionAPI): void {
   } catch (error) {
     console.warn("[code-safety] modul conflict-resolver gagal didaftarkan:", error);
   }
+
+  try {
+    registerTtsr(pi);
+  } catch (error) {
+    console.warn("[code-safety] modul ttsr gagal didaftarkan:", error);
+  }
 }
+
