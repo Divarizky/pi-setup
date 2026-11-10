@@ -48,7 +48,7 @@ const ResolveConflictInputSchema = Type.Object({
 
 type ResolveConflictInput = Static<typeof ResolveConflictInputSchema>;
 
-export default function registerConflictResolver(pi: ExtensionAPI) {
+export function registerConflictResolver(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "conflict_resolver",
     label: "Conflict Resolver",
