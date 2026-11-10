@@ -36,7 +36,7 @@ const HashEditInputSchema = Type.Object({
 
 type HashEditInput = Static<typeof HashEditInputSchema>;
 
-export default function registerHashEdit(pi: ExtensionAPI) {
+export function registerHashEdit(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "hash_edit",
     label: "Hash Edit",
