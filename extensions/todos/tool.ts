@@ -4,10 +4,16 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { applyTaskMutation, deriveBlocks } from "./state/reducer.ts";
-import type { Op } from "./state/reducer.ts";
-import type { TaskState } from "./state/store.ts";
-import { commitState, getRenderState, getState, sid } from "./state/store.ts";
+import { applyTaskMutation, deriveBlocks } from "./core/reducer.ts";
+import type { Op } from "./core/reducer.ts";
+import type { TaskState } from "./core/store.ts";
+import { commitState, getJudgeState, getRenderState, getState, sid } from "./core/store.ts";
+import {
+	getEffectiveDocExtensions,
+	getEffectiveValidationPatterns,
+	getTaskGateMode,
+} from "./config.ts";
+import { evaluateRun } from "./judge/judge.ts";
 import {
 	TOOL_LABEL,
 	TOOL_NAME,
@@ -129,9 +135,49 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const action = params.action as TaskAction;
-			const result = applyTaskMutation(getState(sid(ctx)), action, params as TaskMutationParams);
+			const p = params as TaskMutationParams;
+
+			// Task-aware verification gate: when marking a task as completed
+			let warningSuffix = "";
+			if (action === "update" && p.status === "completed") {
+				const gateMode = getTaskGateMode();
+				if (gateMode !== "off") {
+					const judgeState = getJudgeState(sid(ctx));
+					const docExtensions = getEffectiveDocExtensions();
+					const validationPatterns = getEffectiveValidationPatterns(ctx.cwd);
+					const evaluation = evaluateRun(judgeState, { docExtensions, validationPatterns });
+
+					if (evaluation.decision === "tidak_terverifikasi") {
+						if (gateMode === "strict") {
+							const errorOp: Op = {
+								kind: "error",
+								message:
+									"Task completion blocked by task-judge: file diedit tanpa perintah validasi yang sukses setelah edit terakhir. Jalankan test/linter sebelum menandai task sebagai completed.",
+							};
+							ctx.ui?.notify?.(
+								"Task completion blocked: file diedit tanpa validasi sukses.",
+								"error",
+							);
+							return buildToolResult(action, p, getState(sid(ctx)), errorOp);
+						}
+						// gateMode === "warn"
+						warningSuffix =
+							"\n\n[task-judge] Peringatan: Terdapat modifikasi berkas tanpa perintah validasi yang sukses setelah edit terakhir.";
+						ctx.ui?.notify?.(
+							"Peringatan task-judge: task ditandai completed saat ada edit kode yang belum divalidasi.",
+							"warning",
+						);
+					}
+				}
+			}
+
+			const result = applyTaskMutation(getState(sid(ctx)), action, p);
 			commitState(sid(ctx), result.state);
-			return buildToolResult(action, params as TaskMutationParams, result.state, result.op);
+			const toolResult = buildToolResult(action, p, result.state, result.op);
+			if (warningSuffix && toolResult.content[0]) {
+				toolResult.content[0].text += warningSuffix;
+			}
+			return toolResult;
 		},
 
 		// renderCall reflects the FOREGROUND slot, not the calling session's — the

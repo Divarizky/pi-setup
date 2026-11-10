@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { isValidationCommand } from "../extensions/task-judge/judge.ts";
+import { isValidationCommand } from "../extensions/todos/judge/judge.ts";
 
 /**
  * Menambang kandidat pola perintah validasi dari sesi Pi nyata

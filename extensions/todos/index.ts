@@ -19,23 +19,40 @@ import {
 	clearActiveRenderSession,
 	evictSession,
 	getActiveRenderSession,
+	getJudgeState,
+	getNudgeState,
 	getRenderState,
 	getTodos,
 	replaceState,
 	replayFromBranch,
+	resetEnforceRetries,
+	resetTurnJudgeState,
 	setActiveRenderSession,
+	setJudgeState,
+	setNudgeState,
+	setReminderCount,
 	sid,
-} from "./state/store.ts";
+} from "./core/store.ts";
 import { registerTodoTool } from "./tool.ts";
 import { registerTodosCommand } from "./command.ts";
-import { buildReminderMessage, shouldRemindPendingTodos } from "./state/reminder.ts";
+import { coordinateSettle } from "./lifecycle/settle-coordinator.ts";
 import {
 	buildInactivityNudgeMessage,
 	DEFAULT_NUDGE_THRESHOLD,
 	recordToolExecution,
 	shouldSendInactivityNudge,
 	type NudgeState,
-} from "./state/nudge.ts";
+} from "./lifecycle/nudge.ts";
+import {
+	extractShellCommand,
+	isTrackedEditPath,
+	isValidationCommand,
+	recordEdit,
+	recordValidation,
+	resolveValidationSuccess,
+} from "./judge/judge.ts";
+import { extractText } from "./judge/nested-judge.ts";
+import { getEffectiveValidationPatterns } from "./config.ts";
 import { TOOL_NAME } from "./types.ts";
 import type { TodosOverlay } from "./overlay/widget.ts";
 
@@ -177,8 +194,6 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 		}
 		// The shutting-down session's own data slot is always evicted.
 		evictSession(s);
-		reminderCounters.delete(s);
-		nudgeStates.delete(s);
 		uiSessions.delete(s);
 		// Overlay teardown is sid-gated: only the foreground's own shutdown
 		// (or an unknown/stale sid) tears it down and clears the pointer.
@@ -223,72 +238,78 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 	// foreground session has visible tasks. unref avoids holding the process.
 	prewarmOverlay(loadTodoOverlay);
 
-	pi.on("agent_start", async () => {
+	pi.on("agent_start", async (_event, ctx) => {
 		todoOverlay?.hideCompletedTasksFromPreviousTurn();
+		try {
+			resetTurnJudgeState(sid(ctx));
+		} catch {
+			// Fail-open
+		}
 	});
 
-	// Counts consecutive mutating tool calls per session. Non-blocking: the nudge
-	// is queued as a steer message and does not start a turn or alter the result.
+	// Tracks edit paths, validation commands, and consecutive mutating tool calls per session.
 	pi.on("tool_result", (event, ctx) => {
 		try {
 			const id = sid(ctx);
+
+			// 1. Task-Judge tracking
+			if (event.toolName === "edit" || event.toolName === "write") {
+				const path = (event.input as { path?: unknown })?.path;
+				if (!event.isError && typeof path === "string" && isTrackedEditPath(path, ctx.cwd)) {
+					setJudgeState(id, recordEdit(getJudgeState(id), path));
+				}
+			} else {
+				const command = extractShellCommand(event.toolName, event.input);
+				const patterns = getEffectiveValidationPatterns(ctx.cwd);
+				if (command && isValidationCommand(command, patterns)) {
+					const output = extractText(event.content);
+					setJudgeState(
+						id,
+						recordValidation(
+							getJudgeState(id),
+							command,
+							resolveValidationSuccess(command, event.isError, output, patterns),
+						),
+					);
+				}
+			}
+
+			// 2. Inactivity nudge tracking
 			const hasActiveTodos = getTodos(id).some((t) => t.status === "pending" || t.status === "in_progress");
-			const previous = nudgeStates.get(id) ?? { mutationCount: 0, hasActiveTodos: false };
-			let state = recordToolExecution({ ...previous, hasActiveTodos }, event.toolName, Boolean(event.isError));
-			if (shouldSendInactivityNudge(state, DEFAULT_NUDGE_THRESHOLD)) {
+			const previous = getNudgeState(id);
+			let nudge = recordToolExecution({ ...previous, hasActiveTodos }, event.toolName, Boolean(event.isError));
+			if (shouldSendInactivityNudge(nudge, DEFAULT_NUDGE_THRESHOLD)) {
 				pi.sendMessage(
 					{
 						customType: "todos-nudge",
-						content: buildInactivityNudgeMessage(state.mutationCount),
+						content: buildInactivityNudgeMessage(nudge.mutationCount),
 						display: true,
 					},
 					{ deliverAs: "steer" },
 				);
-				state = { ...state, mutationCount: 0 };
+				nudge = { ...nudge, mutationCount: 0 };
 			}
-			nudgeStates.set(id, state);
+			setNudgeState(id, nudge);
 		} catch (e) {
-			console.warn(`[todos] inactivity nudge skipped (fail-open): ${formatError(e)}`);
+			console.warn(`[todos] tool_result processing skipped (fail-open): ${formatError(e)}`);
 		}
 	});
 
-	// A new user prompt starts a fresh reminder budget. Continuations that
-	// Pi requests itself are not "user" runs, so they keep counting.
+	// A new user prompt starts a fresh reminder & enforce retry budget.
 	pi.on("before_agent_start", (event, ctx) => {
-		if (event.messageType === "user") reminderCounters.delete(sid(ctx));
+		if (event.messageType === "user") {
+			try {
+				const id = sid(ctx);
+				setReminderCount(id, 0);
+				resetEnforceRetries(id);
+			} catch {
+				// Fail-open
+			}
+		}
 	});
 
-	// Fail-open: an error here must never block the agent from settling.
+	// Unified settle coordinator: Prioritas 1 Code Integrity, Prioritas 2 Pending Tasks.
 	pi.on("agent_before_settle", async (event, ctx) => {
-		if (event.outcome === "aborted") return;
-		try {
-			const id = sid(ctx);
-			const tasks = getTodos(id);
-			if (!tasks.some((t) => t.status === "pending" || t.status === "in_progress")) return;
-
-			const reminderCount = reminderCounters.get(id) ?? 0;
-			const lastText = lastAssistantText(event.context.llmMessages);
-			if (!shouldRemindPendingTodos({ tasks, lastAssistantText: lastText, reminderCount, maxRetries: 3 })) return;
-
-			reminderCounters.set(id, reminderCount + 1);
-			const pendingCount = tasks.filter((t) => t.status === "pending").length;
-			const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
-			return {
-				// Returned entries replace the proposal, so keep earlier handlers' entries.
-				entries: [
-					...event.entries,
-					{
-						type: "custom_message",
-						customType: "todos-reminder",
-						content: buildReminderMessage(pendingCount, inProgressCount),
-						display: true,
-					},
-				],
-				continue: true,
-			};
-		} catch (e) {
-			console.warn(`[todos] completion reminder skipped (fail-open): ${formatError(e)}`);
-			return;
-		}
+		return await coordinateSettle(event, ctx);
 	});
 }

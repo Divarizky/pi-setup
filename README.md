@@ -13,8 +13,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 - `git-info` — Git branch, changes, PR status in footer
 - `run-summaries` — Auto-summarize agent runs
 - `subagents` — Background Pi subagents, workflows, worktrees, dan Agent Control (v2) dengan display name `General`
-- `task-judge` — Peringatan bila agent mengedit kode tanpa validasi sukses sebelum berhenti (mode warn, log JSONL)
-- `todos` — Todo tracking with overlay widget
+- `todos` — Todo tracking dengan overlay widget, peringatan modifikasi kode tanpa validasi (task-judge terintegrasi), dan inactivity nudge
 - `ui-customization` — Custom tool rendering (read, bash, edit, write), thinking shimmer, working message, header/footer, dan penyesuaian tema
 - `usage-tracker` — Provider quota & session usage dashboard (Claude CLI OAuth, 9Router, Codex, Zen)
 - `zenith-router` — Integrasi provider Zenith Router, gateway status reporter, dan publisher quota untuk usage-tracker

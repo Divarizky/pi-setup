@@ -15,8 +15,8 @@ import { type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 
 import { COLLAPSE_KEY_OFF, getMaxWidgetLines, resolveCollapseKey } from "../config.ts";
 import { formatStatusLabel, t } from "../locale.ts";
-import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "../state/selectors.ts";
-import { getRenderState } from "../state/store.ts";
+import { selectHasActive, selectOverlayLayout, selectShowTaskIds, selectTodoCounts } from "../core/selectors.ts";
+import { getRenderState } from "../core/store.ts";
 import { formatOverlayTaskLine, ICON_FILLED, STATUS_COLOR } from "./format.ts";
 
 const WIDGET_KEY = "todos";

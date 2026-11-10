@@ -6,8 +6,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { formatStatusLabel, t } from "./locale.ts";
-import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./state/selectors.ts";
-import { getState, sid } from "./state/store.ts";
+import { selectTasksByStatus, selectTodoCounts, selectVisibleTasks } from "./core/selectors.ts";
+import { getState, sid } from "./core/store.ts";
 import { COMMAND_NAME, ERR_REQUIRES_INTERACTIVE, MSG_NO_TODOS } from "./types.ts";
 import { formatCommandTaskLine } from "./overlay/format.ts";
 

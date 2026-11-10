@@ -13,7 +13,8 @@ import {
   tailLines,
 } from "./tool-format.ts";
 
-const home = join("C:", "Users", "me");
+const isWin = process.platform === "win32";
+const home = isWin ? "C:\\Users\\me" : "/home/me";
 const cwd = join(home, "project");
 
 test("clip collapses whitespace and adds ellipsis", () => {

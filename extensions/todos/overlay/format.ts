@@ -6,8 +6,8 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 
 import { formatStatusLabel } from "../locale.ts";
-import { selectTaskSubjectById } from "../state/selectors.ts";
-import type { TaskState } from "../state/store.ts";
+import { selectTaskSubjectById } from "../core/selectors.ts";
+import type { TaskState } from "../core/store.ts";
 import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } from "../types.ts";
 
 // ---------------------------------------------------------------------------

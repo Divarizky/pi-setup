@@ -560,12 +560,15 @@ type JudgeHandler = (event: any, ctx: any) => unknown;
 
 /** Memuat extension terhadap pi palsu dan mengembalikan handler yang terdaftar. */
 async function loadTaskJudgeHandlers(): Promise<Record<string, JudgeHandler>> {
-  const { default: taskJudgeExtension } = await import("./index.ts");
+  const { default: taskJudgeExtension } = await import("../index.ts");
   const handlers: Record<string, JudgeHandler> = {};
   taskJudgeExtension({
     on: (name: string, handler: JudgeHandler) => {
       handlers[name] = handler;
     },
+    registerTool: () => {},
+    registerCommand: () => {},
+    registerShortcut: () => {},
   } as never);
   return handlers;
 }
