@@ -53,7 +53,7 @@ function loadConfig(): FailureConfig {
   }
 }
 
-export default function failureRecoveryExtension(pi: ExtensionAPI): void {
+export function registerFailureRecovery(pi: ExtensionAPI): void {
   let state: FailureState = createFailureState();
 
   // before_agent_start hanya terpanggil untuk run baru (user atau custom), bukan
