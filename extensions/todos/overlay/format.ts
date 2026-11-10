@@ -14,9 +14,33 @@ import type { Task, TaskAction, TaskDetails, TaskMutationParams, TaskStatus } fr
 // Icons — single source of truth.
 // ---------------------------------------------------------------------------
 
+export function isNerdFontSupported(): boolean {
+	const env = process.env;
+	if (env.NERD_FONT === "0" || env.NERD_FONT === "false" || env.USE_NERD_FONT === "0") {
+		return false;
+	}
+	if (env.NERD_FONT === "1" || env.NERD_FONT === "true" || env.USE_NERD_FONT === "1") {
+		return true;
+	}
+	const termProgram = env.TERM_PROGRAM?.toLowerCase() ?? "";
+	if (
+		termProgram.includes("wezterm") ||
+		termProgram.includes("kitty") ||
+		termProgram.includes("ghostty") ||
+		termProgram.includes("orca") ||
+		Boolean(env.ORCA_TERMINAL_HANDLE) ||
+		Boolean(env.GHOSTTY_RESOURCES_DIR)
+	) {
+		return true;
+	}
+	return false;
+}
+
 export const ICON_FILLED = "◼";
 export const ICON_HOLLOW = "◻";
-export const ICON_CHECKED = "✓";
+export const ICON_CHECKED = isNerdFontSupported() ? "" : "✔";
+export const ICON_CROSS = isNerdFontSupported() ? "" : "✘";
+export const ICON_WARNING = isNerdFontSupported() ? "" : "⚠";
 
 function iconFor(status: TaskStatus): string {
 	if (status === "pending") return ICON_HOLLOW;
@@ -101,7 +125,7 @@ export function renderTodoCall(
 export function renderTodoResult(result: { details?: unknown }, theme: Theme): Text {
 	const details = result.details as TaskDetails | undefined;
 	if (details?.error) {
-		return new Text(theme.fg("warning", `✗ ${details.error}`), 0, 0);
+		return new Text(theme.fg("warning", `${ICON_CROSS}  ${details.error}`), 0, 0);
 	}
 	let status: TaskStatus | undefined;
 	if (details) {
@@ -126,5 +150,5 @@ export function renderTodoResult(result: { details?: unknown }, theme: Theme): T
 		const ic = iconFor(status);
 		return new Text(theme.fg(STATUS_COLOR[status], `${ic} ${formatStatusLabel(status)}`), 0, 0);
 	}
-	return new Text(theme.fg("success", "✓"), 0, 0);
+	return new Text(theme.fg("success", ICON_CHECKED), 0, 0);
 }

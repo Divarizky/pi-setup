@@ -11,6 +11,7 @@ import { getConfig } from "../agent-types.js";
 import { type AgentManager, isTopLevelAgent } from "../core/agent-manager.js";
 import type { AgentInvocation, SubagentType, WidgetMode } from "../types.js";
 import { getLifetimeCost, getLifetimeTotal, getSessionContextPercent, type LifetimeUsage, type SessionLike } from "../usage.js";
+import { getCrossIcon, getTickIcon } from "./workflow-card.js";
 
 // ---- Constants ----
 
@@ -371,21 +372,21 @@ export class AgentWidget {
     let icon: string;
     let statusText: string;
     if (a.status === "completed") {
-      icon = theme.fg("success", "✓");
+      icon = theme.fg("success", getTickIcon());
       statusText = "";
     } else if (a.status === "steered") {
-      icon = theme.fg("warning", "✓");
+      icon = theme.fg("warning", getTickIcon());
       statusText = theme.fg("warning", " (turn limit)");
     } else if (a.status === "stopped") {
       icon = theme.fg("dim", "■");
       statusText = theme.fg("dim", " stopped");
     } else if (a.status === "error") {
-      icon = theme.fg("error", "✗");
+      icon = theme.fg("error", getCrossIcon());
       const errMsg = a.error ? `: ${a.error.slice(0, 60)}` : "";
       statusText = theme.fg("error", ` error${errMsg}`);
     } else {
       // aborted
-      icon = theme.fg("error", "✗");
+      icon = theme.fg("error", getCrossIcon());
       statusText = theme.fg("warning", " aborted");
     }
 
@@ -400,7 +401,7 @@ export class AgentWidget {
     if (costText) parts.push(costText);
     parts.push(duration);
 
-    return `${icon} ${renderAgentName(a.type, theme, { fallbackColor: "dim" })}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}${statusText}`;
+    return `${icon}  ${renderAgentName(a.type, theme, { fallbackColor: "dim" })}  ${theme.fg("dim", a.description)} ${theme.fg("dim", "·")} ${theme.fg("dim", parts.join(" · "))}${statusText}`;
   }
 
   /**

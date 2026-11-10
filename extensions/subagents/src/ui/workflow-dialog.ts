@@ -68,6 +68,8 @@ import {
   formatCompactTokens,
   formatModel,
   formatThinking,
+  isNerdFontSupported,
+  NERD_GLYPHS,
   REPLAYED_ANNOTATION,
   styleWorkflowCardLines,
   UNICODE_GLYPHS,
@@ -144,6 +146,28 @@ export const UNICODE_DIALOG_GLYPHS: WorkflowDialogGlyphs = {
   queued: "◻",
   pointer: "❯",
   focus: UNICODE_GLYPHS.pointer,
+  spinner: SPINNER,
+  box: {
+    topLeft: "╭",
+    topRight: "╮",
+    bottomLeft: "╰",
+    bottomRight: "╯",
+    horizontal: "─",
+    vertical: "│",
+    topTee: "┬",
+    bottomTee: "┴",
+  },
+  ellipsis: "…",
+  upDown: "↑↓",
+  enter: "⏎",
+};
+
+export const NERD_DIALOG_GLYPHS: WorkflowDialogGlyphs = {
+  tick: NERD_GLYPHS.tick,
+  cross: NERD_GLYPHS.cross,
+  queued: "◻",
+  pointer: "❯",
+  focus: NERD_GLYPHS.pointer,
   spinner: SPINNER,
   box: {
     topLeft: "╭",
@@ -301,6 +325,7 @@ export interface WorkflowDialogInput extends WorkflowDialogSource {
   /** The *terminal* width; the content width is derived from it. */
   width?: number;
   ascii?: boolean;
+  nerd?: boolean;
   spinnerFrame?: number;
   /**
    * Most rows the frame may use, overriding {@link DEFAULT_PANE_BODY_ROWS}.
@@ -675,7 +700,11 @@ function rowStatSegments(entry: WorkflowAgentEntry): string[] {
  * different sizes.
  */
 export function layoutWorkflowDialog(input: WorkflowDialogInput): WorkflowCardLine[] {
-  const glyphs = input.ascii ? ASCII_DIALOG_GLYPHS : UNICODE_DIALOG_GLYPHS;
+  const glyphs = input.ascii
+    ? ASCII_DIALOG_GLYPHS
+    : (input.nerd ?? isNerdFontSupported())
+      ? NERD_DIALOG_GLYPHS
+      : UNICODE_DIALOG_GLYPHS;
   const width = workflowDialogContentWidth(input.width ?? DEFAULT_WIDTH);
   const now = input.now ?? Date.now();
   const view = resolveWorkflowDialog(input);

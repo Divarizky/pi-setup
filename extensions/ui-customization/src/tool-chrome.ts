@@ -3,7 +3,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { expandControl } from "./tool-format.ts";
 import { currentTuiMode } from "./ui-binding.ts";
 
-export const RESULT_PREFIX = "  ⎿  ";
+export const RESULT_PREFIX = "  └─ ";
 export const RESULT_INDENT = "     ";
 
 // Not re-exported from the package index, so derive it from ToolDefinition.

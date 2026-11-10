@@ -31,6 +31,7 @@ import {
   previewLines,
   resultSummary,
 } from "./tool-format.ts";
+import { SYMBOLS } from "./symbols.ts";
 import {
   buildWritePreview,
   readPreviousFile,
@@ -54,7 +55,7 @@ function toolStyleEnabled(): boolean {
   }
 }
 
-function renderCallLine(
+export function renderCallLine(
   toolName: StyledTool,
   args: Record<string, unknown>,
   theme: Theme,
@@ -64,12 +65,12 @@ function renderCallLine(
   const bullet = pending
     ? theme.fg("muted", "●")
     : context.isError
-      ? theme.fg("error", "●")
-      : theme.fg("success", "●");
+      ? theme.fg("error", SYMBOLS.cross)
+      : theme.fg("success", SYMBOLS.tick);
   const { label, arg } = callTitle(toolName, args, context.cwd, homedir());
   const argText = arg ? theme.fg("muted", `(${arg})`) : "";
   return new Text(
-    `${bullet} ${theme.fg("toolTitle", theme.bold(label))}${argText}`,
+    `${bullet}  ${theme.fg("toolTitle", theme.bold(label))}${argText}`,
     0,
     0,
   );

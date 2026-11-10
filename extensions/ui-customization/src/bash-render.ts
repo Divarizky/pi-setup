@@ -24,6 +24,7 @@ import {
   type ToolResultLike,
 } from "./tool-chrome.ts";
 import { plural } from "./tool-format.ts";
+import { SYMBOLS } from "./symbols.ts";
 import { canRequestRender, requestUiRender } from "./ui-binding.ts";
 
 /** Output lines shown when a bash result is expanded. */
@@ -123,7 +124,7 @@ function runningBlock(
     if (expanded) return [...out, ...tailRows(lines, total, width, theme)];
     const latest = lastNonEmptyLine(lines);
     if (latest) {
-      out.push(fitLine(`${RESULT_INDENT}${theme.fg("dim", "└")} ${theme.fg(issueColor(latest), latest)}`, width, theme));
+      out.push(fitLine(`${RESULT_INDENT}${theme.fg("dim", "└─")} ${theme.fg(issueColor(latest), latest)}`, width, theme));
     }
     return out;
   }, true);
@@ -149,8 +150,8 @@ function finishedBlock(
   const dot = theme.fg("dim", " · ");
   const badge =
     status.exitCode === 0
-      ? theme.fg("success", "✓ exit 0")
-      : theme.fg("error", status.exitCode !== undefined ? `✗ exit ${status.exitCode}` : `✗ ${status.failure}`);
+      ? theme.fg("success", `${SYMBOLS.tick}  exit 0`)
+      : theme.fg("error", status.exitCode !== undefined ? `${SYMBOLS.cross}  exit ${status.exitCode}` : `${SYMBOLS.cross}  ${status.failure}`);
   const parts = [badge];
   if (duration !== undefined) parts.push(theme.fg("muted", formatBashDuration(duration)));
   parts.push(theme.fg("muted", total === 0 ? "no output" : plural(total, "line")));
@@ -225,7 +226,7 @@ export function readResultBlock(
       : runs.get(context.toolCallId)?.durationMs;
 
   const dot = theme.fg("dim", " · ");
-  const parts = [theme.fg("success", "✓ Read")];
+  const parts = [theme.fg("success", `${SYMBOLS.tick}  Read`)];
   if (duration !== undefined) parts.push(theme.fg("muted", formatBashDuration(duration)));
   parts.push(theme.fg("muted", total === 0 ? "empty" : plural(total, "line")));
   if (details.truncation?.truncated) parts.push(theme.fg("warning", "truncated"));

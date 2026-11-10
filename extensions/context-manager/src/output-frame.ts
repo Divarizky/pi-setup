@@ -19,8 +19,8 @@ const BG_RESET = "\x1b[49m";
 const ZERO_COUNT =
   /\b(?:0|no|zero)\s+(?:errors?|warnings?|failures?|failed|problems?)\b|\b(?:errors?|warnings?|failures?|failed|fail)\s*[:=]?\s*0\b/i;
 const ERROR_LINE =
-  /\b(?:errors?|failed|failures?|fatal|exception|panic)\b|\bfail\b|ERR!|✖|✗|❌|\bE\d{3,}\b/i;
-const WARNING_LINE = /\b(?:warn|warnings?|deprecated)\b|⚠/i;
+  /\b(?:errors?|failed|failures?|fatal|exception|panic)\b|\bfail\b|ERR!|✖|✗|❌|✘||\bE\d{3,}\b/i;
+const WARNING_LINE = /\b(?:warn|warnings?|deprecated)\b|⚠|/i;
 const NUMBERED_LINE = /^(\d+): ?(.*)$/;
 
 /** Keyword-based guess; counts like `0 errors` are not issues. */

@@ -14,6 +14,7 @@ import { getLifetimeCost, getLifetimeTotal, getSessionContextPercent } from "../
 import type { Theme } from "./agent-widget.js";
 import { type AgentActivity, buildInvocationTags, describeActivity, fgPreservingNestedStyles, formatCost, formatDuration, formatSessionTokens } from "./agent-widget.js";
 import { createViewerKeys, type ViewerKeybindings, type ViewerKeys } from "./viewer-keys.js";
+import { getCrossIcon, getTickIcon } from "./workflow-card.js";
 
 /** Base lines consumed by chrome: top border + header + header sep + footer sep + footer + bottom border. */
 const CHROME_LINES_BASE = 6;
@@ -298,9 +299,9 @@ export class ConversationViewer implements Component {
     const statusIcon = this.record.status === "running"
       ? th.fg("accent", "◼")
       : this.record.status === "completed"
-        ? th.fg("success", "✓")
+        ? th.fg("success", getTickIcon())
         : this.record.status === "error"
-          ? th.fg("error", "✗")
+          ? th.fg("error", getCrossIcon())
           : th.fg("dim", "◻");
     const duration = formatDuration(this.record.startedAt, this.record.completedAt);
 
@@ -319,7 +320,7 @@ export class ConversationViewer implements Component {
     if (cost) headerParts.push(cost);
 
     lines.push(row(
-      `${statusIcon} ${renderAgentName(this.record.type, th, { bold: true })}  ${th.fg("muted", this.record.description)} ${th.fg("dim", "·")} ${fgPreservingNestedStyles(th, "dim", headerParts.join(" · "))}`,
+      `${statusIcon}  ${renderAgentName(this.record.type, th, { bold: true })}  ${th.fg("muted", this.record.description)} ${th.fg("dim", "·")} ${fgPreservingNestedStyles(th, "dim", headerParts.join(" · "))}`,
     ));
     const invocationLine = this.invocationLine();
     if (invocationLine) lines.push(row(invocationLine));

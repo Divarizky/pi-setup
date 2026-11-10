@@ -41,7 +41,7 @@ function card(over: Partial<WorkflowCardInput> & { progress: readonly WorkflowEn
     ...over.task,
   };
   return plainWorkflowCardLines(
-    layoutWorkflowCard({ width: 120, now: START + 1000, ...over, task }),
+    layoutWorkflowCard({ width: 120, now: START + 1000, nerd: false, ...over, task }),
   );
 }
 
@@ -111,6 +111,7 @@ describe("inline glyph mapping", () => {
         progress,
         task: { status: "running", workflowName: "wf", startTime: START },
         now: START,
+        nerd: false,
       }),
       theme,
     );
@@ -319,6 +320,25 @@ describe("ASCII fallback tier", () => {
     expect(joined).not.toContain("✘");
   });
 
+  it("renders with nerd glyphs when nerd tier is enabled", () => {
+    const lines = card({
+      nerd: true,
+      progress: [
+        agentEntry({ index: 0, label: "done", state: "done" }),
+        agentEntry({ index: 1, label: "failed", state: "error" }),
+      ],
+    });
+    const joined = lines.join("\n");
+    expect(joined).toContain(" done");
+    expect(joined).toContain(" failed");
+  });
+
+  it("uses ASCII branches |-- and '-- and warning [!] matching OMP", () => {
+    expect(ASCII_GLYPHS.branch).toBe("|--");
+    expect(ASCII_GLYPHS.lastBranch).toBe("'--");
+    expect(ASCII_GLYPHS.warning).toBe("[!]");
+  });
+
   it("swaps the box drawing too, keeping each glyph's column width", () => {
     const joined = card({
       ascii: true,
@@ -478,6 +498,7 @@ describe("component rendering", () => {
       task: { status: "completed", workflowName: "review-changes", startTime: START, endTime: START + 42_000 },
       now: START + 42_000,
       width: 80,
+      nerd: false,
     };
     // Rendered wide: the fake theme's markup is visible width, unlike real ANSI,
     // so a realistic width would wrap lines the terminal never would.

@@ -10,6 +10,7 @@ import {
   initialWorkflowDialogState,
   layoutWorkflowDialog,
   MIN_PANE_BODY_ROWS,
+  NERD_DIALOG_GLYPHS,
   PROMPT_COLLAPSED_LINES,
   plainWorkflowDialogLines,
   resolveWorkflowDialog,
@@ -57,6 +58,7 @@ function input(over: DialogOverrides): WorkflowDialogInput {
   return {
     width: 86,
     now: START + 1000,
+    nerd: false,
     ...over,
     task,
     state: { ...initialWorkflowDialogState(), ...over.state },
@@ -163,6 +165,9 @@ describe("dialog glyph mapping", () => {
     expect(dialogRowGlyph("queued", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "◻", color: "dim" });
     expect(dialogRowGlyph("interrupted", UNICODE_DIALOG_GLYPHS)).toEqual({ text: "◻", color: "dim" });
     expect(dialogRowGlyph("running", UNICODE_DIALOG_GLYPHS, 3)).toEqual({ text: SPINNER[3], color: "dim" });
+
+    expect(dialogRowGlyph("done", NERD_DIALOG_GLYPHS)).toEqual({ text: "", color: "success" });
+    expect(dialogRowGlyph("failed", NERD_DIALOG_GLYPHS)).toEqual({ text: "", color: "error" });
   });
 
   it("keys off the derived display state, not the raw entry state", () => {
@@ -943,7 +948,7 @@ describe("WorkflowDialog component", () => {
       layoutWorkflowDialog({ ...source(), state: initialWorkflowDialogState(), width: 86 }).length,
     );
     expect(rendered[0]).toContain("<toolTitle>*wf*</toolTitle>");
-    expect(rendered.join("\n")).toContain("<success>✔</success>");
+    expect(rendered.join("\n")).toMatch(/<success>[✔]<\/success>/);
     instance.dispose();
   });
 

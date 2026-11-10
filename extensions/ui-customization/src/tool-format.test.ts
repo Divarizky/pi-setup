@@ -104,3 +104,43 @@ test("previewLines caps and reports hidden lines", () => {
   assert.deepEqual(previewLines("a\nb\n", 3), { lines: ["a", "b"], hidden: 0 });
   assert.deepEqual(previewLines("a\nb\nc\nd", 2), { lines: ["a", "b"], hidden: 2 });
 });
+
+test("renderCallLine renders ● while pending, tick when success, cross when error", async () => {
+  const { renderCallLine } = await import("./tool-render.ts");
+  const theme = {
+    fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+    bold: (text: string) => `*${text}*`,
+  } as any;
+  const cwd = "/home/me/project";
+
+  const pending = renderCallLine("bash", { command: "ls" }, theme, {
+    toolCallId: "1",
+    cwd,
+    executionStarted: true,
+    isPartial: true,
+    isError: false,
+  } as any);
+  assert.ok(pending.render(100).join("\n").includes("<muted>●</muted>"));
+
+  const success = renderCallLine("bash", { command: "ls" }, theme, {
+    toolCallId: "1",
+    cwd,
+    executionStarted: true,
+    isPartial: false,
+    isError: false,
+  } as any);
+  const successText = success.render(100).join("\n");
+  assert.ok(successText.includes("<success>"));
+  assert.ok(!successText.includes("●"));
+
+  const failed = renderCallLine("bash", { command: "ls" }, theme, {
+    toolCallId: "1",
+    cwd,
+    executionStarted: true,
+    isPartial: false,
+    isError: true,
+  } as any);
+  const failedText = failed.render(100).join("\n");
+  assert.ok(failedText.includes("<error>"));
+  assert.ok(!failedText.includes("●"));
+});

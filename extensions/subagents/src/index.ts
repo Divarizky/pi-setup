@@ -64,7 +64,7 @@ import {
 } from "./ui/agent-widget.js";
 import { FleetList, type FleetUICtx, type FleetWorkflow } from "./ui/fleet-list.js";
 import { selectItem } from "./ui/select-item.js";
-import { renderWorkflowCard, renderWorkflowEntryCard } from "./ui/workflow-card.js";
+import { getCrossIcon, getTickIcon, renderWorkflowCard, renderWorkflowEntryCard } from "./ui/workflow-card.js";
 import { openWorkflowFromFleet, showWorkflowsMenu, type WorkflowMenuDeps } from "./ui/workflow-menu.js";
 import { getLifetimeCost, getLifetimeTotal, getSessionContextPercent, type LifetimeUsage, PendingUsagePool, toReportedUsage } from "./usage.js";
 import { decideWorkflowCollision, FOREIGN_WORKFLOW_TOOL_NAMES } from "./workflow/collisions.js";
@@ -317,13 +317,13 @@ export default function (pi: ExtensionAPI) {
 
       function renderOne(d: NotificationDetails): string {
         const isError = d.status === "error" || d.status === "stopped" || d.status === "aborted";
-        const icon = isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
+        const icon = isError ? theme.fg("error", getCrossIcon()) : theme.fg("success", getTickIcon());
         const statusText = isError ? d.status
           : d.status === "steered" ? "completed (steered)"
           : "completed";
 
         // Line 1: icon + agent description + status
-        let line = `${icon} ${theme.bold(d.description)} ${theme.fg("dim", statusText)}`;
+        let line = `${icon}  ${theme.bold(d.description)} ${theme.fg("dim", statusText)}`;
 
         // Line 2: stats
         const parts: string[] = [];
@@ -1621,10 +1621,9 @@ Notes:
       if (details.status === "completed" || details.status === "steered") {
         const duration = formatMs(details.durationMs);
         const isSteered = details.status === "steered";
-        const icon = isSteered ? theme.fg("warning", "✓") : theme.fg("success", "✓");
+        const icon = isSteered ? theme.fg("warning", getTickIcon()) : theme.fg("success", getTickIcon());
         const s = stats(details);
-        let line = icon + (s ? " " + s : "");
-        line += " " + theme.fg("dim", "·") + " " + theme.fg("dim", duration);
+        let line = `${icon}  ${s ? s + " " + theme.fg("dim", "·") + " " : ""}${theme.fg("dim", duration)}`;
 
         if (expanded) {
           const resultText = result.content[0]?.type === "text" ? result.content[0].text : "";
@@ -1660,7 +1659,7 @@ Notes:
 
       // ---- Error / Aborted (hard max_turns) ----
       const s = stats(details);
-      let line = theme.fg("error", "✗") + (s ? " " + s : "");
+      let line = theme.fg("error", getCrossIcon()) + (s ? "  " + s : "");
 
       if (details.status === "error") {
         line += "\n" + theme.fg("error", `  └─ Error: ${details.error ?? "unknown"}`);

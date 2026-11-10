@@ -101,6 +101,61 @@ export const UNICODE_GLYPHS: WorkflowGlyphs = {
   warning: "⚠",
 };
 
+export const NERD_GLYPHS: WorkflowGlyphs = {
+  pointer: "▸",
+  tick: "",
+  cross: "",
+  running: "⟳",
+  groupTop: "╭─",
+  groupMid: "├─",
+  groupBottom: "╰─",
+  vertical: "│",
+  branch: "├─",
+  lastBranch: "└─",
+  log: "⎿",
+  warning: "",
+};
+
+export function isNerdFontSupported(): boolean {
+  const env = process.env;
+  if (env.NERD_FONT === "0" || env.NERD_FONT === "false" || env.USE_NERD_FONT === "0") {
+    return false;
+  }
+  if (env.NERD_FONT === "1" || env.NERD_FONT === "true" || env.USE_NERD_FONT === "1") {
+    return true;
+  }
+  const termProgram = env.TERM_PROGRAM?.toLowerCase() ?? "";
+  if (
+    termProgram.includes("wezterm") ||
+    termProgram.includes("kitty") ||
+    termProgram.includes("ghostty") ||
+    termProgram.includes("orca") ||
+    env.ORCA_TERMINAL_HANDLE ||
+    env.GHOSTTY_RESOURCES_DIR
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function getTickIcon(ascii?: boolean, nerd?: boolean): string {
+  if (ascii) return ASCII_GLYPHS.tick;
+  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.tick;
+  return UNICODE_GLYPHS.tick;
+}
+
+export function getCrossIcon(ascii?: boolean, nerd?: boolean): string {
+  if (ascii) return ASCII_GLYPHS.cross;
+  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.cross;
+  return UNICODE_GLYPHS.cross;
+}
+
+export function getWarningIcon(ascii?: boolean, nerd?: boolean): string {
+  if (ascii) return ASCII_GLYPHS.warning;
+  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.warning;
+  return UNICODE_GLYPHS.warning;
+}
+
 /**
  * The `figures` ASCII tier, for terminals that cannot draw the box set. Every
  * glyph keeps its unicode counterpart's column width so the tree stays aligned
@@ -112,13 +167,13 @@ export const ASCII_GLYPHS: WorkflowGlyphs = {
   cross: "×",
   running: "*",
   groupTop: ",-",
-  groupMid: "|-",
+  groupMid: "|--",
   groupBottom: "`-",
   vertical: "|",
-  branch: "|-",
-  lastBranch: "`-",
+  branch: "|--",
+  lastBranch: "'--",
   log: "\\",
-  warning: "!",
+  warning: "[!]",
 };
 
 /* ------------------------------------------------------------------------- *
@@ -169,6 +224,8 @@ export interface WorkflowCardInput {
   width?: number;
   /** Swap in the ASCII glyph tier for terminals without unicode. */
   ascii?: boolean;
+  /** Use Nerd Font glyphs tier. */
+  nerd?: boolean;
   /**
    * Lead with `▸ SubagentWorkflow`.
    *
@@ -299,7 +356,11 @@ const lineWidth = (line: WorkflowCardLine) => line.reduce((sum, s) => sum + visi
  * warning — comes from `progress.ts`; what happens here is purely arrangement.
  */
 export function layoutWorkflowCard(input: WorkflowCardInput): WorkflowCardLine[] {
-  const glyphs = input.ascii ? ASCII_GLYPHS : UNICODE_GLYPHS;
+  const glyphs = input.ascii
+    ? ASCII_GLYPHS
+    : (input.nerd ?? isNerdFontSupported())
+      ? NERD_GLYPHS
+      : UNICODE_GLYPHS;
   const width = Math.max(1, input.width ?? DEFAULT_WIDTH);
   const now = input.now ?? Date.now();
 

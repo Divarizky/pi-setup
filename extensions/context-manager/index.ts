@@ -23,6 +23,7 @@ import { OutputCache } from "./src/output-cache.ts";
 import { expandControl } from "./src/expand-control.ts";
 import { collectOutputPreview } from "./src/output-preview.ts";
 import { inspectBlocks, Lines, previewRows, renderFrameBlocks, renderFrameRows } from "./src/output-frame.ts";
+import { SYMBOLS } from "./src/symbols.ts";
 import type { OutputPreview } from "./src/output-preview.ts";
 import {
   calculatePruneKeepLimit,
@@ -444,10 +445,10 @@ export default function (pi: ExtensionAPI) {
       const running = started && context.isPartial;
       const failed = context.isError;
       const bullet = running || !started
-        ? theme.fg(started ? "accent" : "muted", "● ")
+        ? theme.fg(started ? "accent" : "muted", "●  ")
         : failed
-          ? theme.fg("error", "● ")
-          : theme.fg("success", "● ");
+          ? theme.fg("error", `${SYMBOLS.cross}  `)
+          : theme.fg("success", `${SYMBOLS.tick}  `);
       const arg = runtime === "shell" ? preview : `${runtime} · ${preview}`;
       return new Text(
         bullet +
@@ -494,7 +495,7 @@ export default function (pi: ExtensionAPI) {
           .map((line) => line.trimEnd())
           .filter((line) => line.length > 0);
         lines.push(
-          theme.fg("dim", "  ⎿  ") +
+          theme.fg("dim", "  └─ ") +
             theme.fg("accent", frame) +
             " " +
             theme.fg(
@@ -504,7 +505,7 @@ export default function (pi: ExtensionAPI) {
         );
         const latest = partial[partial.length - 1];
         if (latest) {
-          lines.push(theme.fg("dim", "     └ ") + theme.fg("toolOutput", latest));
+          lines.push(theme.fg("dim", "     └─ ") + theme.fg("toolOutput", latest));
         }
         return new Text(`\n${lines.join("\n")}`, 0, 0);
       }
@@ -515,7 +516,7 @@ export default function (pi: ExtensionAPI) {
       const runtime = cm?.runtime ?? String(args?.runtime ?? "shell");
       const total = preview.totalLines;
       const countLabel = total === 0 ? "no output" : total === 1 ? "1 line" : `${total} lines`;
-      const icon = failed ? theme.fg("error", "✗") : theme.fg("success", "✓");
+      const icon = failed ? theme.fg("error", SYMBOLS.cross) : theme.fg("success", SYMBOLS.tick);
       const statusLabel = cancelled
         ? `cancelled${signalSuffix}`
         : timedOut
@@ -525,8 +526,8 @@ export default function (pi: ExtensionAPI) {
             : failed
               ? `failed${signalSuffix}`
               : "exit 0";
-      const meta = `${icon} ${theme.fg(failed ? "error" : "muted", statusLabel)}${dur}${theme.fg("muted", ` · ${countLabel}`)}${cm?.outputId ? theme.fg("muted", " · tersimpan") : ""}`;
-      const head = theme.fg("muted", "● ") + theme.fg("toolTitle", theme.bold(`Ran ${runtime}`)) + theme.fg("dim", command ? ` ${command}` : "") + theme.fg("muted", " · ") + meta;
+      const meta = `${theme.fg(failed ? "error" : "muted", statusLabel)}${dur}${theme.fg("muted", ` · ${countLabel}`)}${cm?.outputId ? theme.fg("muted", " · tersimpan") : ""}`;
+      const head = (failed ? theme.fg("error", `${SYMBOLS.cross}  `) : theme.fg("success", `${SYMBOLS.tick}  `)) + theme.fg("toolTitle", theme.bold(`Ran ${runtime}`)) + theme.fg("dim", command ? ` ${command}` : "") + theme.fg("muted", " · ") + meta;
       if (!expanded) {
         // Collapsed view stays minimal: line count plus the expand hint.
         // If failed, include the error icon and status badge so failures are never hidden.
@@ -535,10 +536,10 @@ export default function (pi: ExtensionAPI) {
           ? ` ${control.button ? theme.underline(theme.fg("accent", control.text)) : theme.fg("muted", control.text)}`
           : "";
         const statusPrefix = failed
-          ? `${icon} ${theme.fg("error", statusLabel)} · `
+          ? `${icon}  ${theme.fg("error", statusLabel)} · `
           : "";
         return new Text(
-          theme.fg("dim", "  ⎿  ") + statusPrefix + theme.fg("muted", countLabel) + controlText,
+          theme.fg("dim", "  └─ ") + statusPrefix + theme.fg("muted", countLabel) + controlText,
           0,
           0,
         );
@@ -587,10 +588,10 @@ export default function (pi: ExtensionAPI) {
       const running = started && context.isPartial;
       const failed = context.isError;
       const bullet = running || !started
-        ? theme.fg(started ? "accent" : "muted", "● ")
+        ? theme.fg(started ? "accent" : "muted", "●  ")
         : failed
-          ? theme.fg("error", "● ")
-          : theme.fg("success", "● ");
+          ? theme.fg("error", `${SYMBOLS.cross}  `)
+          : theme.fg("success", `${SYMBOLS.tick}  `);
       return new Text(
         bullet +
           theme.fg("toolTitle", theme.bold("inspect")) +
@@ -603,7 +604,7 @@ export default function (pi: ExtensionAPI) {
       const c0 = result.content[0]; const raw = c0?.type === "text" ? String(c0.text) : "";
       if (isPartial) {
         const frame = PI_SPINNER_FRAMES[Math.floor(Date.now() / 100) % PI_SPINNER_FRAMES.length];
-        return new Text(theme.fg("dim", "  ⎿  ") + theme.fg("accent", frame) + " " + theme.fg("muted", "inspecting …"), 0, 0);
+        return new Text(theme.fg("dim", "  └─ ") + theme.fg("accent", frame) + " " + theme.fg("muted", "inspecting …"), 0, 0);
       }
       if ((result as any).isError) {
         const control = expandControl(expanded);
@@ -611,7 +612,7 @@ export default function (pi: ExtensionAPI) {
           ? ` ${control.button ? theme.underline(theme.fg("accent", control.text)) : theme.fg("muted", control.text)}`
           : "";
         return new Text(
-          theme.fg("dim", "  ⎿  ") + theme.fg("error", "✗ inspect gagal") + controlText,
+          theme.fg("dim", "  └─ ") + theme.fg("error", `${SYMBOLS.cross}  inspect gagal`) + controlText,
           0,
           0,
         );
@@ -625,11 +626,9 @@ export default function (pi: ExtensionAPI) {
       const dur = typeof details?.durationMs === "number" ? ` · ${formatElapsed(details.durationMs)}` : "";
       const control = expandControl(expanded);
       const lines: string[] = [
-        theme.fg("muted", "● ") +
+        theme.fg("success", `${SYMBOLS.tick}  `) +
           theme.fg("toolTitle", theme.bold(details?.query ? `Searched "${String(details.query).slice(0, 24)}"` : "Summarized")) +
           theme.fg("dim", ` ${compactTarget}`) +
-          theme.fg("muted", " · ") +
-          theme.fg("success", "✓") +
           theme.fg("muted", `${snippetInfo}${dur} · tersimpan`),
       ];
       if (expanded) {
@@ -643,7 +642,7 @@ export default function (pi: ExtensionAPI) {
       // Collapsed view stays minimal: count plus the expand hint. The
       // detailed Searched/Summarized line appears only when expanded.
       return new Text(
-        theme.fg("dim", "  ⎿  ") +
+        theme.fg("dim", "  └─ ") +
           theme.fg("muted", details?.query ? `${details?.snippets ?? 0} snippet${(details?.snippets ?? 0) === 1 ? "" : "s"}` : "summary siap") +
           (control ? ` ${control.button ? theme.underline(theme.fg("accent", control.text)) : theme.fg("muted", control.text)}` : ""),
         0,
@@ -942,7 +941,7 @@ export default function (pi: ExtensionAPI) {
           if (isLooseContextWindow(usage?.contextWindow, usage?.percent)) {
             badge = `\nℹ Budget output tool (~${budgetTokens.toLocaleString("id-ID")} token) dilewati: context window model longgar (<30%), kept ~${keptTokens.toLocaleString("id-ID")} token (cache prompt dipertahankan).`;
           } else {
-            badge = `\n⚠ Budget output tool (~${budgetTokens.toLocaleString("id-ID")} token) terlampaui: kept ~${keptTokens.toLocaleString("id-ID")} token (protected ~${protectedTokens.toLocaleString("id-ID")}).`;
+            badge = `\n${SYMBOLS.warning} Budget output tool (~${budgetTokens.toLocaleString("id-ID")} token) terlampaui: kept ~${keptTokens.toLocaleString("id-ID")} token (protected ~${protectedTokens.toLocaleString("id-ID")}).`;
           }
         }
         if (lastPrunePrefixDirty) badge += "\n↻ Prefix berubah setelah pruning. Teks lebih sedikit belum tentu lebih murah karena cache hit dapat berkurang.";
