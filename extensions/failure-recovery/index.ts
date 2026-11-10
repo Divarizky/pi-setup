@@ -129,12 +129,16 @@ export default function failureRecoveryExtension(pi: ExtensionAPI): void {
         if (!config.emptyStop.enabled) return;
         if (!isEmptyStop(event.context.llmMessages)) return;
         if (!claimContinuation(state, config.emptyStop.maxRetries)) return;
+        const promptText =
+          state.continuationCount > 1 && templates.emptyStopEscalated
+            ? templates.emptyStopEscalated
+            : templates.emptyStop;
         return {
           entries: [
             {
               type: "custom_message",
               customType: "failure-recovery",
-              content: templates.emptyStop,
+              content: promptText,
               display: false,
             },
           ],

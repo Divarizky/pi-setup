@@ -31,9 +31,12 @@ export function createFailureState(): FailureState {
   };
 }
 
-/** JSON dengan kunci objek terurut, agar argumen identik menghasilkan string sama. */
+/** JSON dengan kunci objek terurut dan pemangkasan whitespace string, agar argumen identik menghasilkan string sama. */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") {
+    if (typeof value === "string") {
+      return JSON.stringify(value.trim());
+    }
     return JSON.stringify(value) ?? "null";
   }
   if (Array.isArray(value)) {

@@ -39,6 +39,13 @@ test("canonicalJson menghasilkan string sama untuk objek bersarang dengan urutan
   );
 });
 
+test("canonicalJson memangkas whitespace ujung pada string argumen", () => {
+  assert.equal(
+    canonicalJson({ command: "npm test" }),
+    canonicalJson({ command: "  npm test  \n" }),
+  );
+});
+
 test("error beruntun dianotasi tepat pada ambang, dan reset oleh sukses", () => {
   const state = createFailureState();
   assert.equal(registerToolResult(state, true, 3), false);
