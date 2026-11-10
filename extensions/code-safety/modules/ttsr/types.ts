@@ -1,5 +1,5 @@
 /**
- * Tipe data bersama untuk modul TTSR (Turn-Time Safety Rules).
+ * Tipe data bersama untuk modul TTSR (Time-Traveling Stream Rules).
  * Didesain stabil sebagai fondasi parser rule, matcher stream, strip,
  * dan handler runtime eksekusi.
  */
@@ -9,6 +9,8 @@ export type RuleAction = "strip" | "abort" | "block" | "log";
 export type RuleAnchor = "start" | "any";
 
 export type RuleScope = "text" | "thinking" | `tool:${string}`;
+
+export type RuleRepeat = "once" | "after-gap";
 
 export interface Rule {
   name: string;
@@ -20,6 +22,8 @@ export interface Rule {
   anchor: RuleAnchor;
   unlessUserSays?: string[];
   maxPerTurn: number;
+  repeat: RuleRepeat;
+  repeatGap: number;
   enabled: boolean;
   correctionText: string;
   filePath?: string;

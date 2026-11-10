@@ -208,3 +208,94 @@ condition:
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("parseRule menerima repeat after-gap dan repeatGap eksplisit", () => {
+  // Mencegah: field repeat dan repeatGap diabaikan saat diurai
+  const rule = parseRule(`---
+name: gap-explicit
+action: strip
+scope: text
+repeat: after-gap
+repeatGap: 3
+condition:
+  - "foo"
+---
+Koreksi
+`);
+  assert.equal(rule.repeat, "after-gap");
+  assert.equal(rule.repeatGap, 3);
+});
+
+test("parseRule memakai repeat once dan repeatGap 10 sebagai default", () => {
+  // Mencegah: default kebijakan repeat berubah tanpa disadari
+  const rule = parseRule(`---
+name: defaults
+action: log
+scope: text
+condition:
+  - "foo"
+---
+`);
+  assert.equal(rule.repeat, "once");
+  assert.equal(rule.repeatGap, 10);
+});
+
+test("parseRule menolak nilai repeat selain once atau after-gap", () => {
+  // Mencegah: typo seperti 'sering' diam-diam dianggap sebagai kebijakan lain
+  const md = `---
+name: bad-repeat
+action: log
+scope: text
+repeat: sering
+condition:
+  - "foo"
+---
+Koreksi
+`;
+  assert.throws(
+    () => parseRule(md, "bad-repeat.md"),
+    (err: unknown) =>
+      err instanceof Error &&
+      err.message.includes("repeat 'sering' tidak valid"),
+  );
+});
+
+test("parseRule menolak repeatGap nol", () => {
+  // Mencegah: gap 0 membuat rule after-gap memicu tanpa jeda
+  const md = `---
+name: zero-gap
+action: log
+scope: text
+repeat: after-gap
+repeatGap: 0
+condition:
+  - "foo"
+---
+Koreksi
+`;
+  assert.throws(
+    () => parseRule(md, "zero-gap.md"),
+    (err: unknown) =>
+      err instanceof Error && err.message.includes("repeatGap harus integer >= 1"),
+  );
+});
+
+test("parseRule menolak repeatGap pecahan", () => {
+  // Mencegah: gap pecahan lolos dan perbandingan giliran menjadi tidak bermakna
+  const md = `---
+name: fractional-gap
+action: log
+scope: text
+repeat: after-gap
+repeatGap: 1.5
+condition:
+  - "foo"
+---
+Koreksi
+`;
+  assert.throws(
+    () => parseRule(md, "fractional-gap.md"),
+    (err: unknown) =>
+      err instanceof Error && err.message.includes("repeatGap harus integer >= 1"),
+  );
+});

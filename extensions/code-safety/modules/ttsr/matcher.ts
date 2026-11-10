@@ -6,6 +6,9 @@ export interface MatcherOptions {
 
 export interface Matcher {
   feed(scope: string, delta: string): Violation[];
+  /** Menandai satu giliran selesai. Dipakai oleh kebijakan repeat. */
+  endTurn(): void;
+  /** Membuka giliran baru untuk maxPerTurn. Riwayat pemicu tidak dihapus. */
   reset(): void;
   getBuffer(scope: string): string;
   getTriggerCount(ruleName: string): number;
@@ -20,7 +23,7 @@ interface ScopeState {
 /**
  * Membuat matcher stream inkremental untuk rule TTSR.
  * Mengelola buffer sliding window per scope, batas maxPerTurn per rule,
- * dan evaluasi anchor start vs any.
+ * kebijakan repeat (once / after-gap), dan evaluasi anchor start vs any.
  */
 export function createMatcher(
   rules: Rule[],
@@ -29,6 +32,21 @@ export function createMatcher(
   const windowSize = options.windowSize ?? 2000;
   const triggerCounts = new Map<string, number>();
   const scopes = new Map<string, ScopeState>();
+  // Riwayat pemicu lintas giliran: nama rule -> jumlah giliran selesai saat terakhir memicu.
+  const lastFiredTurn = new Map<string, number>();
+  let completedTurns = 0;
+
+  /**
+   * Kebijakan repeat hanya dievaluasi saat rule belum memicu di giliran ini.
+   * Rule action block dikecualikan dan selalu lolos.
+   */
+  function isRepeatAllowed(rule: Rule): boolean {
+    if (rule.action === "block") return true;
+    const last = lastFiredTurn.get(rule.name);
+    if (last === undefined) return true;
+    if (rule.repeat === "once") return false;
+    return completedTurns - last >= rule.repeatGap;
+  }
 
   function getScopeState(scope: string): ScopeState {
     let state = scopes.get(scope);
@@ -41,6 +59,10 @@ export function createMatcher(
       scopes.set(scope, state);
     }
     return state;
+  }
+
+  function endTurn(): void {
+    completedTurns++;
   }
 
   function reset(): void {
@@ -82,6 +104,7 @@ export function createMatcher(
 
       const currentTriggers = triggerCounts.get(rule.name) ?? 0;
       if (currentTriggers >= rule.maxPerTurn) continue;
+      if (!isRepeatAllowed(rule)) continue;
 
       let ruleReported = state.reportedRanges.get(rule.name);
       if (!ruleReported) {
@@ -130,6 +153,7 @@ export function createMatcher(
           quotaLeft--;
           const nextCount = (triggerCounts.get(rule.name) ?? 0) + 1;
           triggerCounts.set(rule.name, nextCount);
+          lastFiredTurn.set(rule.name, completedTurns);
 
           const range: MatchRange = {
             start: globalStart,
@@ -162,6 +186,7 @@ export function createMatcher(
 
   return {
     feed,
+    endTurn,
     reset,
     getBuffer,
     getTriggerCount,

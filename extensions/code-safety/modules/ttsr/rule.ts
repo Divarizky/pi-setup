@@ -1,9 +1,17 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { Rule, RuleAction, RuleAnchor, RuleScope } from "./types.ts";
+import type {
+  Rule,
+  RuleAction,
+  RuleAnchor,
+  RuleRepeat,
+  RuleScope,
+} from "./types.ts";
 
 const VALID_ACTIONS = new Set<RuleAction>(["strip", "abort", "block", "log"]);
 const VALID_ANCHORS = new Set<RuleAnchor>(["start", "any"]);
+const VALID_REPEATS = new Set<RuleRepeat>(["once", "after-gap"]);
+const DEFAULT_REPEAT_GAP = 10;
 
 export interface ParsedFrontmatter {
   data: Record<string, unknown>;
@@ -238,6 +246,35 @@ export function parseRule(markdown: string, fileName = "<inline>"): Rule {
     }
   }
 
+  const rawRepeat = data.repeat;
+  let repeat: RuleRepeat = "once";
+  if (rawRepeat !== undefined && rawRepeat !== null) {
+    if (
+      typeof rawRepeat !== "string" ||
+      !VALID_REPEATS.has(rawRepeat.trim() as RuleRepeat)
+    ) {
+      throw new Error(
+        `[${fileName}] repeat '${String(rawRepeat)}' tidak valid. Harus 'once' atau 'after-gap'`,
+      );
+    }
+    repeat = rawRepeat.trim() as RuleRepeat;
+  }
+
+  let repeatGap = DEFAULT_REPEAT_GAP;
+  if (data.repeatGap !== undefined && data.repeatGap !== null) {
+    if (
+      typeof data.repeatGap === "number" &&
+      Number.isInteger(data.repeatGap) &&
+      data.repeatGap >= 1
+    ) {
+      repeatGap = data.repeatGap;
+    } else {
+      throw new Error(
+        `[${fileName}] repeatGap harus integer >= 1 (diberikan: ${String(data.repeatGap)})`,
+      );
+    }
+  }
+
   let enabled = true;
   if (data.enabled !== undefined && data.enabled !== null) {
     if (typeof data.enabled === "boolean") {
@@ -257,6 +294,8 @@ export function parseRule(markdown: string, fileName = "<inline>"): Rule {
     anchor,
     unlessUserSays,
     maxPerTurn,
+    repeat,
+    repeatGap,
     enabled,
     correctionText: body.trim(),
     filePath: fileName,

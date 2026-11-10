@@ -52,7 +52,7 @@ condition:
   assert.equal(matcher.getTriggerCount("window-test"), 0);
 });
 
-test("maxPerTurn membatasi pelanggaran dan reset membuka giliran baru", () => {
+test("maxPerTurn membatasi pelanggaran dan reset tidak menghapus riwayat pemicu once", () => {
   const rule = parseRule(`---
 name: limit-once
 action: log
@@ -74,13 +74,17 @@ condition:
   const v2 = matcher.feed("text", " banned lagi");
   assert.equal(v2.length, 0);
 
-  // Reset membuka giliran baru
+  // Reset membuka giliran baru untuk maxPerTurn, tetapi rule once yang sudah memicu tetap diam
   matcher.reset();
   assert.equal(matcher.getTriggerCount("limit-once"), 0);
 
   const v3 = matcher.feed("text", "banned di giliran baru");
-  assert.equal(v3.length, 1);
-  assert.equal(matcher.getTriggerCount("limit-once"), 1);
+  assert.equal(v3.length, 0);
+
+  // Matcher baru dibuat ulang: rule once memicu lagi
+  const fresh = createMatcher([rule]);
+  const v4 = fresh.feed("text", "banned di sesi baru");
+  assert.equal(v4.length, 1);
 });
 
 test("anchor start hanya cocok pada awal respons", () => {
@@ -118,4 +122,73 @@ condition:
   assert.equal(v4a.length, 0);
   const v4b = m4.feed("text", " Tentu saja tidak boleh kena.");
   assert.equal(v4b.length, 0);
+});
+
+test("rule once tidak memicu lagi di giliran berikutnya walau pola muncul kembali", () => {
+  // Mencegah: koreksi yang sama diulang tiap giliran dan membuang konteks
+  const rule = parseRule(`---
+name: once-rule
+action: strip
+scope: text
+condition:
+  - "basa-basi"
+---
+`);
+  const matcher = createMatcher([rule]);
+
+  const turn1 = matcher.feed("text", "Ini basa-basi pertama.");
+  assert.equal(turn1.length, 1);
+  matcher.endTurn();
+  matcher.reset();
+
+  const turn2 = matcher.feed("text", "Ini basa-basi lagi.");
+  assert.equal(turn2.length, 0);
+});
+
+test("rule after-gap dengan repeatGap 2 memicu lagi tepat setelah dua giliran selesai", () => {
+  // Mencegah: gap dihitung salah sehingga koreksi terlalu sering atau tidak pernah kembali
+  const rule = parseRule(`---
+name: gap-rule
+action: strip
+scope: text
+repeat: after-gap
+repeatGap: 2
+condition:
+  - "basa-basi"
+---
+`);
+  const matcher = createMatcher([rule]);
+
+  const turn1 = matcher.feed("text", "basa-basi giliran satu");
+  assert.equal(turn1.length, 1);
+  matcher.endTurn();
+  matcher.reset();
+
+  const turn2 = matcher.feed("text", "basa-basi giliran dua");
+  assert.equal(turn2.length, 0);
+  matcher.endTurn();
+  matcher.reset();
+
+  const turn3 = matcher.feed("text", "basa-basi giliran tiga");
+  assert.equal(turn3.length, 1);
+});
+
+test("rule block memicu di setiap giliran tanpa batas repeat", () => {
+  // Mencegah: kebijakan repeat ikut membatasi aksi block yang harus selalu ditegakkan
+  const rule = parseRule(`---
+name: block-rule
+action: block
+scope: tool:bash
+condition:
+  - "rm -rf"
+---
+`);
+  const matcher = createMatcher([rule]);
+
+  for (let turn = 1; turn <= 3; turn++) {
+    const v = matcher.feed("tool:bash", "rm -rf /tmp/x");
+    assert.equal(v.length, 1, `giliran ${turn} harus memicu`);
+    matcher.endTurn();
+    matcher.reset();
+  }
 });
