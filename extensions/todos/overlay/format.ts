@@ -74,7 +74,7 @@ export function formatOverlayTaskLine(t: Task, theme: Theme, showId: boolean, al
 	if (t.status === "completed" || t.status === "deleted") {
 		subject = theme.strikethrough(subject);
 	}
-	let line = `${glyph}`;
+	let line = `${glyph} `;
 	if (showId) line += ` ${theme.fg("dim", `#${t.id}`)}`;
 	line += ` ${subject}`;
 	if (t.status === "in_progress" && t.activeForm) {
@@ -91,7 +91,7 @@ export function formatCommandTaskLine(t: Task): string {
 	const glyph = iconFor(t.status);
 	const form = t.status === "in_progress" && t.activeForm ? ` (${t.activeForm})` : "";
 	const block = t.blockedBy?.length ? `    ⛓ ${t.blockedBy.map((id) => `#${id}`).join(",")}` : "";
-	return `  ${glyph} #${t.id} ${t.subject}${form}${block}`;
+	return `  ${glyph}  #${t.id} ${t.subject}${form}${block}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ export function renderTodoResult(result: { details?: unknown }, theme: Theme): T
 	}
 	if (status) {
 		const ic = iconFor(status);
-		return new Text(theme.fg(STATUS_COLOR[status], `${ic} ${formatStatusLabel(status)}`), 0, 0);
+		return new Text(theme.fg(STATUS_COLOR[status], `${ic}  ${formatStatusLabel(status)}`), 0, 0);
 	}
-	return new Text(theme.fg("success", ICON_CHECKED), 0, 0);
+	return new Text(theme.fg("success", `${ICON_CHECKED} `), 0, 0);
 }
