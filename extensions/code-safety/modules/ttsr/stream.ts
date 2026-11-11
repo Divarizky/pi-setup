@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createMatcher, type Matcher } from "./matcher.ts";
 import { stripViolations } from "./strip.ts";
-import type { Rule, TtsrDeps, Violation } from "./types.ts";
+import type { TtsrDeps, Violation } from "./types.ts";
 
 const MAX_RETRIES_PER_USER_MESSAGE = 2;
 const EXCERPT_LIMIT = 120;
@@ -52,13 +52,25 @@ export function registerStreamGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
     retriesForUserMessage: 0,
   };
 
-  let matcher: Matcher = createMatcher([]);
-
-  const activeRules = (): Rule[] =>
-    deps.getRules().filter((rule) => rule.enabled !== false && deps.isEnabled(rule.name));
+  // Satu instance matcher untuk seluruh sesi. Riwayat repeat (completedTurns, lastFiredTurn)
+  // harus bertahan lintas giliran agar kebijakan once dan after-gap berfungsi.
+  // Rule yang dimatikan lewat isEnabled tetap masuk matcher dan disaring saat pelanggaran
+  // diterima, sehingga /ttsr on|off tetap berlaku tanpa membuat ulang matcher.
+  // Jika getRules gagal saat registrasi, matcher dibuat ulang dengan rule kosong
+  // dan percobaan berikutnya dilakukan saat giliran pertama dimulai.
+  let matcher: Matcher | null = null;
+  try {
+    matcher = createMatcher(deps.getRules());
+  } catch (error) {
+    warn("registerStreamGuard", error);
+  }
+  function ensureMatcher(): Matcher {
+    if (!matcher) matcher = createMatcher(deps.getRules());
+    return matcher;
+  }
 
   function resetTurn(): void {
-    matcher = createMatcher(activeRules());
+    ensureMatcher().reset();
     state.abortedThisTurn = false;
     state.stripMatches = { text: [], thinking: [] };
     state.pendingCorrection = null;
@@ -117,38 +129,48 @@ export function registerStreamGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
       if (!scope) return;
       const delta = deltaOf(event);
       if (!delta) return;
-      const violations = matcher.feed(scope, delta);
-      for (const v of violations) handleViolation(v, ctx);
+      const violations = ensureMatcher().feed(scope, delta);
+      for (const v of violations) {
+        if (!deps.isEnabled(v.rule.name)) continue;
+        handleViolation(v, ctx);
+      }
     } catch (error) {
       warn("message_update", error);
     }
   });
 
-  pi.on("message_end", (event) => {
-    try {
-      if (event.message.role !== "assistant") return;
-      const message = event.message;
+  function finishAssistantMessage(message: any): { message: any } | undefined {
+    if (state.abortedThisTurn) {
+      return { message: { ...message, content: [] } };
+    }
 
-      if (state.abortedThisTurn) {
-        return { message: { ...message, content: [] } };
+    const { text: textMatches, thinking: thinkingMatches } = state.stripMatches;
+    if (textMatches.length === 0 && thinkingMatches.length === 0) return undefined;
+
+    const content = message.content.map((block: any) => {
+      if (block.type === "text" && textMatches.length > 0) {
+        return { ...block, text: stripViolations(block.text, textMatches.map((match) => ({ match }))) };
       }
+      if (block.type === "thinking" && thinkingMatches.length > 0) {
+        return {
+          ...block,
+          thinking: stripViolations(block.thinking, thinkingMatches.map((match) => ({ match }))),
+        };
+      }
+      return block;
+    });
+    return { message: { ...message, content } };
+  }
 
-      const { text: textMatches, thinking: thinkingMatches } = state.stripMatches;
-      if (textMatches.length === 0 && thinkingMatches.length === 0) return;
-
-      const content = message.content.map((block) => {
-        if (block.type === "text" && textMatches.length > 0) {
-          return { ...block, text: stripViolations(block.text, textMatches.map((match) => ({ match }))) };
-        }
-        if (block.type === "thinking" && thinkingMatches.length > 0) {
-          return {
-            ...block,
-            thinking: stripViolations(block.thinking, thinkingMatches.map((match) => ({ match }))),
-          };
-        }
-        return block;
-      });
-      return { message: { ...message, content } };
+  pi.on("message_end", (event) => {
+    if (event.message.role !== "assistant") return;
+    try {
+      ensureMatcher().endTurn();
+    } catch (error) {
+      warn("message_end endTurn", error);
+    }
+    try {
+      return finishAssistantMessage(event.message);
     } catch (error) {
       warn("message_end", error);
     }

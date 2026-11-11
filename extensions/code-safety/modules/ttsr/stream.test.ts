@@ -159,7 +159,8 @@ test("koreksi dikirim setelah agent_settled dengan nama rule dan teks koreksi", 
 
 test("retry koreksi berhenti setelah 2 kali pada satu pesan user, lalu direset oleh pesan user baru", async () => {
   const { pi, sent, emit } = makePi();
-  registerStreamGuard(pi as any, makeDeps([makeRule(ABORT_RULE)]));
+  const retryRule = makeRule(ABORT_RULE.replace("name: no-blocked", "name: no-blocked\nrepeat: after-gap\nrepeatGap: 1"));
+  registerStreamGuard(pi as any, makeDeps([retryRule]));
 
   const violate = async () => {
     const ctx = makeCtx();
@@ -264,4 +265,80 @@ test("rule yang dinonaktifkan lewat isEnabled tidak diproses", async () => {
   await emit("message_update", textDelta("CATAT"), ctx);
 
   assert.equal(logs.length, 0);
+});
+
+test("rule yang dimatikan di tengah sesi berhenti dipicu tanpa membuat ulang matcher", async () => {
+  const { pi, emit } = makePi();
+  const logs: ViolationEntry[] = [];
+  const disabled: string[] = [];
+  const deps: TtsrDeps = {
+    getRules: () => [makeRule(LOG_RULE.replace("name: observe", "name: observe\nrepeat: after-gap\nrepeatGap: 1"))],
+    log: (e) => logs.push(e),
+    isEnabled: (name) => !disabled.includes(name),
+  };
+  registerStreamGuard(pi as any, deps);
+  const ctx = makeCtx();
+  const runTurn = async (text: string) => {
+    await emit("message_start", startAssistant(), ctx);
+    await emit("message_update", textDelta(text), ctx);
+    await emit("message_end", assistantEnd(text), ctx);
+  };
+
+  await runTurn("CATAT giliran satu");
+  assert.equal(logs.length, 1);
+
+  disabled.push("observe");
+  await runTurn("CATAT giliran dua");
+  assert.equal(logs.length, 1, "rule yang dimatikan tidak boleh tercatat");
+
+  disabled.length = 0;
+  await runTurn("CATAT giliran tiga");
+  assert.equal(logs.length, 2, "rule yang diaktifkan kembali harus tercatat lagi");
+});
+
+const AFTER_GAP_RULE = `---
+name: observe-gap
+action: log
+scope: text
+condition:
+  - "GAP"
+repeat: after-gap
+repeatGap: 2
+---
+`;
+
+test("rule repeat once yang sudah memicu di giliran 1 tidak memicu lagi di giliran 2", async () => {
+  const { pi, emit } = makePi();
+  const logs: ViolationEntry[] = [];
+  registerStreamGuard(pi as any, makeDeps([makeRule(LOG_RULE)], logs));
+  const ctx = makeCtx();
+
+  await emit("message_start", startAssistant(), ctx);
+  await emit("message_update", textDelta("CATAT giliran satu"), ctx);
+  await emit("message_end", assistantEnd("CATAT giliran satu"), ctx);
+  assert.equal(logs.length, 1);
+
+  await emit("message_start", startAssistant(), ctx);
+  await emit("message_update", textDelta("CATAT giliran dua"), ctx);
+  await emit("message_end", assistantEnd("CATAT giliran dua"), ctx);
+  assert.equal(logs.length, 1, "repeat once tidak boleh memicu ulang lintas giliran");
+});
+
+test("rule repeat after-gap memicu lagi hanya setelah repeatGap giliran selesai", async () => {
+  const { pi, emit } = makePi();
+  const logs: ViolationEntry[] = [];
+  registerStreamGuard(pi as any, makeDeps([makeRule(AFTER_GAP_RULE)], logs));
+  const ctx = makeCtx();
+  const runTurn = async (text: string) => {
+    await emit("message_start", startAssistant(), ctx);
+    await emit("message_update", textDelta(text), ctx);
+    await emit("message_end", assistantEnd(text), ctx);
+  };
+
+  await runTurn("GAP giliran satu");
+  assert.equal(logs.length, 1);
+  await runTurn("GAP giliran dua");
+  assert.equal(logs.length, 1, "jarak 1 giliran belum memenuhi repeatGap 2");
+  await runTurn("GAP giliran tiga");
+  assert.equal(logs.length, 2, "jarak 2 giliran memenuhi repeatGap 2");
 });
