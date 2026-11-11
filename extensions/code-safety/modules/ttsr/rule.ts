@@ -128,6 +128,51 @@ function parsePrimitive(str: string): string | number | boolean {
   return stripped;
 }
 
+/**
+ * Mengurai field scope yang berisi satu atau beberapa scope dipisahkan koma.
+ * Setiap item harus 'text', 'thinking', atau 'tool:<nama>'.
+ */
+function parseScopeList(rawScope: string, fileName: string): string {
+  const items = rawScope
+    .split(",")
+    .map((it) => it.trim())
+    .filter((it) => it.length > 0);
+  if (items.length === 0) {
+    throw new Error(`[${fileName}] field 'scope' wajib diisi (contoh: text, thinking, tool:<nama>)`);
+  }
+  for (const item of items) {
+    if (item !== "text" && item !== "thinking" && !item.startsWith("tool:")) {
+      throw new Error(
+        `[${fileName}] scope '${item}' tidak valid. Harus 'text', 'thinking', atau 'tool:<nama>'`,
+      );
+    }
+  }
+  return items.join(", ");
+}
+
+/**
+ * Mengembalikan daftar scope tunggal dari nilai field scope.
+ * Mendukung nilai berbentuk daftar koma seperti "tool:write, tool:edit".
+ */
+export function ruleScopes(scope: string): string[] {
+  return scope
+    .split(",")
+    .map((it) => it.trim())
+    .filter((it) => it.length > 0);
+}
+
+/**
+ * Memeriksa apakah scope event cocok dengan salah satu scope dalam daftar scope rule.
+ * Event 'tool:<nama>' cocok dengan item tepat sama atau wildcard 'tool:*'.
+ */
+export function matchesRuleScope(ruleScope: string, eventScope: string): boolean {
+  for (const item of ruleScopes(ruleScope)) {
+    if (item === eventScope) return true;
+    if (item === "tool:*" && eventScope.startsWith("tool:")) return true;
+  }
+  return false;
+}
+
 function normalizeStringList(val: unknown): string[] {
   if (typeof val === "string") {
     const trimmed = val.trim();
@@ -172,17 +217,7 @@ export function parseRule(markdown: string, fileName = "<inline>"): Rule {
   if (typeof rawScope !== "string" || !rawScope.trim()) {
     throw new Error(`[${fileName}] field 'scope' wajib diisi (contoh: text, thinking, tool:<nama>)`);
   }
-  const scopeStr = rawScope.trim();
-  if (
-    scopeStr !== "text" &&
-    scopeStr !== "thinking" &&
-    !scopeStr.startsWith("tool:")
-  ) {
-    throw new Error(
-      `[${fileName}] scope '${scopeStr}' tidak valid. Harus 'text', 'thinking', atau 'tool:<nama>'`,
-    );
-  }
-  const scope = scopeStr as RuleScope;
+  const scope = parseScopeList(rawScope, fileName);
 
   const flags =
     typeof data.flags === "string" && data.flags.trim() ? data.flags.trim() : "i";
@@ -209,9 +244,13 @@ export function parseRule(markdown: string, fileName = "<inline>"): Rule {
   }
 
   const compiledConditions: RegExp[] = [];
+  const compiledGlobalConditions: RegExp[] = [];
   for (const pat of rawConditions) {
     try {
       compiledConditions.push(new RegExp(pat, flags));
+      compiledGlobalConditions.push(
+        new RegExp(pat, flags.includes("g") ? flags : `${flags}g`),
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`[${fileName}] regex condition rusak '${pat}': ${msg}`);
@@ -300,6 +339,7 @@ export function parseRule(markdown: string, fileName = "<inline>"): Rule {
     correctionText: body.trim(),
     filePath: fileName,
     compiledConditions,
+    compiledGlobalConditions,
     compiledUnlessUserSays,
   };
 }

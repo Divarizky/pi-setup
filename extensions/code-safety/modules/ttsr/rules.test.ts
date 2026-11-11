@@ -186,3 +186,36 @@ test("Rule bawaan: tautology-test mendeteksi tes tautologi dan melewatkan tes se
   });
   assert.equal(matchToolCondition(rule, nonTestInput).matched, false);
 });
+
+test("Rule bawaan: secret-in-write hanya mencakup write, edit, dan hash_edit", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "secret-in-write");
+  assert.deepEqual(
+    rule.scope.split(",").map((s) => s.trim()),
+    ["tool:write", "tool:edit", "tool:hash_edit"],
+  );
+});
+
+test("Matcher: secret-in-write tidak memicu pada scope tool:bash", () => {
+  // Mencegah false positive: perintah bash pengujian autentikasi tidak boleh terblokir.
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "secret-in-write");
+  const matcher = createMatcher([rule]);
+  const violations = matcher.feed(
+    "tool:bash",
+    JSON.stringify({ command: "node --test auth.test.ts # password: verifikasi-alur-login" }),
+  );
+  assert.equal(violations.length, 0);
+});
+
+test("Matcher: secret-in-write memicu pada scope tool:write, tool:edit, dan tool:hash_edit", () => {
+  // Mencegah regresi: penyempitan scope tidak boleh melepas perlindungan tool penulisan.
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "secret-in-write");
+  const payload = JSON.stringify({ path: ".env", content: "API_KEY=abcdefgh12345678" });
+  for (const scope of ["tool:write", "tool:edit", "tool:hash_edit"]) {
+    const matcher = createMatcher([rule]);
+    const violations = matcher.feed(scope, payload);
+    assert.equal(violations.length, 1, `scope ${scope} harus memicu secret-in-write`);
+  }
+});

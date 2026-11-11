@@ -1,4 +1,10 @@
+import { matchesRuleScope } from "./rule.ts";
 import type { MatchRange, Rule, Violation } from "./types.ts";
+
+function toGlobalRegex(reg: RegExp): RegExp {
+  const flags = reg.flags.includes("g") ? reg.flags : `${reg.flags}g`;
+  return new RegExp(reg.source, flags);
+}
 
 export interface MatcherOptions {
   windowSize?: number;
@@ -30,6 +36,14 @@ export function createMatcher(
   options: MatcherOptions = {},
 ): Matcher {
   const windowSize = options.windowSize ?? 2000;
+  // Regex global dikompilasi sekali per matcher, bukan per delta stream.
+  const globalConditionsByRule = new Map<Rule, RegExp[]>(
+    rules.map((rule) => [
+      rule,
+      rule.compiledGlobalConditions ??
+        rule.compiledConditions.map(toGlobalRegex),
+    ]),
+  );
   const triggerCounts = new Map<string, number>();
   const scopes = new Map<string, ScopeState>();
   // Riwayat pemicu lintas giliran: nama rule -> jumlah giliran selesai saat terakhir memicu.
@@ -78,17 +92,6 @@ export function createMatcher(
     return triggerCounts.get(ruleName) ?? 0;
   }
 
-  function isScopeMatch(ruleScope: string, currentScope: string): boolean {
-    if (ruleScope === currentScope) return true;
-    if (ruleScope === "tool:*" && currentScope.startsWith("tool:")) return true;
-    return false;
-  }
-
-  function toGlobalRegex(reg: RegExp): RegExp {
-    const flags = reg.flags.includes("g") ? reg.flags : `${reg.flags}g`;
-    return new RegExp(reg.source, flags);
-  }
-
   function feed(scope: string, delta: string): Violation[] {
     if (!delta) return [];
 
@@ -100,7 +103,7 @@ export function createMatcher(
     // Evaluasi tiap rule yang relevan dan masih aktif
     for (const rule of rules) {
       if (rule.enabled === false) continue;
-      if (!isScopeMatch(rule.scope, scope)) continue;
+      if (!matchesRuleScope(rule.scope, scope)) continue;
 
       const currentTriggers = triggerCounts.get(rule.name) ?? 0;
       if (currentTriggers >= rule.maxPerTurn) continue;
@@ -114,10 +117,12 @@ export function createMatcher(
 
       let quotaLeft = rule.maxPerTurn - currentTriggers;
 
-      for (const condition of rule.compiledConditions) {
+      const globalConditions = globalConditionsByRule.get(rule) ?? [];
+      for (const globalRegex of globalConditions) {
         if (quotaLeft <= 0) break;
 
-        const globalRegex = toGlobalRegex(condition);
+        // Atur ulang posisi karena instance dipakai ulang antar delta.
+        globalRegex.lastIndex = 0;
         let match: RegExpExecArray | null;
 
         while ((match = globalRegex.exec(state.buffer)) !== null) {

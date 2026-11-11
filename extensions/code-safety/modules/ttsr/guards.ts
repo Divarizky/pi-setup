@@ -7,6 +7,7 @@ import type {
   ToolCallEvent,
   ToolCallEventResult,
 } from "@earendil-works/pi-coding-agent";
+import { matchesRuleScope } from "./rule.ts";
 import type { Rule, TtsrDeps, ViolationEntry } from "./types.ts";
 
 /**
@@ -210,14 +211,8 @@ export function registerToolGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
           if (!rule.enabled) continue;
           if (!deps.isEnabled(rule.name)) continue;
 
-          // Scope harus cocok dengan tool saat ini atau wildcard tool:*
-          const isScoped =
-            rule.scope === expectedScope ||
-            rule.scope === "tool:*" ||
-            (rule.scope.startsWith("tool:") &&
-              rule.scope.slice(5) === toolName);
-
-          if (!isScoped) continue;
+          // Scope harus cocok dengan salah satu item daftar scope rule
+          if (!matchesRuleScope(rule.scope, expectedScope)) continue;
 
           const matchResult = matchToolCondition(rule, serializedInput);
           if (!matchResult.matched) continue;

@@ -16,7 +16,11 @@ export interface Rule {
   name: string;
   description?: string;
   action: RuleAction;
-  scope: RuleScope;
+  /**
+   * Daftar scope dipisahkan koma (misal "tool:write, tool:edit").
+   * Setiap item berbentuk RuleScope. Diuraikan oleh ruleScopes() di rule.ts.
+   */
+  scope: string;
   condition: string[];
   flags: string;
   anchor: RuleAnchor;
@@ -28,6 +32,11 @@ export interface Rule {
   correctionText: string;
   filePath?: string;
   compiledConditions: RegExp[];
+  /**
+   * Versi bendera global dari compiledConditions, dikompilasi sekali saat parse.
+   * Pemakai wajib mengatur ulang lastIndex sebelum memakai instance ini.
+   */
+  compiledGlobalConditions?: RegExp[];
   compiledUnlessUserSays?: RegExp[];
 }
 

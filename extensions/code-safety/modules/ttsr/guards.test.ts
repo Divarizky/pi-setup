@@ -20,7 +20,7 @@ import {
   registerToolGuard,
   sanitizeExcerpt,
 } from "./guards.ts";
-import { parseRule } from "./rule.ts";
+import { loadRules, parseRule } from "./rule.ts";
 import type { Rule, TtsrDeps, ViolationEntry } from "./types.ts";
 
 interface MockPi extends ExtensionAPI {
@@ -513,4 +513,36 @@ test("AC-7: Exception di dalam handler ditangkap aman dan tidak keluar (NFR-2)",
       createMockContext(),
     );
   });
+});
+
+test("Guard: secret-in-write bawaan tidak memblokir bash dan tetap memblokir write, edit, hash_edit", () => {
+  // Mencegah dua kegagalan: false positive pada bash, dan hilangnya blokir pada tool penulisan.
+  const rules = loadRules(new URL("./rules", import.meta.url).pathname);
+  const secretRule = rules.find((r) => r.name === "secret-in-write");
+  assert.ok(secretRule, "rule secret-in-write harus ada di direktori rules bawaan");
+
+  const secretInput = { path: ".env", content: "API_KEY=abcdefgh12345678" };
+  const cases: Array<{ toolName: string; input: unknown; blocked: boolean }> = [
+    {
+      toolName: "bash",
+      input: { command: "node --test auth.test.ts # password: verifikasi-alur-login" },
+      blocked: false,
+    },
+    { toolName: "write", input: secretInput, blocked: true },
+    { toolName: "edit", input: secretInput, blocked: true },
+    { toolName: "hash_edit", input: secretInput, blocked: true },
+  ];
+
+  for (const c of cases) {
+    const pi = createMockPi();
+    const logEntries: ViolationEntry[] = [];
+    registerToolGuard(pi, createDeps([secretRule], logEntries));
+    const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+      "tool_call",
+      { type: "tool_call", toolCallId: `call_${c.toolName}`, toolName: c.toolName, input: c.input } as any,
+      createMockContext("Tulis konfigurasi"),
+    );
+    const blockedByRule = result?.block === true && logEntries.some((e) => e.rule === "secret-in-write");
+    assert.equal(blockedByRule, c.blocked, `tool ${c.toolName}: blocked harus ${c.blocked}`);
+  }
 });
