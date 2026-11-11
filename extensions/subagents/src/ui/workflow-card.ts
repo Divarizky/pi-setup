@@ -116,6 +116,10 @@ export const NERD_GLYPHS: WorkflowGlyphs = {
   warning: "",
 };
 
+// Nerd Font PUA glyphs are counted as 1 cell but drawn ~2 cells wide; the trailing
+// space gives the overflow room so the icon is not clipped by the next character.
+const NERD_ICON_PAD = " ";
+
 export function isNerdFontSupported(): boolean {
   const env = process.env;
   if (env.NERD_FONT === "0" || env.NERD_FONT === "false" || env.USE_NERD_FONT === "0") {
@@ -140,19 +144,19 @@ export function isNerdFontSupported(): boolean {
 
 export function getTickIcon(ascii?: boolean, nerd?: boolean): string {
   if (ascii) return ASCII_GLYPHS.tick;
-  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.tick;
+  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.tick + NERD_ICON_PAD;
   return UNICODE_GLYPHS.tick;
 }
 
 export function getCrossIcon(ascii?: boolean, nerd?: boolean): string {
   if (ascii) return ASCII_GLYPHS.cross;
-  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.cross;
+  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.cross + NERD_ICON_PAD;
   return UNICODE_GLYPHS.cross;
 }
 
 export function getWarningIcon(ascii?: boolean, nerd?: boolean): string {
   if (ascii) return ASCII_GLYPHS.warning;
-  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.warning;
+  if (nerd ?? isNerdFontSupported()) return NERD_GLYPHS.warning + NERD_ICON_PAD;
   return UNICODE_GLYPHS.warning;
 }
 

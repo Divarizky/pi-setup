@@ -105,7 +105,7 @@ export function renderTodoCall(
 	state: TaskState,
 ): Text {
 	const glyph = ACTION_GLYPH[args.action] ?? args.action;
-	let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", glyph);
+	let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", `${glyph} `);
 
 	if (args.action === "create" && args.subject) {
 		text += ` ${theme.fg("dim", args.subject)}`;
@@ -150,5 +150,5 @@ export function renderTodoResult(result: { details?: unknown }, theme: Theme): T
 		const ic = iconFor(status);
 		return new Text(theme.fg(STATUS_COLOR[status], `${ic}  ${formatStatusLabel(status)}`), 0, 0);
 	}
-	return new Text(theme.fg("success", `${ICON_CHECKED} `), 0, 0);
+	return new Text(theme.fg("success", `${ICON_CHECKED}  `), 0, 0);
 }
