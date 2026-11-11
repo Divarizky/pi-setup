@@ -53,7 +53,16 @@ function loadConfig(): FailureConfig {
   }
 }
 
+// Cache konfigurasi tingkat modul. Diisi sekali saat registerFailureRecovery,
+// termasuk saat berkas tidak ada atau rusak (nilai default ikut di-cache).
+let cachedConfig: FailureConfig | null = null;
+
+function currentConfig(): FailureConfig {
+  return cachedConfig ?? parseConfig({});
+}
+
 export function registerFailureRecovery(pi: ExtensionAPI): void {
+  cachedConfig = loadConfig();
   let state: FailureState = createFailureState();
 
   // before_agent_start hanya terpanggil untuk run baru (user atau custom), bukan
@@ -68,7 +77,7 @@ export function registerFailureRecovery(pi: ExtensionAPI): void {
     "tool_call",
     (event: ToolCallEvent, _ctx: ExtensionContext): ToolCallEventResult | void => {
       try {
-        const config = loadConfig();
+        const config = currentConfig();
         if (!config.loop.enabled) return;
         const blocked = registerToolCall(
           state,
@@ -93,7 +102,7 @@ export function registerFailureRecovery(pi: ExtensionAPI): void {
     "tool_result",
     (event: ToolResultEvent, _ctx: ExtensionContext): ToolResultEventResult | void => {
       try {
-        const config = loadConfig();
+        const config = currentConfig();
         if (!config.consecutiveErrors.enabled) return;
         const annotate = registerToolResult(
           state,
@@ -125,7 +134,7 @@ export function registerFailureRecovery(pi: ExtensionAPI): void {
     ): AgentBeforeSettleEventResult | void => {
       try {
         if (event.outcome === "aborted") return;
-        const config = loadConfig();
+        const config = currentConfig();
         if (!config.emptyStop.enabled) return;
         if (!isEmptyStop(event.context.llmMessages)) return;
         if (!claimContinuation(state, config.emptyStop.maxRetries)) return;
