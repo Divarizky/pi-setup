@@ -47,6 +47,28 @@ const workflowCall = (script: string, id = "wf-call-1") =>
   fauxToolCall("SubagentWorkflow", { script }, { id });
 
 /**
+ * True for the parent turn. Pi 1.5.x does not expose the tool list on the faux
+ * `Context` (`context.tools` is undefined for the parent), so the parent is
+ * identified by its first user message, which is the run's own prompt. Child
+ * turns carry the script's agent prompts instead.
+ */
+/**
+ * The system prompt the model actually receives. Pi 1.5.x keeps it in the system
+ * message's `sections`; `context.systemPrompt` on the faux Context is empty.
+ */
+const systemTextOf = (context: { messages?: unknown[] }) =>
+  (context.messages ?? [])
+    .filter((m: any) => m.role === "system")
+    .map((m: any) => Object.values(m.sections ?? {}).join("\n\n"))
+    .join("\n\n");
+
+const isParentTurn = (context: { messages?: unknown[] }) => {
+  const first = (context.messages ?? []).find((m: any) => m.role === "user") as any;
+  const text = typeof first?.content === "string" ? first.content : (first?.content?.[0]?.text ?? "");
+  return text.startsWith("run the ");
+};
+
+/**
  * Every workflow journal written for `cwd`, across whatever session id the run
  * ended up with. The path is derived the same way `sessionTaskDir` derives it.
  */
@@ -102,10 +124,9 @@ describe("Workflow end to end", () => {
       maxModelCalls: 32,
       live: false, // scripted on purpose: a real model would not emit the tool call
       respond: context => {
-        const isParent = (context.tools ?? []).some(t => t.name === "SubagentWorkflow");
-        if (!isParent) {
+        if (!isParentTurn(context)) {
           childPrompts.push(asText(context));
-          childSystemPrompts.push(context.systemPrompt ?? "");
+          childSystemPrompts.push(systemTextOf(context));
           return fauxText("SUBAGENT-DONE");
         }
         return asText(context).includes("Task ID")
@@ -186,13 +207,16 @@ describe("Workflow end to end", () => {
       maxModelCalls: 32,
       live: false, // scripted on purpose: a real model would not emit the tool call
       respond: context => {
-        const isParent = (context.tools ?? []).some(t => t.name === "SubagentWorkflow");
-        if (!isParent) {
+        if (!isParentTurn(context)) {
           const seen = asText(context);
           childPrompts.push(seen);
           // Answer through the injected tool exactly once, then stop — a model
           // that kept calling it every turn would just spin.
-          const alreadyAnswered = (context.tools ?? []).length > 0 && /Recorded\./.test(seen);
+          // `context.tools` is undefined on every turn in Pi 1.5.x, so detect the
+          // answer from the StructuredOutput tool result already in the transcript.
+          const alreadyAnswered = (context.messages ?? []).some(
+            (m: any) => m.role === "toolResult" && m.toolName === "StructuredOutput",
+          );
           return alreadyAnswered
             ? fauxText("done")
             : fauxToolCall("StructuredOutput", { files: ["a.ts", "b.ts"] }, { id: "so-1" });
@@ -234,8 +258,7 @@ describe("Workflow end to end", () => {
       maxModelCalls: 12,
       live: false, // scripted on purpose: a real model would not emit the tool call
       respond: context => {
-        const isParent = (context.tools ?? []).some(t => t.name === "SubagentWorkflow");
-        if (!isParent) {
+        if (!isParentTurn(context)) {
           childPrompts.push(asText(context));
           return fauxText("SUBAGENT-DONE");
         }

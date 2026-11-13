@@ -98,8 +98,21 @@ function visibleTools(opts: any): any[] {
  * that hides its own tool prompts a model with nothing to call.
  */
 function cloneSession(turn?: (tool: any) => Promise<void> | void) {
+  // Pi 1.5.x: `state.systemPrompt` is a read-only getter over the system
+  // message(s) in `messages`. The clone's own prompt is seeded first ("rebuilt-from-cwd");
+  // mention-clone appends the live prompt as a system message after it.
+  const messages: any[] = [{ role: "system", content: "rebuilt-from-cwd" }];
+  const state = {
+    get systemPrompt() {
+      return messages
+        .filter((m) => m.role === "system")
+        .map((m) => (typeof m.content === "string" ? m.content : ""))
+        .join("\n\n");
+    },
+    messages,
+  };
   const session = {
-    agent: { state: { systemPrompt: "rebuilt-from-cwd", messages: [] as any[] } },
+    agent: { state },
     prompt: vi.fn(async () => {}),
     dispose: vi.fn(),
   } as any;
@@ -137,7 +150,7 @@ describe("cloning the conversation", () => {
 
     await runMentionClone(opts());
 
-    expect(session.agent.state.messages).toEqual([
+    expect(session.agent.state.messages.filter((m: any) => m.role !== "system")).toEqual([
       { role: "user", content: [{ type: "text", text: "hi" }] },
       { role: "assistant", content: [{ type: "text", text: "hello" }] },
     ]);
@@ -192,8 +205,8 @@ describe("cloning the conversation", () => {
     const result = await runMentionClone(o);
 
     expect(result).toEqual({ spawned: true });
-    expect(session.agent.state.messages).toEqual([]);
-    expect(session.agent.state.systemPrompt).toBe("the live system prompt");
+    expect(session.agent.state.messages.filter((m: any) => m.role !== "system")).toEqual([]);
+    expect(session.agent.state.systemPrompt).toContain("the live system prompt");
   });
 
   it("carries the live system prompt rather than the one it rebuilt", async () => {
@@ -203,7 +216,7 @@ describe("cloning the conversation", () => {
 
     await runMentionClone(opts());
 
-    expect(session.agent.state.systemPrompt).toBe("the live system prompt");
+    expect(session.agent.state.systemPrompt).toContain("the live system prompt");
   });
 
   it("inherits the parent's model, thinking level and providers", async () => {
