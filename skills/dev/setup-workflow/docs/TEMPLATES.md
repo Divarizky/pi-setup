@@ -98,10 +98,10 @@ Pengetahuan domain dan teknis project — lazy-load saat perlu. Profil dan quick
 - <area> — <boundary test, command, atau coverage yang relevan>
 
 ## Gotchas <!-- auto -->
-- <jebakan> — <cara menghindarinya dan source>
+- <jebakan> — <cara menghindarinya> — Source: <path>
 
 ## Historical Decisions <!-- auto -->
-- <ringkasan> — detail di `ADR-N` jika keputusan bersifat final
+- <ringkasan> — detail di `ADR-N` jika keputusan bersifat final — Source: <path ADR>
 
 ## References
 - <link eksternal / template / sample>
@@ -197,9 +197,14 @@ updated: <YYYY-MM-DD>
 - **Strategy:** <unit/integration/e2e>
 
 ## Tasks
+### Queue
 - [ ] TASK-01 | [AC-01] <behavior end-to-end> | Priority: high | Parallel: no
     Depends: none
     Done: <kriteria terukur>; <cara verifikasi>
+
+### In Progress
+
+### Done
 
 ## Evidence
 - <test, commit, atau catatan validasi>
@@ -260,9 +265,10 @@ features:
     updated: <YYYY-MM-DD>
     task_count: <total>
     task_done: <selesai>
+    issue: <owner/repo>#<number>  # opsional; diisi to-tasks setelah issue fitur dibuat
 ```
 
-Single-writer: `to-tasks` (buat entry), `implement` (counter). Task aktif dan detailnya disimpan di `.workspace/work/F-<id>.md`.
+Single-writer: `to-tasks` (buat entry dan `issue`), `implement` (counter `task_done`/`status`). Task aktif dan detailnya disimpan di `.workspace/work/F-<id>.md`.
 
 ---
 
@@ -315,20 +321,22 @@ Requirement terukur lintas fitur masuk SRS (`GR-xx`); keputusan arsitektur final
 
 ## Auth & Authorization <!-- auto -->
 - Provider: <Clerk / Supabase Auth / NextAuth / custom> — Source: <file/config>
+
+## Auth & Authorization Rules
 - Protected route wajib verifikasi sesi di server; jangan percaya user ID atau role dari client.
 - Terapkan permission check / RBAC sebelum membaca atau mengubah data terlindungi.
 
-## Secrets & Environment <!-- auto -->
+## Secrets & Environment Rules
 - Kredensial dan API keys wajib via environment variable; dilarang hardcode secret di source code.
 - Dilarang commit `.env*` berisi credential; sediakan `.env.example` berisi nama variabel saja.
 - Pisahkan kredensial development, staging, dan production.
 
-## Input Validation & API Safety <!-- auto -->
+## Input Validation & API Safety Rules
 - Validasi semua input di server meskipun client sudah memvalidasi (misal: Zod / schema validator).
 - Terapkan rate limit pada endpoint rawan abuse (auth, reset password, generate AI, public form).
 - Error user-facing dilarang membocorkan credential, API key, stack trace, atau path internal.
 
-## Data Protection <!-- auto -->
+## Data Protection Rules
 - Simpan hanya data yang benar-benar dibutuhkan; dilarang log password, token, atau PII.
 - Gunakan parameterized query atau ORM; batasi privilege database ke minimum yang diperlukan.
 
@@ -354,17 +362,17 @@ Ikuti pola existing; jangan memaksa gaya baru jika codebase sudah punya konvensi
 - Bahasa & Framework: <TypeScript / React / Next.js / etc.> — Source: <package.json/config>
 - Linter & Formatter: <ESLint / Prettier / Biome / etc.> — Source: <config>
 
-## Naming & Structure <!-- auto -->
+## Naming & Structure Rules
 - Komponen: PascalCase (<UserCard.tsx>). Fungsi/variabel: camelCase (<getUserData>). Konstanta: UPPER_SNAKE_CASE (<MAX_RETRY_COUNT>).
 - Boolean: prefiks terbaca jelas (<isLoading>, <hasAccess>, <canEdit>).
 - Komponen fungsional: pisahkan UI, business logic, dan data fetching bila praktis.
 - Tipe/props eksplisit; handle loading, error, dan empty state.
 
-## Comments & Cleanliness <!-- auto -->
+## Comments & Cleanliness Rules
 - Komentar hanya untuk menjelaskan WHY, bukan WHAT yang sudah jelas dari kode.
 - Bersihkan unused import, variabel mati, dan console log debug sebelum selesai.
 
-## Verification Checklist <!-- auto -->
+## Verification Checklist
 - Jalankan lint, type-check, dan test relevan sebelum menyatakan implementasi selesai.
 ```
 
@@ -383,21 +391,23 @@ Model yang masih kandidat disimpan di work card `F-<id>.md`; model approved dica
 ## Stack & Connection <!-- auto -->
 - Database & Provider: <PostgreSQL / SQLite / Supabase / Neon / etc.> — Source: <config>
 - ORM / Query Builder: <Prisma / Drizzle / TypeORM / raw SQL> — Source: <package.json/schema>
+
+## Connection Rules
 - Connection string wajib dari env var; dilarang hardcode URL database production.
 
 ## Core Models <!-- auto -->
 ### <ModelName>
-- Deskripsi: <peran model dalam domain bahasa sederhana>
-- Fields: <id, field kunci, created/updated timestamps>
-- Relations: <One User can have many Projects, etc.>
-- Constraints & Index: <foreign keys, unique constraints, index penting>
+- Deskripsi: <peran model dalam domain bahasa sederhana> — Source: <path model/schema>
+- Fields: <id, field kunci, created/updated timestamps> — Source: <path model/schema>
+- Relations: <One User can have many Projects, etc.> — Source: <path model/schema>
+- Constraints & Index: <foreign keys, unique constraints, index penting> — Source: <path migrasi/schema>
 
-## Migrations & Schema Changes <!-- auto -->
+## Migrations & Schema Rules
 - Alur: ubah skema definisi → generate migration → review file migrasi → test lokal/staging → deploy via pipeline.
 - Dilarang mengubah skema production manual untuk melewati migrasi; dilarang reset database production.
 - Gunakan transaksi untuk operasi yang harus sukses atau gagal bersamaan.
 
-## Seed Data <!-- auto -->
+## Seed Data Rules
 - Script seed hanya untuk development/test; dilarang memasukkan data user asli atau secret production.
 ```
 
@@ -415,21 +425,22 @@ Detail endpoint per fitur yang belum final disimpan di work card; endpoint appro
 
 ## Base Configuration <!-- auto -->
 - Dev URL: <http://localhost:3000/api> — Prod URL: <https://domain.com/api> — Source: <config>
-- Format: JSON. Versioning: </api/v1> bila ada.
+- Format: <JSON / lainnya> — Source: <path konfigurasi API>
+- Versioning: </api/v1> bila ada — Source: <path router/config>
 
-## Authentication & Headers <!-- auto -->
+## Authentication & Headers Rules
 - Endpoint terlindungi wajib menyertakan token/session (`Authorization: Bearer <token>`).
 - Kredensial server-only dilarang dikirim ke browser.
 
-## Conventions & Errors <!-- auto -->
+## Conventions & Errors Rules
 - Gunakan noun untuk resource: GET/POST/PATCH/DELETE `/api/v1/<resource>`.
 - Format response & error seragam; dilarang mengembalikan internal stack trace ke user.
 - Status code standar: 200 (OK), 201 (Created), 400 (Bad Request), 401 (Unauthorized), 403 (Forbidden), 404 (Not Found), 409 (Conflict), 429 (Rate Limited), 500 (Server Error).
 
 ## Third-Party Integrations <!-- auto -->
 ### <ProviderName>
-- Tujuan: <payment / auth / storage / AI / etc.>
-- Server env vars: <PROVIDER_SECRET_KEY> (server-only)
-- Webhooks / Endpoints: <path webhook, verifikasi signature>
-- Failure behavior: <retry strategy / fallback behavior>
+- Tujuan: <payment / auth / storage / AI / etc.> — Source: <path integrasi/config>
+- Server env vars: <PROVIDER_SECRET_KEY> (server-only) — Source: <path .env.example / config>
+- Webhooks / Endpoints: <path webhook, verifikasi signature> — Source: <path route webhook>
+- Failure behavior: <retry strategy / fallback behavior> — Source: <path handler>
 ```

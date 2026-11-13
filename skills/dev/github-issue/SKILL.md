@@ -17,9 +17,9 @@ Ubah pekerjaan yang sudah jelas menjadi GitHub issue yang bisa dikerjakan orang 
 
 ## Invocation
 
-Dipanggil eksplisit atau melalui route `ask-me`: "buat issue", "bikin issue github", "file bug report", "convert task ke issue", "buat issue dari task ini".
+Dipanggil eksplisit, melalui route `ask-me`, atau dari Step 5 `to-tasks` atas pilihan user: "buat issue", "bikin issue github", "file bug report", "convert task ke issue", "buat issue dari task ini".
 
-Jangan dipakai untuk: membuat PR, mengedit atau menutup issue existing, comment pada issue, membuat label, atau push kode.
+Jangan dipakai untuk: membuat PR, mengedit atau menutup issue existing (pengecualian: sinkronisasi checkbox oleh `implement` di Project mode, dengan konfirmasi sendiri), comment pada issue, membuat label, atau push kode.
 
 ## Prerequisites
 
@@ -91,6 +91,9 @@ Susun draft dengan struktur berikut. Hilangkan section yang memang tidak relevan
 - [ ] <kondisi terukur dan bisa diverifikasi tanpa bertanya lagi>
 - [ ] <kondisi terukur>
 
+## Tasks (issue level fitur saja)
+- [ ] <TASK-id> — <judul task> (Done: <done criteria singkat>)
+
 ## Technical Context
 - Files: <path relatif dari repo root yang sudah diverifikasi ada dengan `git ls-files`>
 - Approach: <opsional, hanya jika sudah disepakati>
@@ -109,7 +112,9 @@ Environment: <versi, OS, runtime>
 
 Aturan isi:
 
+- Heading `## Tasks (issue level fitur saja)` ditulis sebagai `## Tasks` di body. Format baris `- [ ] TASK-<n> ` dipakai `implement` untuk mencentang; task di `### Done` ditulis `- [x]`. Teks panduan ini NEVER masuk ke body issue.
 - Acceptance criteria memakai checkbox `- [ ]`, satu kondisi per baris.
+- Issue level fitur (dari `to-tasks`, pilihan `fitur`): satu issue, section `Tasks` berisi satu checkbox per task; task di `### Done` ditulis `- [x]`, sisanya `- [ ]`. Acceptance Criteria digabung dari `Done` dan `Ref` task. Section `Tasks` dihilangkan untuk issue per task atau bug.
 - NEVER memakai kata samar ("bagus", "lengkap", "sesuai"). Tulis kondisi yang bisa diuji.
 - Path di `Technical Context` MUST sudah diverifikasi dengan `git ls-files` atau `ls`. Path yang belum diverifikasi ditulis sebagai `Proposed: <path>`.
 - Root cause yang belum terverifikasi ditandai `(hipotesis)`.
@@ -156,31 +161,35 @@ Jika `ask_user` tidak tersedia, tulis pertanyaan yang sama di chat dan tunggu ja
 ## Step 4 — Create Issue
 
 1. Buat file sementara: `BODY_FILE="$(mktemp)"`. Tulis body ke `BODY_FILE` memakai tool `write`. Body NEVER dimasukkan lewat heredoc atau argumen shell.
-2. Jalankan perintah berikut dengan `REPO`, `TITLE`, `BODY_FILE`, dan `LABELS` yang sama persis dengan preview:
+2. Jalankan perintah berikut dengan `REPO`, `TITLE`, `BODY_FILE`, dan `LABELS` yang sama persis dengan preview. Jalankan `rm` walau `gh` gagal; jangan pakai `set -e`:
 
 ```bash
-set -euo pipefail
 LABEL_ARGS=()
 for label in "${LABELS[@]}"; do LABEL_ARGS+=(--label "$label"); done
-gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" ${LABEL_ARGS[@]+"${LABEL_ARGS[@]}"}
+ISSUE_URL="$(gh issue create --repo "$REPO" --title "$TITLE" --body-file "$BODY_FILE" ${LABEL_ARGS[@]+"${LABEL_ARGS[@]}"})" || ISSUE_URL=""
 rm -f "$BODY_FILE"
+[ -n "$ISSUE_URL" ] || { echo "gh issue create gagal" >&2; exit 1; }
+ISSUE_NUMBER="${ISSUE_URL##*/}"
+printf 'ISSUE_URL=%s\nISSUE_NUMBER=%s\n' "$ISSUE_URL" "$ISSUE_NUMBER"
 ```
 
 - `LABELS` hanya berisi label yang sudah dikonfirmasi dan tersedia di repo. Jika kosong, hapus `LABEL_ARGS` dari perintah.
 - JANGAN memakai `--assignee`, `--milestone`, atau `--project` kecuali user memintanya eksplisit.
+- `ISSUE_URL` berisi URL yang dicetak `gh issue create`; `ISSUE_NUMBER` diambil dari segmen terakhir URL itu.
+- Variabel shell TIDAK bertahan antar pemanggilan bash. Ambil `ISSUE_URL` dan `ISSUE_NUMBER` dari baris `printf` output langkah ini, catat sebagai nilai literal, lalu substitusikan literal itu di Step 5 dan Output Contract.
 - Jika `gh` gagal, tampilkan error apa adanya tanpa token, hapus `BODY_FILE`, lalu stop. Retry hanya setelah konfirmasi baru.
 
 ## Step 5 — Validate
 
 ```bash
-gh issue view "<number>" --repo "$REPO" --json number,title,state,url,labels
+gh issue view <ISSUE_NUMBER> --repo <owner/repo> --json number,title,state,url,labels
 ```
 
-Bandingkan `title` dan `labels` dengan preview. Jika tidak cocok, laporkan perbedaannya. NEVER mengedit issue tanpa konfirmasi baru.
+`<ISSUE_NUMBER>` dan `<owner/repo>` diganti nilai literal dari Step 4. Bandingkan `title` dan `labels` dengan preview. Jika tidak cocok, laporkan perbedaannya. NEVER mengedit issue tanpa konfirmasi baru.
 
 ## Step 6 — Report
 
-Tampilkan URL issue di chat. Skill ini NEVER menulis referensi issue ke work card, `TRACKER.md`, atau file workflow lain. Jika user ingin menyimpan referensi, beri tahu bahwa itu di luar skill ini dan ditangani sesi yang memiliki artifact tersebut (`to-tasks` untuk `## Tasks`).
+Tampilkan URL issue di chat. Skill ini NEVER menulis referensi issue ke work card, `TRACKER.md`, atau file workflow lain. Jika user ingin menyimpan referensi, beri tahu bahwa itu di luar skill ini. Saat dipanggil dari `to-tasks` (issue level fitur), `to-tasks` yang menulis `issue:` ke `TRACKER.md`, dan `implement` yang mencentang checkbox saat task Done.
 
 ## Stop Conditions
 
@@ -206,10 +215,11 @@ Risks/Limitations: <none atau daftar singkat>
 Next Step: <implement | to-tasks | status | none>
 ```
 
-Jika status `complete`, tampilkan URL issue di baris pertama.
+Jika status `complete`, tampilkan URL issue di baris pertama dan `Issue ref: <owner/repo>#<number>` (`<number>` diganti nilai literal `ISSUE_NUMBER` dari Step 4) agar caller (`to-tasks`) bisa menyimpannya.
 
 ## Routing
 
+- Dipanggil dari Step 5 `to-tasks` atas pilihan user: setelah selesai atau dibatalkan, kembali ke langkah cek eligible di `to-tasks`.
 - Task yang sudah berbentuk issue dan siap dikerjakan → `implement` (user yang memulai; skill ini tidak auto-invoke).
 - Requirement belum approved → `to-requirements`.
 - Bug belum didiagnosis → `bug-diagnosis`.

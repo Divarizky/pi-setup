@@ -58,7 +58,7 @@ Jangan mengarang isi context yang tidak tersedia. Nyatakan keterbatasannya bila 
 ```text
 ask-me
   ├─ fitur kecil → implement → code-review → git-commit
-  ├─ fitur besar → to-requirements → to-tasks → implement → code-review → git-commit
+  ├─ fitur besar → to-requirements → to-tasks → [opsional: github-issue] → implement → code-review → git-commit
   ├─ bug sulit → bug-diagnosis → code-review → git-commit
   ├─ merge conflict → merge-conflict → git-commit
   ├─ desain belum jelas → prototype (project mode: work card via to-requirements pattern dulu) → to-tasks / implement
@@ -66,6 +66,8 @@ ask-me
   ├─ migrasi → setup-workflow → project-migration → implement / bug-diagnosis
   └─ buat issue GitHub → github-issue (dari task, requirement, atau bug-diagnosis)
 ```
+
+`github-issue` setelah `to-tasks` hanya berjalan jika user memilih membuat issue. Jika tidak, lanjut ke cek eligible dan tawaran `implement` (y/n) seperti di `to-tasks` Step 5 (hanya jika ada task eligible). Untuk issue level fitur di Project mode, `implement` mencentang checkbox task di issue setiap task Done (dengan konfirmasi).
 
 `setup-workflow` adalah persiapan opsional untuk workflow biasa, tetapi wajib sebelum `project-migration`.
 
@@ -123,8 +125,8 @@ Permintaan menulis artifact ke file membutuhkan Project mode; tawarkan `setup-wo
 
 - `setup-workflow`: project metadata, context dasar, scaffold SRS (seed Global Requirements saat New Project), dan stack docs awal yang terdeteksi saat scan.
 - `to-requirements`: work card dan konten requirement SRS — single-writer `.workspace/context/SRS.md` setelah seed; creator pertama stack docs conditional yang lahir lazy saat approval fitur.
-- `to-tasks`: section `## Tasks` pada work card dan entry fitur di `.workspace/context/TRACKER.md`.
-- `implement`: perpindahan task Queue/In Progress/Done pada work card; satu-satunya pengubah counter di `.workspace/context/TRACKER.md`; sinkronisasi section `<!-- auto -->` pada stack docs dengan kode nyata setelah review pass.
+- `to-tasks`: section `## Tasks` pada work card dan entry fitur di `.workspace/context/TRACKER.md`, termasuk field `issue:` setelah issue fitur dibuat via `github-issue`.
+- `implement`: perpindahan task Queue/In Progress/Done pada work card; satu-satunya pengubah counter `task_done`/`status` di `.workspace/context/TRACKER.md` (entry dibuat `to-tasks`); sinkronisasi section `<!-- auto -->` pada stack docs dengan kode nyata setelah review pass; mencentang checkbox task di issue GitHub fitur (field `issue:`) setelah konfirmasi user.
 - `status`: read-only.
 - `handoff`: dokumen handoff.
 - `prototype`: keputusan prototype.

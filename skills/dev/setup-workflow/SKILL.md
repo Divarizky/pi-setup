@@ -55,7 +55,7 @@ Rule isi saat grill/scan:
 - Detail requirement dan task yang masih dikerjakan → `.workspace/work/F-<id>.md`
 - Section yang boleh di-refresh WAJIB marker `<!-- auto -->` di bawah heading
 - Section tanpa marker = manual, `--refresh` tidak menyentuh
-- Setiap bullet `<!-- auto -->` di stack docs wajib punya `Source:` path yang ada dan isinya sudah diverifikasi; `--refresh` menolak menulis klaim tanpa Source (lihat Protocol Missing Stack Docs di `../shared/COMMON.md`)
+- Setiap bullet faktual di section `<!-- auto -->` pada stack docs wajib punya `Source:` path yang ada dan isinya sudah diverifikasi (item approved yang belum dibangun memakai `Source: .workspace/work/F-<id>.md (planned)`); bullet panduan umum tidak memakai `Source:` dan berada di section tanpa marker; `--refresh` menolak menulis klaim tanpa Source (lihat Protocol Missing Stack Docs di `../shared/COMMON.md`)
 
 ### Managed Block Rules untuk AGENTS.md
 
@@ -146,7 +146,7 @@ Tulis jika belum ada. Sudah ada & format valid → skip. Format rusak/kosong →
 - Aturan canonical berada di `../shared/TDD.md` dan selalu dibaca oleh `implement`.
 - `.workspace/context/SRS.md` — baseline requirement global + Feature Registry + Feature Requirements, lahir dari [template](docs/TEMPLATES.md#srsmd). Single-writer konten requirement: `to-requirements`.
 - `.workspace/work/F-<id>.md` — work card sementara berisi requirement detail dan task aktif, lahir dari [template](docs/TEMPLATES.md#work-card). ID fitur dialokasikan dari Feature Registry dan tidak boleh dipakai ulang.
-- `.workspace/context/TRACKER.md` — index progres eksekusi per fitur, lahir dari [template](docs/TEMPLATES.md#trackermd). Status requirement ada di SRS; jangan diduplikat di tracker. Single-writer: `to-tasks` (buat entry), `implement` (counter):
+- `.workspace/context/TRACKER.md` — index progres eksekusi per fitur, lahir dari [template](docs/TEMPLATES.md#trackermd). Status requirement ada di SRS; jangan diduplikat di tracker. Single-writer: `to-tasks` (buat entry dan `issue`), `implement` (counter `task_done`/`status`):
   ```yaml
   # Progres eksekusi fitur. Lifecycle requirement = lihat `.workspace/context/SRS.md`.
   tracker: local
@@ -158,6 +158,7 @@ Tulis jika belum ada. Sudah ada & format valid → skip. Format rusak/kosong →
       updated: <YYYY-MM-DD>
       task_count: <total>
       task_done: <selesai>
+      issue: <owner/repo>#<number>  # opsional; diisi to-tasks setelah issue fitur dibuat
   ```
   Kosong (`features: []`) saat pertama dibuat — diisi `to-tasks` saat fitur pertama di-breakdown.
 
