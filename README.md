@@ -86,7 +86,7 @@ flowchart TD
 
 - `catppuccin-mocha` — tema Mocha
 - `github-dark-default` — tema GitHub Dark default
-- `solar-ignis` — tema warm pastel bernuansa solar flame & dark espresso ash
+- `solar-ignis` — tema charcoal monokrom dengan aksen pastel api solar ignis
 - `urple` — varian ungu gelap
 
 `dashboard-state` adalah modul internal yang dipakai bersama oleh `git-info`, `ui-customization`, dan `usage-tracker`; bukan extension user-facing terpisah.
