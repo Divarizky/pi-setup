@@ -86,6 +86,58 @@ export function extractLastUserText(ctx: ExtensionContext): string {
 }
 
 /**
+ * Izin dari jawaban ask_user memakai allowlist, bukan daftar negasi. Daftar negasi
+ * selalu tertinggal (imbuhan seperti "batalkan", singkatan seperti "gausah").
+ * Jawaban diizinkan hanya bila setiap kata termasuk kata afirmatif atau kata netral.
+ * Kata lain (termasuk negasi yang belum dikenal) membuat jawaban ditolak.
+ */
+const ASK_USER_AFFIRMATIVE_WORDS = new Set([
+  "ya", "iya", "yes", "yep", "setuju", "oke", "ok", "okay", "silakan", "silahkan",
+  "lanjut", "lanjutkan", "boleh", "sure", "go", "ahead",
+]);
+
+const ASK_USER_NEUTRAL_WORDS = new Set([
+  "commit", "push", "dan", "and", "sekarang", "now", "saja", "aja", "ini", "itu",
+  "tolong", "please", "untuk", "the", "this", "it", "ke", "dengan",
+]);
+
+function isAffirmativeAskAnswer(answer: string): boolean {
+  // Karakter di luar huruf, angka, spasi, dan tanda baca dasar (mis. "不要", "❌") membuat jawaban ditolak.
+  if (/[^\p{L}\p{N}\s.,!?'"’\-]/u.test(answer)) return false;
+  const words = answer.toLowerCase().match(/\p{L}+/gu) ?? [];
+  if (!words.some((w) => ASK_USER_AFFIRMATIVE_WORDS.has(w))) return false;
+  return words.every((w) => ASK_USER_AFFIRMATIVE_WORDS.has(w) || ASK_USER_NEUTRAL_WORDS.has(w));
+}
+
+/**
+ * Mengambil jawaban `ask_user` terakhir pada giliran berjalan (setelah pesan user terakhir).
+ * Mengembalikan teks jawaban untuk pilihan (`selected`) atau jawaban sendiri (custom).
+ * Mengembalikan null bila tidak ada, bila jawaban terakhir dismissed/cancelled
+ * (details.answer null), atau bila jawaban memuat kata negasi (fail-closed).
+ * Pertanyaan (details.question) TIDAK dipakai untuk pencocokan.
+ */
+export function extractAskUserAnswer(ctx: ExtensionContext): string | null {
+  try {
+    const entries = ctx.sessionManager?.getEntries?.() ?? [];
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const message = (entries[i] as {
+        message?: { role?: string; toolName?: string; details?: unknown };
+      })?.message;
+      if (!message) continue;
+      if (message.role === "user") return null;
+      if (message.role === "toolResult" && message.toolName === "ask_user") {
+        const answer = (message.details as { answer?: unknown } | undefined)?.answer;
+        if (typeof answer !== "string" || answer.trim().length === 0) return null;
+        return isAffirmativeAskAnswer(answer) ? answer : null;
+      }
+    }
+  } catch {
+    // Fail-closed: kegagalan membaca sesi tidak memberi izin
+  }
+  return null;
+}
+
+/**
  * Memeriksa apakah pesan user cocok dengan salah satu pola `unlessUserSays`.
  */
 export function matchesUnlessUserSays(
@@ -239,8 +291,26 @@ export function registerToolGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
           if (rule.action === "block") {
             const userText =
               lastUserPromptFromStart || extractLastUserText(ctx);
+            const askAnswer = extractAskUserAnswer(ctx);
+            // Jawaban ask_user harus memuat SEMUA verba (commit/push) yang ada di seluruh
+            // input perintah. Mencegah "Ya, commit saja" membuka izin untuk
+            // "git commit && git push", dan "Ya, push saja" membuka izin untuk "git commit".
+            // Verba diambil dari kondisi yang cocok DAN dari seluruh input. Jawaban harus memuat
+            // semuanya. Tanpa verba, jalur ask_user tidak memberi izin (fail-closed).
+            const inputVerbs = new Set(
+              (serializedInput.toLowerCase().match(/\b(?:commit|push)\b/g) ?? []),
+            );
+            const ruleVerb = /\b(commit|push)\b/i.exec(matchResult.excerpt ?? "")?.[1]?.toLowerCase();
+            if (ruleVerb !== undefined) inputVerbs.add(ruleVerb);
+            const askApproves =
+              askAnswer !== null &&
+              inputVerbs.size > 0 &&
+              matchesUnlessUserSays(rule, askAnswer) &&
+              [...inputVerbs].every((verb) =>
+                new RegExp(`\\b${verb}\\b`, "i").test(askAnswer),
+              );
 
-            if (matchesUnlessUserSays(rule, userText)) {
+            if (matchesUnlessUserSays(rule, userText) || askApproves) {
               // Diizinkan oleh instruksi eksplisit user
               continue;
             }
