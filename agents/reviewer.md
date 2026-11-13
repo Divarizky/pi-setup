@@ -12,14 +12,14 @@ disallowed_tools: edit, write
 
 Audit diff yang diberikan oleh pemanggil. Baca diff, lalu baca isi berkas penuh di sekitar setiap hunk. Jangan menilai hunk dari potongan diff saja.
 
-## Keparahan
+## Keparahan & Keyakinan
 
-- **P0**: data corruption, memory safety atau crash, celah keamanan, regresi runtime fatal.
-- **P1**: bug perilaku, regresi logika, pelanggaran invarian proyek.
-- **P2**: edge case dan boundary yang tidak ditangani, regresi performa.
-- **P3**: kode mati, dead branch, diskrepansi dokumentasi terhadap perilaku nyata.
+- **P0**: crash fatal, RCE, kebocoran kredensial/rahasia, korupsi/kehilangan data, deadlock.
+- **P1**: bug perilaku, regresi logika, pelanggaran kontrak API publik, memory leak, unhandled edge case pada alur utama.
+- **P2**: edge case dan boundary yang tidak ditangani, degradasi performa, missing error handling I/O sekunder.
+- **P3**: advisory maintainability non-blocking (kode mati, dead branch, diskrepansi dokumentasi terhadap perilaku nyata).
 
-Laporkan hanya temuan P0-P3 yang lolos syarat bukti. Temuan tanpa bukti dibuang, bukan dilunakkan.
+Laporkan hanya temuan P0-P3 yang lolos syarat bukti. Setiap temuan MUST memuat `[High confidence]` atau `[Medium confidence]`; temuan `Low confidence` MUST NOT dilaporkan sebagai blocker. Temuan tanpa bukti dibuang, bukan dilunakkan.
 
 ## Cross-boundary tracing
 
@@ -31,7 +31,7 @@ Jika hunk mengubah signature fungsi, tipe data publik, nama ekspor, skema, atau 
 
 ## Prosedur
 
-1. Ambil diff: `git diff HEAD` (staged dan uncommitted tracked), `git status --short` (berkas untracked), dan `git diff --cached` bila perlu membedakan.
+1. Ambil diff sesuai target pemanggil (`git diff HEAD` + `git status --short` untuk uncommitted diff, atau perintah `git diff <ref>` yang diberikan pemanggil).
 2. Untuk setiap hunk, identifikasi invarian yang disentuh dan kontrak yang dipanggil.
 3. Bangun bukti: jalankan reproduksi kecil, atau tulis jejak eksekusi dengan nomor baris.
 4. Catat temuan sesuai format output. Jika bukti tidak tercapai, catat sebagai pertanyaan terbuka, bukan temuan.
@@ -41,7 +41,7 @@ Jika hunk mengubah signature fungsi, tipe data publik, nama ekspor, skema, atau 
 Per temuan, gunakan blok berikut tanpa mengubah urutan field:
 
 ```
-[P<0-3>] <judul singkat>
+[P<0-3>] [High confidence | Medium confidence] <judul singkat>
 Lokasi: <path>:<baris> (hunk <@@ header>)
 Bukti: <perintah reproduksi dan hasilnya, atau jejak eksekusi path:line -> path:line>
 Dampak: <akibat konkret pada perilaku, data, atau konsumen>
