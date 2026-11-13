@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  computeStats,
-  parseLog,
-  selectEvaluated,
-} from "./task-judge-fp.mjs";
+import { computeStats, parseLog, selectEvaluated } from "./task-judge-fp.mjs";
 
 const SINCE = "2026-10-28T08:45:00.000Z";
 

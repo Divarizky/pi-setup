@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { getRecentSessionFiles, parseJsonlLines, isAssistantTurnWithUsage } from "./classify-cache-breaks.mjs";
+import {
+  getRecentSessionFiles,
+  parseJsonlLines,
+  isAssistantTurnWithUsage,
+} from "./classify-cache-breaks.mjs";
 
 /**
  * Model Context Windows lookup table.
@@ -184,11 +188,15 @@ export function simulateSession(entries, config) {
       const tcId = entry.message.toolCallId;
       if (tcId) {
         const raw = extractToolText(entry.message);
-        const originalChars = Number(entry.message.details?.contextManager?.originalChars) || raw.length;
+        const originalChars =
+          Number(entry.message.details?.contextManager?.originalChars) ||
+          raw.length;
         const lineCount = raw.split(/\r?\n/).length;
 
         // Tentukan apakah diringkas atau disimpan utuh
-        const isLarge = originalChars > config.charThreshold || lineCount > config.lineThreshold;
+        const isLarge =
+          originalChars > config.charThreshold ||
+          lineCount > config.lineThreshold;
         let storedText = raw;
         if (isLarge) {
           // Output besar diringkas ke ~1900 chars
@@ -211,14 +219,22 @@ export function simulateSession(entries, config) {
     // 2. Assistant turn (hook 'context' berjalan tepat sebelum turn asisten)
     if (isAssistantTurnWithUsage(entry)) {
       const usage = entry.message.usage;
-      const promptTokens = (Number(usage.cacheRead) || 0) + (Number(usage.input) || 0);
+      const promptTokens =
+        (Number(usage.cacheRead) || 0) + (Number(usage.input) || 0);
       const model = entry.message.model || "";
       const contextWindow = getModelContextWindow(model);
-      const contextPercent = contextWindow && promptTokens > 0 ? (promptTokens / contextWindow) * 100 : null;
+      const contextPercent =
+        contextWindow && promptTokens > 0
+          ? (promptTokens / contextWindow) * 100
+          : null;
 
       // Evaluasi pruning
       // Reverse urutan tool calls (terbaru ke terlama)
-      const reversedIds = [...new Set(trackedToolCallIds.filter((id) => !prunedToolResults.has(id)))].reverse();
+      const reversedIds = [
+        ...new Set(
+          trackedToolCallIds.filter((id) => !prunedToolResults.has(id)),
+        ),
+      ].reverse();
 
       const liveTokens = reversedIds.reduce(
         (sum, id) => sum + (cachedToolResults.get(id)?.tokens || 0),
@@ -233,12 +249,19 @@ export function simulateSession(entries, config) {
       let effectiveBudget = config.budgetTokens;
       if (contextWindow) {
         // Dibatasi persen context window (20%) bila context window kecil
-        effectiveBudget = Math.min(config.budgetTokens, Math.floor((contextWindow * 20) / 100));
+        effectiveBudget = Math.min(
+          config.budgetTokens,
+          Math.floor((contextWindow * 20) / 100),
+        );
       }
 
       // Proteksi window longgar: jika context window >= 500k dan context usage < 30%, jangan pangkas
       let skipPruning = false;
-      if (config.looseWindowProtection && contextWindow && contextWindow >= 500_000) {
+      if (
+        config.looseWindowProtection &&
+        contextWindow &&
+        contextWindow >= 500_000
+      ) {
         if (contextPercent !== null && contextPercent < 30) {
           skipPruning = true;
         }
@@ -269,7 +292,9 @@ export function simulateSession(entries, config) {
             const itemInfo = cachedToolResults.get(id);
             prunedToolResults.add(id);
             prunedThisTurn++;
-            const saved = (itemInfo?.tokens || 0) - estimateTokens("[context-manager] Output lama dikeluarkan...");
+            const saved =
+              (itemInfo?.tokens || 0) -
+              estimateTokens("[context-manager] Output lama dikeluarkan...");
             tokensSavedThisTurn += Math.max(0, saved);
           }
         }
@@ -345,9 +370,10 @@ export async function runEvaluation(sessionFiles, scenarios = SCENARIOS) {
     }
 
     const netTokenCost = totalRetransmittedTokens - totalTokensSavedInContext;
-    const ratio = totalTokensSavedInContext > 0
-      ? (totalRetransmittedTokens / totalTokensSavedInContext).toFixed(2)
-      : "N/A";
+    const ratio =
+      totalTokensSavedInContext > 0
+        ? (totalRetransmittedTokens / totalTokensSavedInContext).toFixed(2)
+        : "N/A";
 
     return {
       scenario: scenario.name,
@@ -375,13 +401,18 @@ export function formatEvaluationReport(evalData) {
   const lines = [];
   lines.push(`Total Sesi Dianalisis: ${evalData.sessionsAnalyzed}`);
   lines.push("");
-  lines.push("| Skenario | Prune Events | Cache Breaks | Token Retransmisi | Token Disimpan di Context | Net Token Waste | Rasio Rugi (Waste/Saved) | Peak Tool Tokens |");
-  lines.push("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |");
+  lines.push(
+    "| Skenario | Prune Events | Cache Breaks | Token Retransmisi | Token Disimpan di Context | Net Token Waste | Rasio Rugi (Waste/Saved) | Peak Tool Tokens |",
+  );
+  lines.push(
+    "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
+  );
 
   for (const r of evalData.results) {
-    const netFormatted = r.netTokenCost > 0
-      ? `+${r.netTokenCost.toLocaleString("id-ID")}`
-      : `${r.netTokenCost.toLocaleString("id-ID")}`;
+    const netFormatted =
+      r.netTokenCost > 0
+        ? `+${r.netTokenCost.toLocaleString("id-ID")}`
+        : `${r.netTokenCost.toLocaleString("id-ID")}`;
     lines.push(
       `| ${r.scenario} | ${r.pruneEvents} | ${r.cacheBreaks} | ${r.retransmittedTokens.toLocaleString("id-ID")} | ${r.tokensSavedInContext.toLocaleString("id-ID")} | ${netFormatted} | ${r.tradeOffRatio}x | ${r.peakLiveTokens.toLocaleString("id-ID")} |`,
     );

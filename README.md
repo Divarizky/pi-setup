@@ -4,26 +4,28 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 
 ## What's Included
 
-**Extensions (12)**
+**Extensions (13)**
 
 - `agent-memory` — Injeksi read-only `memory brief` ke system prompt dari vault Obsidian bersama (via skill `agent-memory`)
 - `ask-user` — Multiple choice questions for the model
+- `code-safety` — Perlindungan keamanan eksekusi dan integritas kode: modul `hash-edit` (anchor SHA-256), `conflict-resolver` (resolusi merge hunk interaktif), `failure-recovery` (eskalasi retry otomatis), dan `ttsr` (Two-Turn System Rules guard & stream interceptor)
 - `context-manager` — Session context tracking, large-output caching/pruning, output-frame, dan execute/inspect tools
 - `copy-all` — Copy conversation to clipboard
 - `git-info` — Git branch, changes, PR status in footer
 - `run-summaries` — Auto-summarize agent runs
 - `subagents` — Background Pi subagents, workflows, worktrees, dan Agent Control (v2) dengan display name `General`
-- `todos` — Todo tracking dengan overlay widget, peringatan modifikasi kode tanpa validasi (task-judge terintegrasi), dan inactivity nudge
+- `todos` — Todo tracking dengan overlay widget, verifikasi modifikasi kode otomatis via task-judge terintegrasi, dan inactivity nudge
 - `ui-customization` — Custom tool rendering (read, bash, edit, write), thinking shimmer, working message, header/footer, dan penyesuaian tema
 - `usage-tracker` — Provider quota & session usage dashboard (Claude CLI OAuth, 9Router, Codex, Zen)
 - `zenith-router` — Integrasi provider Zenith Router, gateway status reporter, dan publisher quota untuk usage-tracker
 
-**Skills (16)**
+**Skills (17)**
 
 - `ask-me` — Grill + router (main entry for ambiguous requests)
 - `bug-diagnosis` — 6-phase disciplined bug diagnosis
 - `code-review` — Dual-axis review (Standards + Spec)
 - `git-commit` — Conventional commits with review gate
+- `github-issue` — Pembuatan issue GitHub terstruktur dari task, requirement, atau bug diagnosis
 - `handoff` — Context handoff between sessions/agents
 - `humanize` — Manual-only prose rewrites that preserve meaning
 - `implement` — TDD implementation with code-review chain
@@ -80,10 +82,11 @@ flowchart TD
     COMMIT --> DONE([Clean Repo State]):::gate
 ```
 
-**Themes (3)**
+**Themes (4)**
 
 - `catppuccin-mocha` — tema Mocha
-- `github-dark-default` — tema aktif saat ini (lihat `settings.json`)
+- `github-dark-default` — tema GitHub Dark default
+- `solar-ignis` — tema warm pastel bernuansa solar flame & dark espresso ash
 - `urple` — varian ungu gelap
 
 `dashboard-state` adalah modul internal yang dipakai bersama oleh `git-info`, `ui-customization`, dan `usage-tracker`; bukan extension user-facing terpisah.
@@ -146,9 +149,10 @@ Perintah verifikasi repositori:
 
 - `npm run check`: typecheck seluruh ekstensi (`tsc --noEmit`)
 - `npm run check:extensions`: smoke test dan pemeriksaan paket ekstensi
+- `npm run test:code-safety`: unit test untuk modul keamanan `code-safety` (`ttsr`, `failure-recovery`, dll.)
 - `npm run test:subagents`: test suite untuk `subagents` (Vitest)
-- `npm run test:task-judge`: unit test untuk `task-judge`
-- `npm run test:todos`: unit test untuk `todos`
+- `npm run test:task-judge`: unit test untuk `task-judge` (di dalam `todos/judge`)
+- `npm run test:todos`: unit test terintegrasi untuk `todos` (core, lifecycle, dan judge)
 - `npm run test:zenith-router`: unit test untuk `zenith-router`
 - `npm run test:ui-customization`: unit test untuk `ui-customization`
 - `npm run format:check`: verifikasi format kode via Prettier

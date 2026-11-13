@@ -134,6 +134,9 @@ export function isNerdFontSupported(): boolean {
     termProgram.includes("kitty") ||
     termProgram.includes("ghostty") ||
     termProgram.includes("orca") ||
+    termProgram.includes("herdr") ||
+    Boolean(env.HERDR_PANE_ID) ||
+    Boolean(env.HERDR_SOCKET_PATH) ||
     env.ORCA_TERMINAL_HANDLE ||
     env.GHOSTTY_RESOURCES_DIR
   ) {

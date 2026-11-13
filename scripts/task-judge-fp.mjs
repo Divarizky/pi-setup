@@ -111,7 +111,10 @@ async function main() {
   console.log(`False positive rate: ${formatPercent(stats.fpRate)}`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+if (
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+) {
   main().catch((err) => {
     console.error(err.message);
     process.exit(1);

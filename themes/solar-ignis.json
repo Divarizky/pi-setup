@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/badlogic/pi-mono/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+  "name": "solar-ignis",
+  "appearance": "dark",
+  "vars": {
+    "bg": "#181519",
+    "panel": "#1f1b21",
+    "surface": "#27222a",
+    "border": "#433a44",
+    "borderMuted": "#322b34",
+
+    "pastelAmber": "#f4ad73",
+    "pastelPeach": "#f09072",
+    "pastelCoral": "#e67770",
+    "pastelGold": "#f7cb85",
+    "pastelGlow": "#f69d7b",
+
+    "ashDark": "#695d6a",
+    "ashMedium": "#9b8d9c",
+    "parchmentMuted": "#d2c6cf",
+    "parchmentSoft": "#f6f1f4",
+
+    "pastelSage": "#84c69b",
+    "pastelTeal": "#81c8c5",
+    "pastelRose": "#dba2bf",
+    "pastelLavender": "#caa5d8"
+  },
+  "colors": {
+    "accent": "pastelGlow",
+    "border": "border",
+    "borderAccent": "pastelPeach",
+    "borderMuted": "borderMuted",
+    "success": "pastelSage",
+    "error": "pastelCoral",
+    "warning": "pastelAmber",
+    "muted": "ashMedium",
+    "dim": "ashDark",
+    "text": "parchmentSoft",
+    "thinkingText": "ashMedium",
+
+    "selectedBg": "#3d2a30",
+    "userMessageBg": "surface",
+    "userMessageText": "parchmentSoft",
+    "customMessageBg": "surface",
+    "customMessageText": "parchmentSoft",
+    "customMessageLabel": "pastelAmber",
+    "toolPendingBg": "surface",
+    "toolSuccessBg": "surface",
+    "toolErrorBg": "#382329",
+    "toolTitle": "pastelGlow",
+    "toolOutput": "ashMedium",
+
+    "mdHeading": "pastelGold",
+    "mdLink": "pastelAmber",
+    "mdLinkUrl": "ashDark",
+    "mdCode": "pastelGold",
+    "mdCodeBlock": "parchmentSoft",
+    "mdCodeBlockBorder": "border",
+    "mdQuote": "ashMedium",
+    "mdQuoteBorder": "pastelPeach",
+    "mdHr": "borderMuted",
+    "mdListBullet": "pastelCoral",
+
+    "toolDiffAdded": "pastelSage",
+    "toolDiffRemoved": "pastelCoral",
+    "toolDiffContext": "ashMedium",
+
+    "syntaxComment": "ashDark",
+    "syntaxKeyword": "pastelCoral",
+    "syntaxFunction": "pastelGold",
+    "syntaxVariable": "pastelAmber",
+    "syntaxString": "parchmentMuted",
+    "syntaxNumber": "pastelTeal",
+    "syntaxType": "pastelAmber",
+    "syntaxOperator": "parchmentSoft",
+    "syntaxPunctuation": "ashMedium",
+
+    "thinkingOff": "ashDark",
+    "thinkingMinimal": "ashMedium",
+    "thinkingLow": "parchmentMuted",
+    "thinkingMedium": "pastelAmber",
+    "thinkingHigh": "pastelGlow",
+    "thinkingXhigh": "pastelCoral",
+
+    "bashMode": "pastelSage"
+  },
+  "export": {
+    "pageBg": "bg",
+    "cardBg": "panel",
+    "infoBg": "surface"
+  }
+}

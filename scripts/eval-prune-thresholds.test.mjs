@@ -153,8 +153,14 @@ test("simulateSession triggers pruning and detects subsequent cache break when b
   };
 
   const sim = simulateSession(entries, config);
-  assert.ok(sim.pruneEvents > 0, "harus ada prune event karena melebihi budget");
-  assert.ok(sim.cacheBreaks > 0, "harus mendeteksi cache break pada turn berikutnya");
+  assert.ok(
+    sim.pruneEvents > 0,
+    "harus ada prune event karena melebihi budget",
+  );
+  assert.ok(
+    sim.cacheBreaks > 0,
+    "harus mendeteksi cache break pada turn berikutnya",
+  );
   assert.ok(sim.retransmittedTokens > 0);
   assert.ok(sim.tokensSavedInContext > 0);
 });
@@ -178,5 +184,8 @@ test("formatEvaluationReport generates formatted markdown table", () => {
 
   const report = formatEvaluationReport(mockData);
   assert.match(report, /Total Sesi Dianalisis: 5/);
-  assert.match(report, /\| Test 1 \| 10 \| 8 \| 50\.000 \| 10\.000 \| \+40\.000 \| 5\.00x \| 25\.000 \|/);
+  assert.match(
+    report,
+    /\| Test 1 \| 10 \| 8 \| 50\.000 \| 10\.000 \| \+40\.000 \| 5\.00x \| 25\.000 \|/,
+  );
 });

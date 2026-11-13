@@ -28,6 +28,9 @@ export function isNerdFontSupported(): boolean {
 		termProgram.includes("kitty") ||
 		termProgram.includes("ghostty") ||
 		termProgram.includes("orca") ||
+		termProgram.includes("herdr") ||
+		Boolean(env.HERDR_PANE_ID) ||
+		Boolean(env.HERDR_SOCKET_PATH) ||
 		Boolean(env.ORCA_TERMINAL_HANDLE) ||
 		Boolean(env.GHOSTTY_RESOURCES_DIR)
 	) {
