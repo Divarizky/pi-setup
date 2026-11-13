@@ -1,5 +1,5 @@
 import type { KeybindingsManager, Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type TUI } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type TuiMouseEvent, type TUI } from "@earendil-works/pi-tui";
 import type { ProviderUsage, UsageLimit, UsageTotals } from "./providers.ts";
 import { providerName } from "./providers.ts";
 import { groupTierLimits, quotaAge } from "./quota-bar.ts";
@@ -28,16 +28,14 @@ function line(theme: Theme, left: string, right: string, width: number): string 
   return truncateToWidth(`${left} ${right}`, width);
 }
 
-function progressBar(theme: Theme, usedPercent: number, width: number): string {
+/** Bar sisa kuota: bagian terisi = sisa, bagian kosong = terpakai. */
+function progressBar(theme: Theme, remainingPercent: number, width: number): string {
   const barWidth = Math.max(1, Math.min(40, width));
-  const boundedPercent = Math.max(0, Math.min(100, usedPercent));
-  const usedWidth = Math.round((boundedPercent / 100) * barWidth);
-  const rail = usedWidth <= 0
-    ? "─".repeat(barWidth)
-    : usedWidth >= barWidth
-      ? "━".repeat(barWidth)
-      : `${"━".repeat(usedWidth - 1)}╸${"─".repeat(barWidth - usedWidth)}`;
-  return theme.fg("text", rail);
+  const boundedPercent = Math.max(0, Math.min(100, remainingPercent));
+  const filledWidth = Math.round((boundedPercent / 100) * barWidth);
+  const filled = "█".repeat(filledWidth);
+  const empty = "░".repeat(barWidth - filledWidth);
+  return `${theme.fg("success", filled)}${theme.fg("dim", empty)}`;
 }
 
 function wrapPlain(text: string, width: number): string[] {
@@ -63,28 +61,21 @@ function wrapPlain(text: string, width: number): string[] {
 }
 
 function resetInfo(limit: UsageLimit, now: Date): string {
-  if (!limit.resetsAt) return "reset tidak diketahui";
+  if (limit.usedPercent >= 100) return "Habis";
+  if (!limit.resetsAt) return "Quota available";
   const remainingMs = limit.resetsAt.getTime() - now.getTime();
-  if (remainingMs <= 0) return "reset segera";
+  if (remainingMs <= 0) return "Refreshes sekarang";
 
   const totalMinutes = Math.ceil(remainingMs / 60_000);
   const days = Math.floor(totalMinutes / (60 * 24));
   const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
   const minutes = totalMinutes % 60;
   const relative = days > 0
-    ? `${days} hari ${hours} jam`
+    ? `${days}d ${hours}h`
     : hours > 0
-      ? `${hours} jam ${minutes} menit`
-      : `${minutes} menit`;
-  const absolute = limit.resetsAt.toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  const state = limit.usedPercent >= 100 ? "habis · " : "";
-  return `${state}reset ${absolute} (${relative} lagi)`;
+      ? `${hours}h ${minutes}m`
+      : `${minutes}m`;
+  return `Refreshes in ${relative}`;
 }
 
 type QuotaLineLayout = {
@@ -102,15 +93,15 @@ function limitLines(
   now: Date,
   layout: QuotaLineLayout,
 ): string[] {
-  const used = `${limit.usedPercent.toFixed(0)}%`;
-  const rightText = `${used} terpakai`;
+  const remainingPercent = Math.max(0, 100 - limit.usedPercent);
+  const rightText = `${remainingPercent.toFixed(2)}%`;
   const right = pad(
-    theme.fg(limit.usedPercent >= 90 ? "warning" : "text", rightText),
+    theme.fg(remainingPercent <= 10 ? "warning" : "text", rightText),
     layout.rightWidth,
   );
   const label = pad(theme.fg("muted", limit.label), layout.labelWidth);
-  const bar = progressBar(theme, limit.usedPercent, layout.barWidth);
-  const row = `${label}${" ".repeat(layout.leftSpace)}${bar}${" ".repeat(layout.rightSpace)}${right}`;
+  const bar = progressBar(theme, remainingPercent, layout.barWidth);
+  const row = `${label}${" ".repeat(layout.leftSpace)}[${bar}]${" ".repeat(layout.rightSpace)}${right}`;
   return [
     truncateToWidth(row, width),
     theme.fg("dim", `${" ".repeat(layout.labelWidth + layout.leftSpace)}${resetInfo(limit, now)}`),
@@ -120,12 +111,13 @@ function limitLines(
 function quotaLineLayout(limits: readonly UsageLimit[], width: number): QuotaLineLayout {
   const rightWidth = Math.max(
     1,
-    ...limits.map((limit) => visibleWidth(`${limit.usedPercent.toFixed(0)}% terpakai`)),
+    ...limits.map((limit) => visibleWidth(`${Math.max(0, 100 - limit.usedPercent).toFixed(2)}%`)),
   );
   const longestLabel = Math.max(14, ...limits.map((limit) => visibleWidth(limit.label)));
   const labelWidth = Math.max(1, Math.min(longestLabel, width - rightWidth - 7));
-  const available = Math.max(1, width - labelWidth - rightWidth);
-  const barWidth = Math.max(1, Math.min(40, available - 2));
+  // Dua kolom untuk kurung `[` `]` di sekitar bar ikut dialokasikan.
+  const available = Math.max(1, width - labelWidth - rightWidth - 2);
+  const barWidth = Math.max(1, Math.min(40, available));
   const remainingSpace = Math.max(0, available - barWidth);
   const leftSpace = Math.max(1, Math.floor(remainingSpace / 2));
   const rightSpace = Math.max(1, remainingSpace - leftSpace);
@@ -241,6 +233,15 @@ export class UsageTrackerDashboard {
       this.scrollOffset += isPageDown ? this.pageSize() : 1;
       this.tui.requestRender();
     }
+  }
+
+  /** Wheel touchpad/mouse menggulir konten; event lain diabaikan. */
+  handleMouse(event: TuiMouseEvent): { handled: true; render: boolean } | undefined {
+    if (event.type !== "wheel" || !event.wheelDelta) return undefined;
+    const previous = this.scrollOffset;
+    this.scrollOffset = Math.max(0, this.scrollOffset + (event.wheelDelta < 0 ? -1 : 1) * Math.abs(event.wheelDelta));
+    this.tui.requestRender();
+    return { handled: true, render: this.scrollOffset !== previous };
   }
 
   private pageSize(): number {

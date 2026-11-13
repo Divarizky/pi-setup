@@ -25,7 +25,7 @@ Catatan:
 - Database 9Router dibaca read-only ketika `/usage-tracker` dijalankan; API key dan token tidak dibaca untuk ditampilkan.
 - Quota bar mengikuti `model_select`, melakukan refresh berkala, dan disembunyikan untuk model gratis atau tanpa quota terverifikasi.
 - Progress bar quota menggunakan satu warna teks dari tema Pi (tanpa warna severity).
-- Jika daftar quota melebihi tinggi terminal, gunakan tombol panah/PageUp/PageDown untuk menggulir.
+- Jika daftar quota melebihi tinggi terminal, gulir dengan wheel/touchpad, atau tombol panah/PageUp/PageDown.
 - `GET /api/quota` adalah endpoint control-plane Zenith dan hanya dapat diakses dari loopback; API key gateway tidak dipakai untuk membaca kuota.
 - Hasil kuota Zenith disimpan di `~/.pi/agent/cache/zenith-quota.json`. Snapshot kuota ditandai `stale` bila umurnya lebih dari 15 menit, baik ketika gateway berjalan maupun ketika cache terakhir dipakai karena gateway mati. Tanda itu muncul di quota bar dan di baris dashboard. Cache dipanggil ulang paling sering sekali per menit.
 - Kuota Zenith dipetakan ke quota bar lewat prefix alias modelnya (`cx/...` -> `codex`, `ag/...` -> `antigravity`, `cl/...` -> `cline`). Koneksi nonaktif tidak ditampilkan. Koneksi aktif tanpa bar kuota maupun saldo juga tidak ditampilkan, kecuali Zenith melaporkan `error` untuk koneksi itu.
