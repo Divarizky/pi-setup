@@ -13,6 +13,7 @@
     "smokeMuted": "#d3d2d4",
     "smokeSoft": "#f0f0f2",
     "ignisOrange": "#f29d77",
+    "ignisRedDeep": "#d86a58",
     "solarGold": "#f2c179",
     "solarAmber": "#efad78",
     "emberRed": "#ea8471",
@@ -21,7 +22,7 @@
     "teal": "#8bc7c4"
   },
   "colors": {
-    "accent": "ignisOrange",
+    "accent": "ignisRedDeep",
     "border": "border",
     "borderAccent": "emberPeach",
     "borderMuted": "borderMuted",
