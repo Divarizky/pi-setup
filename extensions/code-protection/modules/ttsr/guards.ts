@@ -86,37 +86,132 @@ export function extractLastUserText(ctx: ExtensionContext): string {
 }
 
 /**
- * Izin dari jawaban ask_user memakai allowlist, bukan daftar negasi. Daftar negasi
- * selalu tertinggal (imbuhan seperti "batalkan", singkatan seperti "gausah").
- * Jawaban diizinkan hanya bila setiap kata termasuk kata afirmatif atau kata netral.
- * Kata lain (termasuk negasi yang belum dikenal) membuat jawaban ditolak.
+ * Jawaban bebas ask_user memerlukan afirmasi eksplisit; pilihan opsional harus cocok
+ * dengan salah satu pilihan yang ditampilkan dan menyebut semua operasi yang diminta.
  */
 const ASK_USER_AFFIRMATIVE_WORDS = new Set([
-  "ya", "iya", "yes", "yep", "setuju", "oke", "ok", "okay", "silakan", "silahkan",
-  "lanjut", "lanjutkan", "boleh", "sure", "go", "ahead",
+  "ya", "iya", "yes", "yep", "setuju", "agree", "oke", "ok", "okay", "silakan", "silahkan",
+  "lanjut", "lanjutkan", "boleh", "sure", "go", "ahead", "proceed",
+]);
+const ASK_USER_NEUTRAL_WORDS = new Set([
+  "commit", "push", "and", "or", "now", "sekarang", "today", "only", "just", "saja", "aja",
+  "this", "these", "that", "it", "the", "a", "an", "my", "me", "i", "you", "please",
+  "to", "for", "with", "changes", "change", "perubahan", "ini", "itu", "all", "selected",
+  "current", "new", "code", "repo", "repository", "branch", "origin", "upstream", "main", "master",
+  "full", "complete", "lengkap", "ringkas", "final", "version", "do",
 ]);
 
-const ASK_USER_NEUTRAL_WORDS = new Set([
-  "commit", "push", "dan", "and", "sekarang", "now", "saja", "aja", "ini", "itu",
-  "tolong", "please", "untuk", "the", "this", "it", "ke", "dengan",
-]);
+function hasOnlyApprovalWords(text: string): boolean {
+  const words = text.toLowerCase().match(/\p{L}+/gu) ?? [];
+  return words.length > 0 && words.every(
+    (word) => ASK_USER_AFFIRMATIVE_WORDS.has(word) || ASK_USER_NEUTRAL_WORDS.has(word),
+  );
+}
 
 function isAffirmativeAskAnswer(answer: string): boolean {
   // Karakter di luar huruf, angka, spasi, dan tanda baca dasar (mis. "不要", "❌") membuat jawaban ditolak.
   if (/[^\p{L}\p{N}\s.,!?'"’\-]/u.test(answer)) return false;
+  if (/[^\x00-\x7F]/u.test(answer)) return false;
   const words = answer.toLowerCase().match(/\p{L}+/gu) ?? [];
-  if (!words.some((w) => ASK_USER_AFFIRMATIVE_WORDS.has(w))) return false;
-  return words.every((w) => ASK_USER_AFFIRMATIVE_WORDS.has(w) || ASK_USER_NEUTRAL_WORDS.has(w));
+  return words.some((w) => ASK_USER_AFFIRMATIVE_WORDS.has(w)) &&
+    !containsGitNegation(answer) &&
+    hasOnlyApprovalWords(answer);
+}
+
+const GIT_NEGATION_REGEX = /\b(?:jangan|jgn|tidak|tak|ga|gak|nggak|enggak|kagak|belum|bukan|hindari|stop|batalkan|dibatalkan|ditolak|urungkan|tunda|nanti|gausah|gakusah|nggakusah|ora|ogah|cancel(?:led)?|refuse|reject|decline|deny|don['’]t|can(?:not|['’]t|t)|won['’]t|wont|shouldn['’]t|couldn['’]t|wouldn['’]t|do\s+not|not|never|without|no)\b/i;
+
+const GIT_STATEMENT_REGEX = /\b(?:commit|push)\s+(?:is|are|was|were|may|might|should|could|would|will|must|can|cannot|can['’]t|seems|sounds|appears|means|command|message|log|history|word|term|phrase|option|rule|flow|behavior|policy|idea|appears|mentioned|occurs|needs|needed|has|have|had)\b/i;
+
+function containsGitNegation(text: string): boolean {
+  return GIT_NEGATION_REGEX.test(text);
+}
+
+function isDirectGitPermission(text: string, verbs: Set<string>): boolean {
+  if (verbs.size === 0) return false;
+
+  const operation = "(?:git\\s+)?(?:commit|push)\\b";
+  const command = new RegExp(
+    `^\\s*(?:(?:please|tolong|silakan|silahkan|lakukan|jalankan|buat|kerjakan|run|execute|go\\s+ahead\\s+and|ya|iya|yes|oke|ok|okay|setuju|sure)[,!:]?\\s+)*${operation}`,
+    "i",
+  );
+  const directRequest = new RegExp(`^\\s*(?:can|could|would)\\s+you\\s+(?:please\\s+)?${operation}`, "i");
+  const statedIntent = new RegExp(
+    `^\\s*(?:i\\s+(?:want|would\\s+like)\\s+to|saya\\s+mau|aku\\s+mau|gua\\s+mau|gue\\s+mau)\\s+${operation}`,
+    "i",
+  );
+  const authorizedVerbs = new Set<string>();
+  const clauses = text.match(/[^.!?;\n]+[.!?;]?/g) ?? [];
+  for (const clause of clauses) {
+    if (containsGitNegation(clause) &&
+      [...verbs].some((verb) => new RegExp(`\\b${verb}\\b`, "i").test(clause))) return false;
+  }
+
+  for (const clause of clauses) {
+    if (containsGitNegation(clause) || GIT_STATEMENT_REGEX.test(clause)) continue;
+    const requestClause = clause.split(/[?¿]/, 1)[0];
+    const directMatch = directRequest.exec(requestClause);
+    if (/[?¿]/.test(clause) && !directMatch) continue;
+
+    const normalizedClause = clause.trim().toLowerCase();
+    const skillInvocation = [
+      "/skill:git-commit",
+      "git-commit",
+      "jalankan skill git-commit",
+      "run skill git-commit",
+      "run the git-commit skill",
+    ].includes(normalizedClause);
+    if (skillInvocation) {
+      authorizedVerbs.add("commit");
+      continue;
+    }
+
+    const commandMatch = command.exec(clause);
+    const intentMatch = statedIntent.exec(clause);
+    const actionMatch = commandMatch ?? directMatch ?? intentMatch;
+    if (!actionMatch || actionMatch.index === undefined) continue;
+
+    const firstVerb = /\b(commit|push)\b/i.exec(actionMatch[0])?.[1]?.toLowerCase();
+    if (firstVerb) authorizedVerbs.add(firstVerb);
+
+    const sequence = /\b(?:and(?:\s+(?:also|then))?|then)\s+(?:git\s+)?(commit|push)\b|&&\s*(?:git\s+)?(commit|push)\b/gi;
+    sequence.lastIndex = actionMatch.index + actionMatch[0].length;
+    for (let next = sequence.exec(clause); next; next = sequence.exec(clause)) {
+      const verb = (next[1] ?? next[2])?.toLowerCase();
+      if (verb) authorizedVerbs.add(verb);
+    }
+  }
+
+  return [...verbs].every((verb) => authorizedVerbs.has(verb));
+}
+
+function isSelectedGitApproval(
+  answer: string,
+  details: { options?: unknown; wasCustom?: unknown },
+  verbs: Set<string>,
+): boolean {
+  if (details.wasCustom !== false || !Array.isArray(details.options)) return false;
+  const selected = details.options.find(
+    (option): option is string => typeof option === "string" && option === answer,
+  );
+  if (!selected || containsGitNegation(selected)) return false;
+  const words = selected.toLowerCase().match(/\p{L}+/gu) ?? [];
+  if (!words.every(
+    (word) => ASK_USER_AFFIRMATIVE_WORDS.has(word) || ASK_USER_NEUTRAL_WORDS.has(word),
+  )) return false;
+  if (!/^\s*(?:\d+[.)]\s*)?(?:(?:yes|ya|iya|oke|ok|okay|setuju|please|silakan|silahkan)\s*[,!:]?\s+)?(?:git\s+)?(?:commit|push)\b/i.test(selected)) return false;
+  const selectedVerbs = new Set(words.filter((word) => word === "commit" || word === "push"));
+  return verbs.size > 0 && [...verbs].every((verb) => selectedVerbs.has(verb));
 }
 
 /**
  * Mengambil jawaban `ask_user` terakhir pada giliran berjalan (setelah pesan user terakhir).
  * Mengembalikan teks jawaban untuk pilihan (`selected`) atau jawaban sendiri (custom).
- * Mengembalikan null bila tidak ada, bila jawaban terakhir dismissed/cancelled
- * (details.answer null), atau bila jawaban memuat kata negasi (fail-closed).
- * Pertanyaan (details.question) TIDAK dipakai untuk pencocokan.
+ * Mengembalikan null bila tidak ada, dismissed/cancelled, atau jawaban bebas tidak afirmatif.
  */
-export function extractAskUserAnswer(ctx: ExtensionContext): string | null {
+function extractAskUserApproval(ctx: ExtensionContext): {
+  answer: string;
+  details: { options?: unknown; wasCustom?: unknown };
+} | null {
   try {
     const entries = ctx.sessionManager?.getEntries?.() ?? [];
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -126,9 +221,21 @@ export function extractAskUserAnswer(ctx: ExtensionContext): string | null {
       if (!message) continue;
       if (message.role === "user") return null;
       if (message.role === "toolResult" && message.toolName === "ask_user") {
-        const answer = (message.details as { answer?: unknown } | undefined)?.answer;
+        const details = (message.details ?? {}) as {
+          answer?: unknown;
+          options?: unknown;
+          wasCustom?: unknown;
+        };
+        const answer = details.answer;
         if (typeof answer !== "string" || answer.trim().length === 0) return null;
-        return isAffirmativeAskAnswer(answer) ? answer : null;
+        if (details.wasCustom === false) {
+          if (!Array.isArray(details.options) || !details.options.includes(answer)) return null;
+          if (!hasOnlyApprovalWords(answer)) return null;
+        } else if (!isAffirmativeAskAnswer(answer)) {
+          return null;
+        }
+        if (containsGitNegation(answer)) return null;
+        return { answer, details };
       }
     }
   } catch {
@@ -291,7 +398,7 @@ export function registerToolGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
           if (rule.action === "block") {
             const userText =
               lastUserPromptFromStart || extractLastUserText(ctx);
-            const askAnswer = extractAskUserAnswer(ctx);
+            const askApproval = extractAskUserApproval(ctx);
             // Jawaban ask_user harus memuat SEMUA verba (commit/push) yang ada di seluruh
             // input perintah. Mencegah "Ya, commit saja" membuka izin untuk
             // "git commit && git push", dan "Ya, push saja" membuka izin untuk "git commit".
@@ -302,15 +409,22 @@ export function registerToolGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
             );
             const ruleVerb = /\b(commit|push)\b/i.exec(matchResult.excerpt ?? "")?.[1]?.toLowerCase();
             if (ruleVerb !== undefined) inputVerbs.add(ruleVerb);
+            const askAnswer = askApproval?.answer;
             const askApproves =
-              askAnswer !== null &&
+              askApproval !== null &&
               inputVerbs.size > 0 &&
-              matchesUnlessUserSays(rule, askAnswer) &&
-              [...inputVerbs].every((verb) =>
-                new RegExp(`\\b${verb}\\b`, "i").test(askAnswer),
-              );
+              ((askAnswer !== undefined &&
+                matchesUnlessUserSays(rule, askAnswer) &&
+                [...inputVerbs].every((verb) =>
+                  new RegExp(`\\b${verb}\\b`, "i").test(askAnswer),
+                )) ||
+                (rule.name === "git-commit-push" &&
+                  isSelectedGitApproval(askAnswer ?? "", askApproval.details, inputVerbs)));
+            const directApproval = rule.name === "git-commit-push"
+              ? isDirectGitPermission(userText, inputVerbs)
+              : matchesUnlessUserSays(rule, userText);
 
-            if (matchesUnlessUserSays(rule, userText) || askApproves) {
+            if (directApproval || askApproves) {
               // Diizinkan oleh instruksi eksplisit user
               continue;
             }

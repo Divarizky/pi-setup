@@ -1,6 +1,6 @@
 ---
 name: git-commit-push
-description: Mencegah eksekusi commit atau push git tanpa izin eksplisit
+description: Membatasi commit dan push Git sesuai izin user untuk tiap operasi
 action: block
 scope: tool:bash
 condition:
@@ -9,4 +9,4 @@ condition:
 unlessUserSays:
   - '\b(commit|push)\b'
 ---
-Operasi commit atau push git dilarang kecuali atas perintah eksplisit user.
+Commit dan push Git memerlukan izin user yang mencakup operasi tersebut. Persetujuan commit tidak mencakup push; persetujuan pilihan ask_user berlaku bila pilihan yang dipilih secara eksplisit memuat seluruh operasi.

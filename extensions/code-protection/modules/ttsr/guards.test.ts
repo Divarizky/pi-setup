@@ -79,7 +79,7 @@ function createMockContext(lastUserText?: string): ExtensionContext {
 
 function createMockContextWithAskUser(
   userText: string,
-  askDetails: { answer: string | null },
+  askDetails: { answer: string | null; options?: string[]; wasCustom?: boolean },
 ): ExtensionContext {
   const entries = [
     { type: "message", message: { role: "user", content: userText } },
@@ -210,6 +210,286 @@ Operasi commit atau push dilarang kecuali atas permintaan langsung user.
   assert.equal(logEntries.length, 0, "Izin dari ask_user tidak boleh dicatat sebagai pelanggaran");
 });
 
+test("AC-1k: Penyebutan commit dalam larangan langsung tidak memberi izin", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+  const pi = createMockPi();
+  const logEntries: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([rule], logEntries));
+  const ctx = createMockContext("Jangan commit perubahan ini");
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "call_negated_direct_commit",
+      toolName: "bash",
+      input: { command: "git commit -m x" },
+    } as any,
+    ctx,
+  );
+  assert.equal(result?.block, true, "Larangan eksplisit user harus tetap memblokir commit");
+  assert.equal(logEntries.length, 1);
+});
+
+test("AC-1l: Pertanyaan dan kalimat bernada larangan bukan izin langsung", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+  for (const prompt of [
+    "Should I commit this?",
+    "Can I commit this?",
+    "Please commit this. Don’t commit.",
+    "Yes, commit is a bad idea.",
+    "Commit may be needed.",
+    "Commit?",
+    "I said not to commit",
+    "I can't commit",
+    "I cannot commit",
+    "Don’t commit this",
+    "Ya, ora commit",
+    "Ya, ogah commit",
+  ]) {
+    const pi = createMockPi();
+    const logEntries: ViolationEntry[] = [];
+    registerToolGuard(pi, createDeps([rule], logEntries));
+    const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+      "tool_call",
+      {
+        type: "tool_call",
+        toolCallId: `call_direct_nonpermission_${prompt}`,
+        toolName: "bash",
+        input: { command: "git commit -m x" },
+      } as any,
+      createMockContext(prompt),
+    );
+    assert.equal(result?.block, true, `Pesan non-izin harus memblokir commit: ${prompt}`);
+  }
+});
+
+test("AC-1n: Pertanyaan push terpisah tidak mengizinkan perintah majemuk", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+  for (const prompt of [
+    "Can you commit? Should I push?",
+    "Please commit the change. The word push appears in the README.",
+    "Please commit. Push command is mentioned in docs.",
+    "Please commit. Push has been mentioned.",
+    "Please commit and include the word push in the commit message.",
+    "Please commit, push command is mentioned in docs.",
+  ]) {
+    const pi = createMockPi();
+    const logEntries: ViolationEntry[] = [];
+    registerToolGuard(pi, createDeps([rule], logEntries));
+    const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+      "tool_call",
+      {
+        type: "tool_call",
+        toolCallId: `call_commit_question_push_question_${prompt}`,
+        toolName: "bash",
+        input: { command: "git commit -m x && git push origin main" },
+      } as any,
+      createMockContext(prompt),
+    );
+    assert.equal(result?.block, true, `Izin commit tidak boleh membuka push yang hanya disebut: ${prompt}`);
+    assert.equal(logEntries.length, 1);
+  }
+});
+
+test("AC-1o: Permintaan langsung commit-and-push mengizinkan kedua operasi", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+  const pi = createMockPi();
+  const logEntries: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([rule], logEntries));
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "call_direct_commit_and_push",
+      toolName: "bash",
+      input: { command: "git commit -m x && git push origin main" },
+    } as any,
+    createMockContext("Please commit and push these changes."),
+  );
+  assert.equal(result, undefined, "Permintaan eksplisit kedua operasi harus mengizinkan perintah majemuk");
+  assert.equal(logEntries.length, 0);
+});
+
+test("AC-1m: Permintaan langsung dan pemanggilan skill mengizinkan commit", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+  for (const prompt of ["Can you commit these changes?", "/skill:git-commit", "Jalankan skill git-commit"]) {
+    const pi = createMockPi();
+    const logEntries: ViolationEntry[] = [];
+    registerToolGuard(pi, createDeps([rule], logEntries));
+    const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+      "tool_call",
+      {
+        type: "tool_call",
+        toolCallId: `call_direct_permission_${prompt}`,
+        toolName: "bash",
+        input: { command: "git commit -m x" },
+      } as any,
+      createMockContext(prompt),
+    );
+    assert.equal(result, undefined, `Permintaan langsung harus mengizinkan commit: ${prompt}`);
+  }
+});
+
+test("AC-1b1: Pilihan draft commit dari skill mengizinkan commit tanpa allowlist kata", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+  const pi = createMockPi();
+  const logEntries: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([rule], logEntries));
+  const ctx = createMockContextWithAskUser("Jalankan skill git-commit", {
+    answer: "Commit Lengkap",
+    options: ["Commit Lengkap", "Commit Ringkas", "Batal"],
+    wasCustom: false,
+  });
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "call_skill_commit_choice",
+      toolName: "bash",
+      input: { command: "git commit -F -" },
+    } as any,
+    ctx,
+  );
+  assert.equal(result, undefined, "Pilihan commit yang benar-benar ditampilkan harus mengizinkan commit");
+  assert.equal(logEntries.length, 0);
+});
+
+test("AC-1b2: Pilihan commit dari ask_user tidak mengizinkan push", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+  const pi = createMockPi();
+  const logEntries: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([rule], logEntries));
+  const ctx = createMockContextWithAskUser("Tolong rapikan kode ini", {
+    answer: "Commit Lengkap",
+    options: ["Commit Lengkap", "Batal"],
+    wasCustom: false,
+  });
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "call_skill_commit_cannot_push",
+      toolName: "bash",
+      input: { command: "git push origin main" },
+    } as any,
+    ctx,
+  );
+  assert.equal(result?.block, true, "Pilihan commit tidak boleh memberi izin push");
+  assert.equal(logEntries.length, 1);
+});
+
+test("AC-1b3: Pilihan ask_user bernada penolakan tidak mengizinkan commit", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+  const pi = createMockPi();
+  const logEntries: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([rule], logEntries));
+  const ctx = createMockContextWithAskUser("Tolong rapikan kode ini", {
+    answer: "I refuse to commit",
+    options: ["Commit Lengkap", "I refuse to commit"],
+    wasCustom: false,
+  });
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+    "tool_call",
+    {
+      type: "tool_call",
+      toolCallId: "call_selected_refusal",
+      toolName: "bash",
+      input: { command: "git commit -m x" },
+    } as any,
+    ctx,
+  );
+  assert.equal(result?.block, true, "Pilihan yang berbunyi menolak harus tetap memblokir commit");
+  assert.equal(logEntries.length, 1);
+});
+
 test("AC-1d: Jawaban ask_user yang memuat negasi (panjang atau singkatan) tidak mengizinkan commit", () => {
   const rule = parseRule(`---
 name: git-commit-push
@@ -231,10 +511,12 @@ Operasi commit atau push dilarang kecuali atas permintaan langsung user.
     "Hold off commit", "Dilarang commit", "Tanpa commit",
     "Engga commit", "Blm commit", "Bkn commit", "Nda commit", "Ngk commit",
     "Lewati commit", "Menunda commit", "Nanti aja commit", "Commit nanti dulu",
-    "don\u2019t commit", "Commit sekarang",
+    "don\u2019t commit", "Ya, don't commit", "Yes, I can't commit", "Yes, I cannot commit",
+    "Ya, ora commit", "Ya, ogah commit", "Commit sekarang",
     "Ya, batalkan commit", "Ya, dibatalkan commit", "Ya, tunda commit", "Oke, gausah commit",
     "Ya, cancelled commit", "Ya, ditolak commit", "Ya, urungkan commit", "Ya, jangan commit",
     "Ya, nggak usah commit", "Ya, belum commit", "Ya, kagak commit", "Ya, commit nanti",
+    "Yes, I refuse to commit", "Yes, I can't commit", "Yes, I cannot commit",
   ];
   for (const answer of negatedAnswers) {
     const pi = createMockPi();
