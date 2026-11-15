@@ -6,29 +6,30 @@ import { registerTtsr } from "./modules/ttsr/register.ts";
 
 // Tiap modul didaftarkan dalam try/catch sendiri. Kegagalan satu modul dicatat
 // dan tidak menghentikan pendaftaran modul lain.
-export default function codeSafetyExtension(pi: ExtensionAPI): void {
+export default function codeProtectionExtension(pi: ExtensionAPI): void {
   try {
     registerFailureRecovery(pi);
   } catch (error) {
-    console.warn("[code-safety] modul failure-recovery gagal didaftarkan:", error);
+    console.warn("[code-protection] modul failure-recovery gagal didaftarkan:", error);
   }
 
   try {
     registerHashEdit(pi);
   } catch (error) {
-    console.warn("[code-safety] modul hash-edit gagal didaftarkan:", error);
+    console.warn("[code-protection] modul hash-edit gagal didaftarkan:", error);
   }
 
   try {
     registerConflictResolver(pi);
   } catch (error) {
-    console.warn("[code-safety] modul conflict-resolver gagal didaftarkan:", error);
+    console.warn("[code-protection] modul conflict-resolver gagal didaftarkan:", error);
   }
 
   try {
     registerTtsr(pi);
   } catch (error) {
-    console.warn("[code-safety] modul ttsr gagal didaftarkan:", error);
+    console.warn("[code-protection] modul ttsr gagal didaftarkan:", error);
   }
+
 }
 

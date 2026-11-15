@@ -8,7 +8,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 
 - `agent-memory` — Injeksi read-only `memory brief` ke system prompt dari vault Obsidian bersama (via skill `agent-memory`)
 - `ask-user` — Multiple choice questions for the model
-- `code-safety` — Perlindungan keamanan eksekusi dan integritas kode: modul `hash-edit` (anchor SHA-256), `conflict-resolver` (resolusi merge hunk interaktif), `failure-recovery` (eskalasi retry otomatis), dan `ttsr` (Two-Turn System Rules guard & stream interceptor)
+- `code-protection` — Perlindungan keamanan eksekusi dan integritas kode: modul `hash-edit` (anchor SHA-256), `conflict-resolver` (resolusi merge hunk interaktif), `failure-recovery` (eskalasi retry otomatis), dan `ttsr` (Two-Turn System Rules guard & stream interceptor)
 - `context-manager` — Session context tracking, large-output caching/pruning, output-frame, dan execute/inspect tools
 - `copy-all` — Copy conversation to clipboard
 - `git-info` — Git branch, changes, PR status in footer
@@ -149,7 +149,7 @@ Perintah verifikasi repositori:
 
 - `npm run check`: typecheck seluruh ekstensi (`tsc --noEmit`)
 - `npm run check:extensions`: smoke test dan pemeriksaan paket ekstensi
-- `npm run test:code-safety`: unit test untuk modul keamanan `code-safety` (`ttsr`, `failure-recovery`, dll.)
+- `npm run test:code-protection`: unit test untuk modul keamanan `code-protection` (`ttsr`, `failure-recovery`, dll.)
 - `npm run test:subagents`: test suite untuk `subagents` (Vitest)
 - `npm run test:task-judge`: unit test untuk `task-judge` (di dalam `todos/judge`)
 - `npm run test:todos`: unit test terintegrasi untuk `todos` (core, lifecycle, dan judge)

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import codeSafetyExtension from "../../index.ts";
+import codeProtectionExtension from "../../index.ts";
 import { registerTtsr } from "./register.ts";
 
 function createMockPi() {
@@ -51,7 +51,7 @@ test("registerTtsr berhasil mendaftarkan hook stream, guard tool, dan perintah t
   }
 });
 
-test("AC: Jika registerTtsr melempar error, modul lain di code-safety tetap terdaftar (isolasi index.ts)", () => {
+test("AC: Jika registerTtsr melempar error, modul lain di code-protection tetap terdaftar (isolasi index.ts)", () => {
   const mockPi = createMockPi();
   let registerTtsrCallCount = 0;
 
@@ -73,8 +73,8 @@ test("AC: Jika registerTtsr melempar error, modul lain di code-safety tetap terd
   };
 
   try {
-    // Eksekusi entry point utama code-safety
-    codeSafetyExtension(mockPi as any);
+    // Eksekusi entry point utama code-protection
+    codeProtectionExtension(mockPi as any);
 
     // Verifikasi modul ttsr gagal dicatat
     assert.ok(

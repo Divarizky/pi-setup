@@ -1,10 +1,10 @@
-# Requirements: modul TTSR di extensions/code-safety
+# Requirements: modul TTSR di extensions/code-protection
 
 ## Tujuan
 Menegakkan aturan perilaku model saat runtime, bukan hanya lewat system prompt. Aturan ditegakkan di empat titik: stream respons, argumen tool sebelum eksekusi, hasil tool, dan penutupan giliran.
 
 ## Lingkup
-Modul baru `extensions/code-safety/modules/ttsr/`, didaftarkan dari `extensions/code-safety/index.ts` dengan try/catch sendiri. Tidak ada dependensi baru. Tidak mengubah modul code-safety lain, kecuali pendaftaran di `index.ts`.
+Modul baru `extensions/code-protection/modules/ttsr/`, didaftarkan dari `extensions/code-protection/index.ts` dengan try/catch sendiri. Tidak ada dependensi baru. Tidak mengubah modul code-protection lain, kecuali pendaftaran di `index.ts`.
 
 ## Di luar lingkup
 Persistensi status injeksi ke sesi (ditunda), syntax check otomatis pasca-edit, scope guard dari write_scope orchest, AST matching, judge LLM.
@@ -33,7 +33,7 @@ Persistensi status injeksi ke sesi (ditunda), syntax check otomatis pasca-edit, 
 - NFR-4 Tes menguji kontrak yang teramati (apa yang dipotong, diblokir, dicatat). Dilarang tes source-grep, tautologi, dan echo statis.
 
 ## Kriteria keberhasilan
-- `npm run check` root bersih. `npm run test:code-safety` lulus, termasuk tes baru.
+- `npm run check` root bersih. `npm run test:code-protection` lulus, termasuk tes baru.
 - Probe e2e di sesi Pi nyata: satu rule `abort` memotong output, partial hilang dari konteks, koreksi terkirim, retry berhenti di batas.
 
 ## Hal yang belum terbukti (wajib dilaporkan apa adanya)
@@ -44,4 +44,4 @@ Bila tidak bisa diuji, tulis "belum terverifikasi" di REPORT.md. Jangan menyimpu
 ## Sumber acuan
 - Pi: `/home/user/.pi/agent/install/releases/1.5.1/node_modules/@earendil-works/pi-coding-agent/docs/extensions.md` (bagian message_update, message_end, context, tool_call, agent_before_settle, agent_settled).
 - Vault: `~/GDrive/AGENT-MEMORY/pi-memory/projects/my-pi-setup/decisions/kelayakan-dan-blueprint-desain-pola-ttsr-pi-coding-agent.md`.
-- Pola kode yang ada: `extensions/code-safety/modules/failure-recovery/register.ts`.
+- Pola kode yang ada: `extensions/code-protection/modules/failure-recovery/register.ts`.

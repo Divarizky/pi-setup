@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { matchToolCondition } from "./guards.ts";
 import { createMatcher } from "./matcher.ts";
 import { loadRules } from "./rule.ts";
 import type { Rule } from "./types.ts";
 
-const RULES_DIR = new URL("./rules", import.meta.url).pathname;
+const RULES_DIR = fileURLToPath(new URL("./rules", import.meta.url));
 
 function findRule(rules: Rule[], name: string): Rule {
   const found = rules.find((r) => r.name === name);
@@ -39,8 +39,11 @@ test("Semua enam rule bawaan terurai tanpa peringatan dan memiliki konfigurasi v
 test("Rule bawaan: empty-validation mendeteksi frasa pembuka dan melewatkan teks biasa", () => {
   const rules = loadRules(RULES_DIR);
   const rule = findRule(rules, "empty-validation");
-  assert.equal(rule.action, "log");
+  assert.equal(rule.action, "abort");
   assert.equal(rule.scope, "text");
+  assert.equal(rule.anchor, "start");
+  assert.equal(rule.repeat, "after-gap");
+  assert.equal(rule.repeatGap, 6);
 
   // Kasus positif dari AGENTS.md
   const matcherPos = createMatcher([rule]);
@@ -58,6 +61,138 @@ test("Rule bawaan: empty-validation mendeteksi frasa pembuka dan melewatkan teks
     "Berikut adalah implementasi perbaikan pada fungsi parser.",
   );
   assert.equal(violationsNeg.length, 0);
+});
+
+test("Rule bawaan: empty-validation memicu pada Perfect dan Exactly bertanda baca di awal", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "empty-validation");
+
+  const perfect = createMatcher([rule]).feed("text", "Perfect! Berikut perbaikannya.");
+  assert.equal(perfect.length, 1);
+  assert.equal(perfect[0].rule.name, "empty-validation");
+
+  const exactly = createMatcher([rule]).feed("text", "Exactly, masalahnya ada di parser.");
+  assert.equal(exactly.length, 1);
+  assert.equal(exactly[0].rule.name, "empty-validation");
+});
+
+test("Rule bawaan: empty-validation tidak memicu false positive pada pembuka teknis", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "empty-validation");
+
+  const files = createMatcher([rule]).feed("text", "Exactly 3 files changed.");
+  assert.equal(files.length, 0);
+
+  const match = createMatcher([rule]).feed("text", "Perfect match on line 10.");
+  assert.equal(match.length, 0);
+});
+
+test("Rule bawaan: empty-validation mendeteksi frasa pembuka Bahasa Indonesia dan melewatkan pembuka teknis", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "empty-validation");
+
+  // Kasus positif: frasa validasi kosong di awal teks
+  const positives = [
+    "Benar sekali, saya akan perbaiki kodenya.",
+    "Anda benar sekali! Masalahnya di parser.",
+    "Tepat sekali! Berikut langkah perbaikannya.",
+    "Pertanyaan yang sangat bagus! Mari kita bedah.",
+    "Ide cemerlang! Kita terapkan sekarang.",
+    "Sangat masuk akal, implementasinya seperti ini.",
+  ];
+  for (const text of positives) {
+    const violations = createMatcher([rule]).feed("text", text);
+    assert.equal(violations.length, 1, `harus memicu: ${text}`);
+    assert.equal(violations[0].rule.name, "empty-validation");
+  }
+
+  // Kasus negatif: pembuka teknis Bahasa Indonesia yang normal
+  const negatives = [
+    "Benar bahwa berkas auth.ts perlu diubah.",
+    "Tepat pada baris 42 terdapat error.",
+    "Pertanyaan berikut belum terjawab.",
+  ];
+  for (const text of negatives) {
+    const violations = createMatcher([rule]).feed("text", text);
+    assert.equal(violations.length, 0, `tidak boleh memicu: ${text}`);
+  }
+});
+
+test("Rule bawaan: empty-validation streaming tidak memicu dari token kata saja (false positive $)", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "empty-validation");
+
+  // Chunk pertama berupa kata saja: tanpa tanda baca tidak boleh memicu.
+  const exactly = createMatcher([rule]);
+  const exactlyViolations = [
+    ...exactly.feed("text", "Exactly"),
+    ...exactly.feed("text", " 3 files changed."),
+  ];
+  assert.equal(exactlyViolations.length, 0);
+
+  const perfect = createMatcher([rule]);
+  assert.equal(perfect.feed("text", "Perfect").length, 0);
+});
+
+test("Rule bawaan: empty-validation streaming memicu saat tanda baca tiba di chunk kedua", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "empty-validation");
+
+  // Exactly lalu ", ...": pemicu tepat pada chunk kedua.
+  const exactly = createMatcher([rule]);
+  const exactlyViolations = [
+    ...exactly.feed("text", "Exactly"),
+    ...exactly.feed("text", ", masalahnya di sini."),
+  ];
+  assert.equal(exactlyViolations.length, 1);
+  assert.equal(exactlyViolations[0].rule.name, "empty-validation");
+
+  // Perfect lalu "! ...": pemicu tepat pada chunk kedua.
+  const perfect = createMatcher([rule]);
+  const perfectViolations = [
+    ...perfect.feed("text", "Perfect"),
+    ...perfect.feed("text", "! Berikut perbaikannya."),
+  ];
+  assert.equal(perfectViolations.length, 1);
+  assert.equal(perfectViolations[0].rule.name, "empty-validation");
+});
+
+test("Rule bawaan: empty-validation dengan anchor start mengabaikan frasa di tengah teks", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "empty-validation");
+  const matcher = createMatcher([rule]);
+
+  const technical = matcher.feed("text", "Parser sudah diperbaiki dan semua tes lulus. ");
+  assert.equal(technical.length, 0);
+
+  const midText = matcher.feed("text", "You're absolutely right, tapi ini tetap di tengah.");
+  assert.equal(midText.length, 0);
+});
+
+test("Rule bawaan: empty-validation repeat after-gap dengan repeatGap 6 menahan pemicu ulang", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "empty-validation");
+  const matcher = createMatcher([rule]);
+  const phrase = "You're absolutely right! Berikut perbaikannya.";
+
+  // Giliran 0: pemicu pertama
+  assert.equal(matcher.feed("text", phrase).length, 1);
+
+  // Giliran 1..5: pemicu ulang harus diblokir
+  for (let turn = 1; turn <= 5; turn++) {
+    matcher.endTurn();
+    matcher.reset();
+    assert.equal(
+      matcher.feed("text", phrase).length,
+      0,
+      `giliran ${turn} belum boleh memicu ulang`,
+    );
+  }
+
+  // Giliran 6: pemicu ulang diizinkan
+  matcher.endTurn();
+  matcher.reset();
+  assert.equal(matcher.feed("text", phrase).length, 1);
 });
 
 test("Rule bawaan: ai-vocabulary mendeteksi kata terlarang dan melewatkan teks biasa", () => {
