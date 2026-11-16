@@ -73,6 +73,7 @@ function createMockContext(lastUserText?: string): ExtensionContext {
   return {
     sessionManager: {
       getEntries: () => entries,
+      getBranch: () => entries,
     },
   } as unknown as ExtensionContext;
 }
@@ -95,6 +96,7 @@ function createMockContextWithAskUser(
   return {
     sessionManager: {
       getEntries: () => entries,
+      getBranch: () => entries,
     },
   } as unknown as ExtensionContext;
 }
@@ -1308,4 +1310,109 @@ test("Guard: secret-in-write bawaan tidak memblokir bash dan tetap memblokir wri
     const blockedByRule = result?.block === true && logEntries.some((e) => e.rule === "secret-in-write");
     assert.equal(blockedByRule, c.blocked, `tool ${c.toolName}: blocked harus ${c.blocked}`);
   }
+});
+
+function gitCommitRule(): Rule {
+  return parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - "git\\s+commit"
+  - "git\\s+push"
+unlessUserSays:
+  - "\\b(commit|push)\\b"
+---
+Operasi commit atau push dilarang kecuali atas permintaan langsung user.
+`);
+}
+
+function createBranchedContext(
+  branch: any[],
+  all: any[] = branch,
+): ExtensionContext {
+  return {
+    sessionManager: {
+      getEntries: () => all,
+      getBranch: () => branch,
+    },
+  } as unknown as ExtensionContext;
+}
+
+const bashCommit = (id: string, command = "git commit -m x") =>
+  ({ type: "tool_call", toolCallId: id, toolName: "bash", input: { command } }) as any;
+
+const askEntry = (answer: string | null, options?: string[], wasCustom = true) => ({
+  type: "message",
+  message: {
+    role: "toolResult",
+    toolName: "ask_user",
+    details: { question: "Commit sekarang?", answer, options, wasCustom },
+  },
+});
+
+test("AC-8: Jawaban ask_user di cabang lain tidak memberi izin commit", () => {
+  const pi = createMockPi();
+  const logs: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([gitCommitRule()], logs));
+  const userMsg = { type: "message", message: { role: "user", content: "Rapikan kode" } };
+  const otherBranchApproval = askEntry("Ya, commit sekarang");
+  const ctx = createBranchedContext([userMsg], [userMsg, otherBranchApproval]);
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>("tool_call", bashCommit("c_branch"), ctx);
+  assert.equal(result?.block, true, "Jawaban di cabang lain tidak boleh membuka izin");
+  assert.equal(logs.length, 1);
+});
+
+test("AC-8b: Jawaban ask_user di cabang aktif memberi izin commit", () => {
+  const pi = createMockPi();
+  const logs: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([gitCommitRule()], logs));
+  const userMsg = { type: "message", message: { role: "user", content: "Rapikan kode" } };
+  const ctx = createBranchedContext([userMsg, askEntry("Ya, commit sekarang")]);
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>("tool_call", bashCommit("c_active"), ctx);
+  assert.equal(result, undefined, "Jawaban afirmatif di cabang aktif harus mengizinkan commit");
+  assert.equal(logs.length, 0);
+});
+
+test("AC-8c: Penolakan ask_user terbaru membatalkan izin commit sebelumnya", () => {
+  const pi = createMockPi();
+  const logs: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([gitCommitRule()], logs));
+  const userMsg = { type: "message", message: { role: "user", content: "Rapikan kode" } };
+  const ctx = createBranchedContext([
+    userMsg,
+    askEntry("Ya, commit sekarang"),
+    askEntry("Jangan commit", undefined, true),
+  ]);
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>("tool_call", bashCommit("c_denied"), ctx);
+  assert.equal(result?.block, true, "Penolakan terbaru harus membatalkan izin lama");
+  assert.equal(logs.length, 1);
+});
+
+test("AC-8d: Jawaban ask_user ambigu (commit dan push untuk satu perintah majemuk) tidak memberi izin", () => {
+  const pi = createMockPi();
+  const logs: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([gitCommitRule()], logs));
+  const userMsg = { type: "message", message: { role: "user", content: "Rapikan kode" } };
+  const ctx = createBranchedContext([userMsg, askEntry("Ya, commit saja", ["Ya, commit saja"], false)]);
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+    "tool_call",
+    bashCommit("c_partial", "git commit -m x && git push"),
+    ctx,
+  );
+  assert.equal(result?.block, true, "Izin commit saja tidak boleh membuka git push");
+});
+
+test("AC-8e: Ya pada ask_user yang menyebut commit dan push mengizinkan perintah commit && push", () => {
+  const pi = createMockPi();
+  const logs: ViolationEntry[] = [];
+  registerToolGuard(pi, createDeps([gitCommitRule()], logs));
+  const userMsg = { type: "message", message: { role: "user", content: "Rapikan kode" } };
+  const ctx = createBranchedContext([userMsg, askEntry("Ya, commit dan push sekarang")]);
+  const result = pi.emit<ToolCallEvent, ToolCallEventResult>(
+    "tool_call",
+    bashCommit("c_both", "git commit -m x && git push"),
+    ctx,
+  );
+  assert.equal(result, undefined, "Ya yang mencakup kedua operasi harus mengizinkan keduanya");
 });

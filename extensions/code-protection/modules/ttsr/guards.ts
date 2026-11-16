@@ -47,7 +47,7 @@ export function createSettleGateState(): SettleGateState {
  */
 export function extractLastUserText(ctx: ExtensionContext): string {
   try {
-    const entries = ctx.sessionManager?.getEntries?.() ?? [];
+    const entries = activeBranchEntries(ctx);
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i];
       if (!entry) continue;
@@ -205,6 +205,16 @@ function isSelectedGitApproval(
 }
 
 /**
+ * Entri sesi pada cabang aktif (root sampai leaf). Tanpa `getBranch`, hasil kosong
+ * sehingga izin ditolak (fail-closed); `getEntries` tidak dipakai karena memuat cabang lain.
+ */
+function activeBranchEntries(ctx: ExtensionContext): unknown[] {
+  const sm = ctx.sessionManager as { getBranch?: () => unknown[] } | undefined;
+  if (typeof sm?.getBranch !== "function") return [];
+  return sm.getBranch() ?? [];
+}
+
+/**
  * Mengambil jawaban `ask_user` terakhir pada giliran berjalan (setelah pesan user terakhir).
  * Mengembalikan teks jawaban untuk pilihan (`selected`) atau jawaban sendiri (custom).
  * Mengembalikan null bila tidak ada, dismissed/cancelled, atau jawaban bebas tidak afirmatif.
@@ -214,7 +224,7 @@ function extractAskUserApproval(ctx: ExtensionContext): {
   details: { options?: unknown; wasCustom?: unknown };
 } | null {
   try {
-    const entries = ctx.sessionManager?.getEntries?.() ?? [];
+    const entries = activeBranchEntries(ctx);
     for (let i = entries.length - 1; i >= 0; i--) {
       const message = (entries[i] as {
         message?: { role?: string; toolName?: string; details?: unknown };
