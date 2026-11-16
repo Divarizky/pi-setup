@@ -97,7 +97,7 @@ const ASK_USER_NEUTRAL_WORDS = new Set([
   "commit", "push", "and", "or", "now", "sekarang", "today", "only", "just", "saja", "aja",
   "this", "these", "that", "it", "the", "a", "an", "my", "me", "i", "you", "please",
   "to", "for", "with", "changes", "change", "perubahan", "ini", "itu", "all", "selected",
-  "current", "new", "code", "repo", "repository", "branch", "origin", "upstream", "main", "master",
+  "current", "new", "code", "repo", "repository", "branch", "origin", "upstream", "main", "master", "lakukan", "dan",
   "full", "complete", "lengkap", "ringkas", "final", "version", "do",
 ]);
 
@@ -118,16 +118,16 @@ function isAffirmativeAskAnswer(answer: string): boolean {
     hasOnlyApprovalWords(answer);
 }
 
-const GIT_NEGATION_REGEX = /\b(?:jangan|jgn|tidak|tak|ga|gak|nggak|enggak|kagak|belum|bukan|hindari|stop|batalkan|dibatalkan|ditolak|urungkan|tunda|nanti|gausah|gakusah|nggakusah|ora|ogah|cancel(?:led)?|refuse|reject|decline|deny|don['’]t|can(?:not|['’]t|t)|won['’]t|wont|shouldn['’]t|couldn['’]t|wouldn['’]t|do\s+not|not|never|without|no)\b/i;
+const GIT_NEGATION_REGEX = /\b(?:jangan|jgn|tidak|tak|ga|gak|nggak|enggak|kagak|belum|bukan|hindari|stop|batalkan|dibatalkan|ditolak|urungkan|tunda|nanti|later|gausah|gakusah|nggakusah|ora|ogah|cancel(?:led)?|refuse|reject|decline|deny|don['’]t|can(?:not|['’]t|t)|won['’]t|wont|shouldn['’]t|couldn['’]t|wouldn['’]t|do\s+not|not|never|without|no)\b/i;
 
-const GIT_STATEMENT_REGEX = /\b(?:commit|push)\s+(?:is|are|was|were|may|might|should|could|would|will|must|can|cannot|can['’]t|seems|sounds|appears|means|command|message|log|history|word|term|phrase|option|rule|flow|behavior|policy|idea|appears|mentioned|occurs|needs|needed|has|have|had)\b/i;
+const GIT_STATEMENT_REGEX = /\b(?:commit|push)\s+(?:is|are|was|were|may|might|should|could|would|will|must|can|cannot|can['’]t|seems|sounds|appears|means|command|message|log|history|word|term|phrase|option|rule|flow|behavior|policy|idea|notifications?|appears|mentioned|occurs|needs|needed|has|have|had)\b/i;
 
 function containsGitNegation(text: string): boolean {
   return GIT_NEGATION_REGEX.test(text);
 }
 
 function isDirectGitPermission(text: string, verbs: Set<string>): boolean {
-  if (verbs.size === 0) return false;
+  if (verbs.size === 0 || (/\b(?:or|atau)\b/i.test(text) && /\bcommit\b/i.test(text) && /\bpush\b/i.test(text))) return false;
 
   const operation = "(?:git\\s+)?(?:commit|push)\\b";
   const command = new RegExp(
@@ -140,7 +140,8 @@ function isDirectGitPermission(text: string, verbs: Set<string>): boolean {
     "i",
   );
   const authorizedVerbs = new Set<string>();
-  const clauses = text.match(/[^.!?;\n]+[.!?;]?/g) ?? [];
+  const clauses = (text.match(/[^.!?;\n]+[.!?;]?/g) ?? [])
+    .flatMap((clause) => clause.split(/\b(?:but|however|tapi|tetapi|namun|kecuali)\b/i));
   for (const clause of clauses) {
     if (containsGitNegation(clause) &&
       [...verbs].some((verb) => new RegExp(`\\b${verb}\\b`, "i").test(clause))) return false;
@@ -173,11 +174,11 @@ function isDirectGitPermission(text: string, verbs: Set<string>): boolean {
     const firstVerb = /\b(commit|push)\b/i.exec(actionMatch[0])?.[1]?.toLowerCase();
     if (firstVerb) authorizedVerbs.add(firstVerb);
 
-    const sequence = /\b(?:and(?:\s+(?:also|then))?|then)\s+(?:git\s+)?(commit|push)\b|&&\s*(?:git\s+)?(commit|push)\b/gi;
+    const sequence = /\b(?:and(?:\s+(?:also|then))?|then|dan|lalu)\s+(?:git\s+)?(commit|push)\b|&&\s*(?:git\s+)?(commit|push)\b/gi;
     sequence.lastIndex = actionMatch.index + actionMatch[0].length;
     for (let next = sequence.exec(clause); next; next = sequence.exec(clause)) {
       const verb = (next[1] ?? next[2])?.toLowerCase();
-      if (verb) authorizedVerbs.add(verb);
+      if (verb && !GIT_STATEMENT_REGEX.test(clause.slice(next.index).replace(/^(?:and|then|dan|lalu|&&)\s+/i, ""))) authorizedVerbs.add(verb);
     }
   }
 
@@ -193,7 +194,7 @@ function isSelectedGitApproval(
   const selected = details.options.find(
     (option): option is string => typeof option === "string" && option === answer,
   );
-  if (!selected || containsGitNegation(selected)) return false;
+  if (!selected || containsGitNegation(selected) || (/\b(?:or|atau)\b/i.test(selected) && /\bcommit\b/i.test(selected) && /\bpush\b/i.test(selected))) return false;
   const words = selected.toLowerCase().match(/\p{L}+/gu) ?? [];
   if (!words.every(
     (word) => ASK_USER_AFFIRMATIVE_WORDS.has(word) || ASK_USER_NEUTRAL_WORDS.has(word),
@@ -304,6 +305,195 @@ export function matchToolCondition(
   return { matched: false };
 }
 
+function nestedShellCommands(input: string): string[] {
+  const commands: string[] = [];
+  let quote = "";
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    if (quote === "'") { if (char === "'") quote = ""; continue; }
+    if (quote === '"' && char === '"') { quote = ""; continue; }
+    if (!quote && (char === "'" || char === '"')) { quote = char; continue; }
+    if (char === "`" && quote !== "'") {
+      const end = input.indexOf("`", i + 1);
+      if (end >= 0) { commands.push(input.slice(i + 1, end)); i = end; }
+      continue;
+    }
+    if (input.startsWith("$(", i) && quote !== "'") {
+      let depth = 1;
+      let end = i + 2;
+      for (; end < input.length && depth > 0; end++) {
+        if (input[end] === "(") depth++;
+        else if (input[end] === ")") depth--;
+      }
+      if (depth === 0) { commands.push(input.slice(i + 2, end - 1)); i = end - 1; }
+    }
+  }
+  return commands;
+}
+
+function shellWords(input: string): string[] {
+  const words: string[] = [];
+  let word = "";
+  let quote = "";
+  let escaped = false;
+  const flush = () => { if (word) words.push(word); word = ""; };
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    if (escaped) { word += char; escaped = false; continue; }
+    if (char === "\\" && quote !== "'") {
+      if (input[i + 1] === "\n") { i += 1; continue; }
+      if (input.startsWith("\r\n", i + 1)) { i += 2; continue; }
+      escaped = true;
+      continue;
+    }
+    if (quote) { if (char === quote) quote = ""; else word += char; continue; }
+    if (char === "'" || char === '"') { quote = char; continue; }
+    if (/\s/.test(char)) {
+      flush();
+      if (char === "\n" || char === "\r") words.push(";");
+      continue;
+    }
+    if (char === "&" && /^(?:\d+)?[<>]+$/.test(word)) { word += char; continue; }
+    if (/[;&|(){}]/.test(char)) {
+      flush();
+      if ((char === "&" && input[i + 1] === "&") || (char === "|" && input[i + 1] === "|")) words.push(char + input[++i]);
+      else words.push(char);
+      continue;
+    }
+    word += char;
+  }
+  if (escaped) word += "\\";
+  flush();
+  return words;
+}
+
+const GIT_OPTIONS_WITH_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--exec-path"]);
+const SHELL_SEPARATOR = /^(?:;|&|&&|\||\|\||\(|\)|\{|\})$/;
+const SHELL_KEYWORD = /^(?:if|then|elif|else|fi|while|until|do|done|for|in|case|esac|!)$/i;
+const COMMAND_WRAPPER = /^(?:sudo|doas|env|command|exec|nohup|time|nice|ionice|timeout|stdbuf|setsid|chrt|taskset|unbuffer)$/;
+const WRAPPER_OPTION_WITH_VALUE = /^(?:-u|-g|-h|-p|-C|-R|-U|-T|-n|-c|-s|-k|--user|--group|--host|--prompt|--chdir|--chroot|--unset|--signal|--kill-after|--adjustment|--class|--classdata)$/;
+const SHELL_INTERPRETER = /^(?:bash|sh|dash|zsh|ksh|fish)$/;
+const XARGS_OPTION_WITH_VALUE = /^(?:-I|--replace|-L|--max-lines|-P|--max-procs|-d|--delimiter|-E|--eof|-a|--arg-file|-n|--max-args|-s|--max-chars)$/;
+
+function commandName(word: string): string {
+  return (word.split("/").pop() ?? word).toLowerCase().replace(/\.exe$/, "");
+}
+
+function isGitTarget(name: string): boolean {
+  return name === "git" || name === "eval" || name === "xargs" || SHELL_INTERPRETER.test(name) || /^python(?:\d+(?:\.\d+)*)?$/.test(name);
+}
+
+/** Mengenali operasi Git pada command shell secara best-effort; subcommand tak dikenal ditolak fail-closed. */
+function gitOperations(command: string, depth = 0): Set<string> {
+  const operations = new Set<string>();
+  if (depth > 5) return new Set(["unknown"]);
+  const merge = (verbs: Set<string>) => { for (const verb of verbs) operations.add(verb); };
+  for (const nested of nestedShellCommands(command)) merge(gitOperations(nested, depth + 1));
+
+  const variables = new Map<string, string>();
+  const aliases = new Map<string, string>();
+
+  const gitSubcommand = (args: string[]) => {
+    for (let j = 0; j < args.length; j++) {
+      const arg = args[j];
+      if (GIT_OPTIONS_WITH_VALUE.has(arg)) {
+        if (arg === "-c") {
+          const setting = args[j + 1]?.match(/^alias\.([\w.-]+)=(.*)$/i);
+          if (setting) aliases.set(setting[1].toLowerCase(), setting[2]);
+        }
+        j++;
+        continue;
+      }
+      if (arg.startsWith("-")) continue;
+      const name = arg.toLowerCase();
+      if (name === "commit" || name === "push") operations.add(name);
+      else if (aliases.has(name)) {
+        const target = aliases.get(name) ?? "";
+        if (target.startsWith("!")) merge(gitOperations(target.slice(1), depth + 1));
+        else {
+          const first = target.trim().split(/\s+/, 1)[0]?.toLowerCase();
+          if (first === "commit" || first === "push") operations.add(first);
+        }
+      }
+      return;
+    }
+  };
+
+  const segment = (words: string[]) => {
+    let i = 0;
+    for (; i < words.length; i++) {
+      const word = words[i];
+      const redirect = word.match(/^(?:\d+|&)?(?:>&|<&|>>?|<<?)(.*)$/);
+      if (redirect) { if (!redirect[1] && words[i + 1] !== undefined) i++; continue; }
+      if (SHELL_KEYWORD.test(word)) continue;
+      const assignment = word.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+      if (assignment) { variables.set(assignment[1], assignment[2]); continue; }
+      break;
+    }
+    if (i >= words.length) return;
+
+    let first = words[i];
+    const variable = first.match(/^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/);
+    if (variable && variables.has(variable[1])) {
+      const value = variables.get(variable[1]) ?? "";
+      if (/\s/.test(value)) { merge(gitOperations([value, ...words.slice(i + 1)].join(" "), depth + 1)); return; }
+      first = value;
+    }
+    const name = commandName(first);
+    const rest = words.slice(i + 1);
+
+    if (name === "git") { gitSubcommand(rest); return; }
+    if (name === "eval") { merge(gitOperations(rest.join(" "), depth + 1)); return; }
+    if (SHELL_INTERPRETER.test(name)) {
+      for (let j = 0; j < rest.length && /^[-+]/.test(rest[j]); j++) {
+        if (/^-[^-]*c/.test(rest[j])) { if (rest[j + 1]) merge(gitOperations(rest[j + 1], depth + 1)); break; }
+        if (/^[-+][A-Za-z]*[oO]$/.test(rest[j])) j++;
+      }
+      return;
+    }
+    if (/^python(?:\d+(?:\.\d+)*)?$/.test(name)) {
+      const script = rest[rest.indexOf("-c") + 1] ?? "";
+      if (rest.includes("-c") && /subprocess\.(?:run|call|Popen|check_call|check_output)|os\.system/i.test(script)) {
+        if (/\bgit(?:\.exe)?\b[\s\S]*?\bpush\b/i.test(script)) operations.add("push");
+        if (/\bgit(?:\.exe)?\b[\s\S]*?\bcommit\b/i.test(script)) operations.add("commit");
+      }
+      return;
+    }
+    if (name === "xargs") {
+      let j = 0;
+      while (j < rest.length && rest[j].startsWith("-") && rest[j] !== "-") j += XARGS_OPTION_WITH_VALUE.test(rest[j]) ? 2 : 1;
+      if (rest[j] !== undefined) segment(rest.slice(j));
+      return;
+    }
+    if (name === "env" && /^(?:-S|--split-string)/.test(rest[0] ?? "")) {
+      const option = rest[0];
+      const script = option.includes("=") ? option.slice(option.indexOf("=") + 1) : rest[1];
+      if (script) merge(gitOperations(script, depth + 1));
+      return;
+    }
+    if (COMMAND_WRAPPER.test(name)) {
+      let j = 0;
+      while (j < rest.length) {
+        const word = rest[j];
+        if (WRAPPER_OPTION_WITH_VALUE.test(word)) { j += 2; continue; }
+        if (word.startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) { j++; continue; }
+        if (/^(?:timeout|chrt|taskset)$/.test(name) && /^(?:\d+(?:\.\d+)?[smhd]?|0x[0-9a-f]+)$/i.test(word)) { j++; continue; }
+        break;
+      }
+      if (rest[j] !== undefined) segment(rest.slice(j));
+    }
+  };
+
+  let current: string[] = [];
+  const flush = () => { if (current.length) segment(current); current = []; };
+  for (const part of shellWords(command)) {
+    if (SHELL_SEPARATOR.test(part)) flush();
+    else current.push(part);
+  }
+  flush();
+  return operations;
+}
+
 /**
  * Memotong kutipan log maksimal 120 karakter.
  * Rule dengan nama 'secret-in-write' DILARANG memuat excerpt sama sekali (FR-10).
@@ -370,10 +560,17 @@ export function registerToolGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
           if (!rule.enabled) continue;
           if (!deps.isEnabled(rule.name)) continue;
 
-          // Scope harus cocok dengan salah satu item daftar scope rule
+          // Tool shell lain memakai input `script`; rule Git tetap berlaku.
+          const isGitRule = rule.name === "git-commit-push";
           if (!matchesRuleScope(rule.scope, expectedScope)) continue;
 
-          const matchResult = matchToolCondition(rule, serializedInput);
+          const input = event.input as { command?: unknown; script?: unknown };
+          const shellCommand = typeof input?.command === "string" ? input.command :
+            typeof input?.script === "string" ? input.script : "";
+          const gitVerbs = isGitRule && toolName === "bash" ? gitOperations(shellCommand) : new Set<string>();
+          const matchResult = isGitRule && toolName === "bash"
+            ? { matched: gitVerbs.size > 0, excerpt: shellCommand }
+            : matchToolCondition(rule, serializedInput);
           if (!matchResult.matched) continue;
 
           // Rule bertipe 'log': hanya mencatat, tidak memblokir (FR-8)
@@ -404,15 +601,18 @@ export function registerToolGuard(pi: ExtensionAPI, deps: TtsrDeps): void {
             // "git commit && git push", dan "Ya, push saja" membuka izin untuk "git commit".
             // Verba diambil dari kondisi yang cocok DAN dari seluruh input. Jawaban harus memuat
             // semuanya. Tanpa verba, jalur ask_user tidak memberi izin (fail-closed).
-            const inputVerbs = new Set(
+            const inputVerbs = isGitRule ? gitVerbs : new Set(
               (serializedInput.toLowerCase().match(/\b(?:commit|push)\b/g) ?? []),
             );
-            const ruleVerb = /\b(commit|push)\b/i.exec(matchResult.excerpt ?? "")?.[1]?.toLowerCase();
-            if (ruleVerb !== undefined) inputVerbs.add(ruleVerb);
+            if (!isGitRule) {
+              const ruleVerb = /\b(commit|push)\b/i.exec(matchResult.excerpt ?? "")?.[1]?.toLowerCase();
+              if (ruleVerb !== undefined) inputVerbs.add(ruleVerb);
+            }
             const askAnswer = askApproval?.answer;
             const askApproves =
               askApproval !== null &&
               inputVerbs.size > 0 &&
+              !(/\b(?:or|atau)\b/i.test(askAnswer ?? "") && /\bcommit\b/i.test(askAnswer ?? "") && /\bpush\b/i.test(askAnswer ?? "")) &&
               ((askAnswer !== undefined &&
                 matchesUnlessUserSays(rule, askAnswer) &&
                 [...inputVerbs].every((verb) =>

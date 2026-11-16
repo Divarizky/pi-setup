@@ -114,6 +114,106 @@ function createDeps(rules: Rule[], logSink: ViolationEntry[] = []): TtsrDeps {
   };
 }
 
+test("Guard Git membatasi operasi aktual pada shell dan menjaga izin terpisah", () => {
+  const rule = parseRule(`---
+name: git-commit-push
+action: block
+scope: tool:bash
+condition:
+  - 'git\\s+commit'
+  - 'git\\s+push'
+unlessUserSays:
+  - '\\b(commit|push)\\b'
+---
+Izin diperlukan.
+`);
+  const cases: Array<{ prompt: string; command: string; blocked: boolean; tool?: string; answer?: string; selected?: boolean }> = [
+    { prompt: "Tolong rapikan", command: "git -C /tmp commit -m x", blocked: true },
+    { prompt: "Tolong rapikan", command: "git -C /tmp push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: 'git "push" origin main', blocked: true },
+    { prompt: "Tolong rapikan", command: "g\\it commit -m x", blocked: true },
+    { prompt: "Tolong rapikan", command: "g''it push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "bash -c 'git commit -m x'", blocked: true },
+    { prompt: "Tolong rapikan", command: "bash -c 'echo git commit'", blocked: false },
+    { prompt: "Tolong rapikan", command: "echo git commit", blocked: false },
+    { prompt: "Tolong rapikan", command: "echo selesai\ngit push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "echo \"$(git commit -m x)\"", blocked: true },
+    { prompt: "Tolong rapikan", command: "echo '$(git commit -m x)'", blocked: false },
+    { prompt: "Tolong rapikan", command: "echo `git push origin main`", blocked: true },
+    { prompt: "Tolong rapikan", command: "if git push origin main; then :; fi", blocked: true },
+    { prompt: "Tolong rapikan", command: "f() { git push origin main; }; f", blocked: true },
+    { prompt: "Please commit this, but do not push.", command: "git commit -m reviewed", blocked: false },
+    { prompt: "Please commit this, but do not push.", command: "git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: `python3 -c 'import subprocess; subprocess.run("git push origin main", shell=True)'`, blocked: true },
+    { prompt: "Tolong rapikan", command: `python3 -c 'import subprocess; subprocess.run(["/usr/bin/git", "push", "origin", "main"])'`, blocked: true },
+    { prompt: "Tolong rapikan", command: `python3 -c 'import subprocess; subprocess.run(["git", "push", "origin", "main"])'`, blocked: true },
+    { prompt: "Tolong rapikan", command: "git credential fill", blocked: false },
+    { prompt: "Tolong rapikan", command: "git -c alias.ci=commit ci -m x", blocked: true },
+    { prompt: "Tolong rapikan", command: "git -c alias.publish=push publish origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "git status", blocked: false },
+    { prompt: "Tolong rapikan", command: "sudo -u deploy git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: ">/dev/null git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "2>&1 git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "2>& 1 git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "nice git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "nice -n 10 git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "! git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "bash --noprofile -c 'git push origin main'", blocked: true },
+    { prompt: "Tolong rapikan", command: "env --unset HOME git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "env -u HOME FOO=1 git commit -m x", blocked: true },
+    { prompt: "Tolong rapikan", command: "/usr/bin/python3 -c 'import subprocess; subprocess.run([\"git\", \"push\"])'", blocked: true },
+    { prompt: "Tolong rapikan", command: "git rev-list --count HEAD", blocked: false },
+    { prompt: "Tolong rapikan", command: "git show-ref --head", blocked: false },
+    { prompt: "Tolong rapikan", command: "git symbolic-ref HEAD", blocked: false },
+    { prompt: "Tolong rapikan", command: "git rev-parse --show-toplevel", blocked: false },
+    { prompt: "Tolong rapikan", command: "git ls-files", blocked: false },
+    { prompt: "Please commit", command: "git commit -m x && git rev-parse HEAD", blocked: false },
+    { prompt: "Tolong rapikan", command: "> /dev/null git commit -m x", blocked: true },
+    { prompt: "Tolong rapikan", command: "timeout 30 git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "timeout -k 5 30 git commit -m x", blocked: true },
+    { prompt: "Tolong rapikan", command: "/usr/bin/env git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "/bin/bash -c 'git push origin main'", blocked: true },
+    { prompt: "Please commit", command: ">/dev/null timeout 30 git commit -m x", blocked: false },
+    { prompt: "Tolong rapikan", command: ">/dev/null timeout 30 git status", blocked: false },
+    { prompt: "Tolong rapikan", command: "env -i git commit -m x", blocked: true },
+    { prompt: "Tolong rapikan", command: "eval 'git commit -m x'", blocked: true },
+    { prompt: "Tolong rapikan", command: "eval git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "env -S 'git push origin main'", blocked: true },
+    { prompt: "Tolong rapikan", command: "printf 'origin main' | xargs git push", blocked: true },
+    { prompt: "Tolong rapikan", command: "printf 'origin main' | xargs -n 1 git push", blocked: true },
+    { prompt: "Tolong rapikan", command: "g=git; $g push origin main", blocked: true },
+    { prompt: "Tolong rapikan", command: "GIT=git; $GIT commit -m x", blocked: true },
+    { prompt: "Tolong rapikan", command: "x='git push'; $x", blocked: true },
+    { prompt: "Please push", command: "git -c alias.publish=push publish origin main", blocked: false },
+    { prompt: "Tolong rapikan", command: "git -c alias.review=log review", blocked: false },
+    { prompt: "Please commit or push", command: "git commit -m x", blocked: true },
+    { prompt: "Tolong rapikan", answer: "Commit or push", selected: true, command: "git commit -m x", blocked: true },
+    { prompt: "Please commit", command: 'git commit -m "fix push notifications"', blocked: false },
+    { prompt: "Tolong commit dan push perubahan ini", command: "git commit -m x && git push origin main", blocked: false },
+    { prompt: "Tolong commit lalu push", command: "git commit -m x && git push origin main", blocked: false },
+    { prompt: "Please commit and push notifications are broken", command: "git commit -m x && git push origin main", blocked: true },
+    { prompt: "Please commit and push later", command: "git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", answer: "Commit or push", selected: true, command: "git commit -m x && git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", answer: "Ya, commit or push", command: "git commit -m x && git push origin main", blocked: true },
+    { prompt: "Tolong rapikan", answer: "Ya, lakukan commit", command: "git commit -m x", blocked: false },
+  ];
+  for (const item of cases) {
+    const pi = createMockPi();
+    registerToolGuard(pi, createDeps([rule]));
+    const ctx = item.answer === undefined ? createMockContext(item.prompt) : createMockContextWithAskUser(item.prompt, {
+      answer: item.answer,
+      wasCustom: !item.selected,
+      options: item.selected ? [item.answer, "Batal"] : [],
+    });
+    const tool = item.tool ?? "bash";
+    const result = pi.emit<ToolCallEvent, ToolCallEventResult>("tool_call", {
+      type: "tool_call", toolCallId: "regression", toolName: tool,
+      input: tool === "execute" ? { script: item.command } : { command: item.command },
+    } as any, ctx);
+    assert.equal(result?.block === true, item.blocked, `${item.prompt} / ${item.command} / ${item.answer ?? tool}`);
+  }
+});
+
 test("AC-1: Perintah bash git commit diblokir bila pesan user tidak menyebut commit/push, dan lolos bila menyebutnya", () => {
   const rule = parseRule(`---
 name: git-commit-push
