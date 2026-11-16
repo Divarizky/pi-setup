@@ -23,7 +23,16 @@ export interface SessionState extends TaskState {
 	judgeState: TaskJudgeState;
 	enforceRetries: number;
 	reminderCount: number;
+	interventionCount: number;
+	lastRemindedFingerprint: string | null;
+	lastNudgeFingerprint: string | null;
+	nudgesInRequest: number;
 	nudgeState: NudgeState;
+	activeRequestId: string;
+	hasActiveUserRequest: boolean;
+	activeRequestTaskIds: Set<number>;
+	activeDelegations: Set<string>;
+	settledDelegations: Map<string, { status: string; resultPreview?: string; error?: string }>;
 }
 
 export const EMPTY_STATE: TaskState = { tasks: [], nextId: 1 };
@@ -35,7 +44,16 @@ function freshSessionState(): SessionState {
 		judgeState: createInitialState(),
 		enforceRetries: 0,
 		reminderCount: 0,
+		interventionCount: 0,
+		lastRemindedFingerprint: null,
+		lastNudgeFingerprint: null,
+		nudgesInRequest: 0,
 		nudgeState: { mutationCount: 0, hasActiveTodos: false },
+		activeRequestId: "req-init",
+		hasActiveUserRequest: false,
+		activeRequestTaskIds: new Set<number>(),
+		activeDelegations: new Set<string>(),
+		settledDelegations: new Map(),
 	};
 }
 
@@ -126,6 +144,159 @@ export function getReminderCount(sessionId: string): number {
 
 export function setReminderCount(sessionId: string, count: number): void {
 	slotFor(sessionId).reminderCount = count;
+}
+
+export function getInterventionCount(sessionId: string): number {
+	return slotFor(sessionId).interventionCount;
+}
+
+export function incrementInterventions(sessionId: string): number {
+	const slot = slotFor(sessionId);
+	slot.interventionCount += 1;
+	return slot.interventionCount;
+}
+
+export function resetInterventions(sessionId: string): void {
+	slotFor(sessionId).interventionCount = 0;
+}
+
+export function getLastRemindedFingerprint(sessionId: string): string | null {
+	return slotFor(sessionId).lastRemindedFingerprint;
+}
+
+export function setLastRemindedFingerprint(sessionId: string, fp: string | null): void {
+	slotFor(sessionId).lastRemindedFingerprint = fp;
+}
+
+export function getLastNudgeFingerprint(sessionId: string): string | null {
+	return slotFor(sessionId).lastNudgeFingerprint;
+}
+
+export function setLastNudgeFingerprint(sessionId: string, fp: string | null): void {
+	slotFor(sessionId).lastNudgeFingerprint = fp;
+}
+
+export function getNudgesInRequest(sessionId: string): number {
+	return slotFor(sessionId).nudgesInRequest;
+}
+
+export function incrementNudgesInRequest(sessionId: string): number {
+	const slot = slotFor(sessionId);
+	slot.nudgesInRequest += 1;
+	return slot.nudgesInRequest;
+}
+
+export function resetNudgesInRequest(sessionId: string): void {
+	slotFor(sessionId).nudgesInRequest = 0;
+}
+
+let requestSeq = 0;
+
+export function startNewUserRequest(sessionId: string, prompt = ""): void {
+	const slot = slotFor(sessionId);
+	slot.enforceRetries = 0;
+	slot.reminderCount = 0;
+	slot.interventionCount = 0;
+	slot.nudgesInRequest = 0;
+	slot.lastRemindedFingerprint = null;
+	slot.lastNudgeFingerprint = null;
+	slot.activeRequestId = `req-${++requestSeq}-${Date.now()}`;
+	slot.hasActiveUserRequest = true;
+	slot.activeRequestTaskIds = new Set<number>();
+
+	// If prompt explicitly refers to task ids or asks to continue/work on tasks, adopt them
+	if (typeof prompt === "string" && prompt.trim()) {
+		const lower = prompt.toLowerCase();
+		if (
+			/\b(lanjut|lanjutkan|teruskan|continue|proceed|go ahead|resume|selesaikan|kerjakan\s+todo|todos?)\b/i.test(
+				lower,
+			)
+		) {
+			for (const t of slot.tasks) {
+				slot.activeRequestTaskIds.add(t.id);
+			}
+		} else {
+			const hashMatches = prompt.matchAll(/#(\d+)\b/g);
+			for (const m of hashMatches) {
+				const id = Number(m[1]);
+				if (Number.isSafeInteger(id)) slot.activeRequestTaskIds.add(id);
+			}
+			const taskMatches = prompt.matchAll(/\btask\s+(\d+)\b/gi);
+			for (const m of taskMatches) {
+				const id = Number(m[1]);
+				if (Number.isSafeInteger(id)) slot.activeRequestTaskIds.add(id);
+			}
+		}
+	}
+}
+
+export function hasActiveUserRequest(sessionId: string): boolean {
+	return slotFor(sessionId).hasActiveUserRequest;
+}
+
+export function getActiveRequestId(sessionId: string): string {
+	return slotFor(sessionId).activeRequestId;
+}
+
+export function touchTaskInRequest(sessionId: string, taskId: number): void {
+	slotFor(sessionId).activeRequestTaskIds.add(taskId);
+}
+
+export function getActiveRequestTaskIds(sessionId: string): ReadonlySet<number> {
+	return slotFor(sessionId).activeRequestTaskIds;
+}
+
+export function getActiveDelegations(sessionId: string): ReadonlySet<string> {
+	return slotFor(sessionId).activeDelegations;
+}
+
+export function startDelegation(sessionId: string, delegationId: string): void {
+	if (!delegationId) return;
+	const targetSessions = sessionId ? [slotFor(sessionId)] : Array.from(sessions.values());
+	for (const slot of targetSessions) {
+		slot.activeDelegations.add(delegationId);
+	}
+}
+
+export function settleDelegation(
+	sessionId: string,
+	delegationId: string,
+	info: { status: string; resultPreview?: string; error?: string },
+): void {
+	if (!delegationId) return;
+	const targetSessions = sessionId ? [slotFor(sessionId)] : Array.from(sessions.values());
+	for (const slot of targetSessions) {
+		slot.activeDelegations.delete(delegationId);
+		slot.settledDelegations.set(delegationId, info);
+
+		// Update matching tasks to review ready
+		const tasks = slot.tasks;
+		let changed = false;
+		for (const t of tasks) {
+			const isOwner =
+				t.owner === delegationId ||
+				t.owner === `worker:${delegationId}` ||
+				t.owner === `workflow:${delegationId}`;
+			const isMeta =
+				t.metadata?.workerId === delegationId ||
+				t.metadata?.workflowId === delegationId ||
+				t.metadata?.agentId === delegationId ||
+				t.metadata?.subagentId === delegationId;
+			if (isOwner || isMeta) {
+				t.metadata = {
+					...(t.metadata ?? {}),
+					reviewReady: true,
+					delegationStatus: info.status,
+					delegationResult: info.resultPreview,
+					delegationError: info.error,
+				};
+				changed = true;
+			}
+		}
+		if (changed) {
+			slot.tasks = [...tasks];
+		}
+	}
 }
 
 export function getNudgeState(sessionId: string): NudgeState {

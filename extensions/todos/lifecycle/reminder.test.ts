@@ -34,11 +34,11 @@ describe("shouldRemindPendingTodos", () => {
 		assert.equal(shouldRemindPendingTodos({ tasks, lastAssistantText: CONCLUSION, reminderCount: 0 }), true);
 	});
 
-	it("returns false once reminderCount reaches the default limit of 3", () => {
+	it("returns false once reminderCount reaches the default limit of 1", () => {
 		const tasks = [task(1, "pending")];
-		assert.equal(shouldRemindPendingTodos({ tasks, lastAssistantText: CONCLUSION, reminderCount: 2 }), true);
-		assert.equal(shouldRemindPendingTodos({ tasks, lastAssistantText: CONCLUSION, reminderCount: 3 }), false);
-		assert.equal(shouldRemindPendingTodos({ tasks, lastAssistantText: CONCLUSION, reminderCount: 4 }), false);
+		assert.equal(shouldRemindPendingTodos({ tasks, lastAssistantText: CONCLUSION, reminderCount: 0 }), true);
+		assert.equal(shouldRemindPendingTodos({ tasks, lastAssistantText: CONCLUSION, reminderCount: 1 }), false);
+		assert.equal(shouldRemindPendingTodos({ tasks, lastAssistantText: CONCLUSION, reminderCount: 2 }), false);
 	});
 
 	it("honours a custom maxRetries instead of the default", () => {

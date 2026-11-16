@@ -7,13 +7,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { applyTaskMutation, deriveBlocks } from "./core/reducer.ts";
 import type { Op } from "./core/reducer.ts";
 import type { TaskState } from "./core/store.ts";
-import { commitState, getJudgeState, getRenderState, getState, sid } from "./core/store.ts";
+import { commitState, getJudgeState, getRenderState, getState, sid, touchTaskInRequest } from "./core/store.ts";
 import {
 	getEffectiveDocExtensions,
 	getEffectiveValidationPatterns,
 	getTaskGateMode,
 } from "./config.ts";
-import { evaluateRun } from "./judge/judge.ts";
+import { evaluateRun, type TaskJudgeState } from "./judge/judge.ts";
 import {
 	TOOL_LABEL,
 	TOOL_NAME,
@@ -123,6 +123,41 @@ export function buildToolResult(
 // Registration
 // ---------------------------------------------------------------------------
 
+export function isTaskValidationRequired(
+	task: Task | undefined,
+	judgeState: TaskJudgeState,
+): boolean {
+	if (!task) return true;
+
+	if (
+		task.metadata?.kind === "investigation" ||
+		task.metadata?.type === "investigation" ||
+		task.metadata?.kind === "research" ||
+		task.metadata?.type === "research" ||
+		task.metadata?.requiresValidation === false
+	) {
+		return false;
+	}
+
+	const files = task.metadata?.files ?? task.metadata?.artifacts ?? task.metadata?.paths;
+	if (Array.isArray(files) && files.length > 0) {
+		const unverifiedPaths = new Set(judgeState.edits.map((e) => e.path));
+		const touchesUnverified = files.some((f) => typeof f === "string" && unverifiedPaths.has(f));
+		if (!touchesUnverified) {
+			return false;
+		}
+	}
+
+	const subject = (task.subject ?? "").trim().toLowerCase();
+	const nonCodePattern =
+		/^(investigate|research|explore|analyze|audit|inspect|review|document|docs|baca|teliti|analisis|investigasi)\b/i;
+	if (nonCodePattern.test(subject)) {
+		return false;
+	}
+
+	return true;
+}
+
 export function registerTodoTool(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: TOOL_NAME,
@@ -143,36 +178,48 @@ export function registerTodoTool(pi: ExtensionAPI): void {
 				const gateMode = getTaskGateMode();
 				if (gateMode !== "off") {
 					const judgeState = getJudgeState(sid(ctx));
-					const docExtensions = getEffectiveDocExtensions();
-					const validationPatterns = getEffectiveValidationPatterns(ctx.cwd);
-					const evaluation = evaluateRun(judgeState, { docExtensions, validationPatterns });
+					const currentState = getState(sid(ctx));
+					const taskToComplete = currentState.tasks.find((t) => t.id === p.id);
 
-					if (evaluation.decision === "tidak_terverifikasi") {
-						if (gateMode === "strict") {
-							const errorOp: Op = {
-								kind: "error",
-								message:
-									"Task completion blocked by task-judge: file diedit tanpa perintah validasi yang sukses setelah edit terakhir. Jalankan test/linter sebelum menandai task sebagai completed.",
-							};
+					if (isTaskValidationRequired(taskToComplete, judgeState)) {
+						const docExtensions = getEffectiveDocExtensions();
+						const validationPatterns = getEffectiveValidationPatterns(ctx.cwd);
+						const evaluation = evaluateRun(judgeState, { docExtensions, validationPatterns });
+
+						if (evaluation.decision === "tidak_terverifikasi") {
+							if (gateMode === "strict") {
+								const errorOp: Op = {
+									kind: "error",
+									message:
+										"Task completion blocked by task-judge: file diedit tanpa perintah validasi yang sukses setelah edit terakhir. Jalankan test/linter sebelum menandai task sebagai completed.",
+								};
+								ctx.ui?.notify?.(
+									"Task completion blocked: file diedit tanpa validasi sukses.",
+									"error",
+								);
+								return buildToolResult(action, p, currentState, errorOp);
+							}
+							// gateMode === "warn"
+							warningSuffix =
+								"\n\n[task-judge] Peringatan: Terdapat modifikasi berkas tanpa perintah validasi yang sukses setelah edit terakhir.";
 							ctx.ui?.notify?.(
-								"Task completion blocked: file diedit tanpa validasi sukses.",
-								"error",
+								"Peringatan task-judge: task ditandai completed saat ada edit kode yang belum divalidasi.",
+								"warning",
 							);
-							return buildToolResult(action, p, getState(sid(ctx)), errorOp);
 						}
-						// gateMode === "warn"
-						warningSuffix =
-							"\n\n[task-judge] Peringatan: Terdapat modifikasi berkas tanpa perintah validasi yang sukses setelah edit terakhir.";
-						ctx.ui?.notify?.(
-							"Peringatan task-judge: task ditandai completed saat ada edit kode yang belum divalidasi.",
-							"warning",
-						);
 					}
 				}
 			}
 
 			const result = applyTaskMutation(getState(sid(ctx)), action, p);
 			commitState(sid(ctx), result.state);
+
+			if (result.op.kind === "create") {
+				touchTaskInRequest(sid(ctx), result.op.taskId);
+			} else if (result.op.kind === "update" && result.op.changed) {
+				touchTaskInRequest(sid(ctx), result.op.id);
+			}
+
 			const toolResult = buildToolResult(action, p, result.state, result.op);
 			if (warningSuffix && toolResult.content[0]) {
 				toolResult.content[0].text += warningSuffix;

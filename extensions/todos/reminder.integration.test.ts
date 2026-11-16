@@ -117,23 +117,19 @@ describe("agent_before_settle completion reminder", () => {
 		assert.equal(result, undefined);
 	});
 
-	it("stops reminding after three reminders in one user-initiated run", async () => {
+	it("stops reminding after one reminder in one user-initiated run by default", async () => {
 		const sid = "s-cap";
 		setTasks(sid, ["pending"]);
 		const settle = () => handlers.agent_before_settle!(settleEvent(sid, CONCLUSION), ctxFor(sid)) as Promise<any>;
 
 		assert.equal((await settle())?.continue, true);
-		assert.equal((await settle())?.continue, true);
-		assert.equal((await settle())?.continue, true);
-		assert.equal(await settle(), undefined, "fourth settle in the same run must not be reminded");
+		assert.equal(await settle(), undefined, "second settle in the same run must not be reminded");
 	});
 
 	it("restores the reminder budget when a new user prompt starts a run", async () => {
 		const sid = "s-reset";
 		setTasks(sid, ["pending"]);
 		const settle = () => handlers.agent_before_settle!(settleEvent(sid, CONCLUSION), ctxFor(sid)) as Promise<any>;
-		await settle();
-		await settle();
 		await settle();
 		assert.equal(await settle(), undefined);
 
@@ -147,8 +143,6 @@ describe("agent_before_settle completion reminder", () => {
 		setTasks(sid, ["pending"]);
 		const settle = () => handlers.agent_before_settle!(settleEvent(sid, CONCLUSION), ctxFor(sid)) as Promise<any>;
 		await settle();
-		await settle();
-		await settle();
 
 		handlers.before_agent_start!({ messageType: "custom", message: {} }, ctxFor(sid));
 
@@ -159,8 +153,6 @@ describe("agent_before_settle completion reminder", () => {
 		setTasks("s-a", ["pending"]);
 		setTasks("s-b", ["pending"]);
 		const settle = (sid: string) => handlers.agent_before_settle!(settleEvent(sid, CONCLUSION), ctxFor(sid)) as Promise<any>;
-		await settle("s-a");
-		await settle("s-a");
 		await settle("s-a");
 		assert.equal(await settle("s-a"), undefined);
 

@@ -37,6 +37,22 @@ export interface JudgeConfig {
 	taskGateMode?: TaskGateMode | string;
 }
 
+export interface ReminderConfig {
+	/** Maximum continuation turns forced by completion reminder per request (default: 1). */
+	maxContinuations?: number;
+	/** Unified maximum settle interventions (judge enforcement + completion reminder) per request (default: 2). */
+	maxInterventions?: number;
+	/** Whether to deduplicate reminders per task condition fingerprint (default: true). */
+	dedupFingerprint?: boolean;
+}
+
+export interface NudgeConfig {
+	/** Mutation count threshold before inactivity nudge fires (default: 12). */
+	threshold?: number;
+	/** Maximum inactivity nudges sent per request (default: 2). */
+	maxPerRequest?: number;
+}
+
 export interface TodosConfig {
 	/** Content-row budget for the overlay (min 3). */
 	maxWidgetLines?: number;
@@ -46,12 +62,22 @@ export interface TodosConfig {
 	locale?: Locale;
 	/** Nested judge config */
 	judge?: JudgeConfig;
+	/** Reminder configuration */
+	reminder?: ReminderConfig;
+	/** Inactivity nudge configuration */
+	nudge?: NudgeConfig;
 	/** Flattened judge config fields */
 	mode?: JudgeMode | string;
 	docExtensions?: string[];
 	validationPatterns?: string[];
 	nestedJudge?: NestedJudgeConfig;
 	taskGateMode?: TaskGateMode | string;
+	/** Flattened reminder/nudge fields for backward compatibility */
+	maxReminderContinuations?: number;
+	maxInterventions?: number;
+	dedupReminderFingerprint?: boolean;
+	nudgeThreshold?: number;
+	maxNudgesPerRequest?: number;
 }
 
 export type TaskJudgeConfig = TodosConfig;
@@ -144,6 +170,53 @@ export function getMaxWidgetLines(): number {
 
 export function getConfigLocale(): Locale {
 	return loadConfig().locale === "id" ? "id" : "en";
+}
+
+// ---------------------------------------------------------------------------
+// Reminder & Nudge Getters
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_REMINDER_MAX_CONTINUATIONS = 1;
+export const DEFAULT_MAX_INTERVENTIONS = 2;
+export const DEFAULT_NUDGE_MAX_PER_REQUEST = 2;
+
+export function getReminderConfig(): Required<ReminderConfig> {
+	const config = loadConfig();
+	const r = config.reminder ?? {};
+	return {
+		maxContinuations:
+			typeof r.maxContinuations === "number" && r.maxContinuations >= 0
+				? r.maxContinuations
+				: typeof config.maxReminderContinuations === "number" && config.maxReminderContinuations >= 0
+					? config.maxReminderContinuations
+					: DEFAULT_REMINDER_MAX_CONTINUATIONS,
+		maxInterventions:
+			typeof r.maxInterventions === "number" && r.maxInterventions >= 0
+				? r.maxInterventions
+				: typeof config.maxInterventions === "number" && config.maxInterventions >= 0
+					? config.maxInterventions
+					: DEFAULT_MAX_INTERVENTIONS,
+		dedupFingerprint: r.dedupFingerprint ?? config.dedupReminderFingerprint ?? true,
+	};
+}
+
+export function getNudgeConfig(): Required<NudgeConfig> {
+	const config = loadConfig();
+	const n = config.nudge ?? {};
+	return {
+		threshold:
+			typeof n.threshold === "number" && n.threshold > 0
+				? n.threshold
+				: typeof config.nudgeThreshold === "number" && config.nudgeThreshold > 0
+					? config.nudgeThreshold
+					: 12,
+		maxPerRequest:
+			typeof n.maxPerRequest === "number" && n.maxPerRequest >= 0
+				? n.maxPerRequest
+				: typeof config.maxNudgesPerRequest === "number" && config.maxNudgesPerRequest >= 0
+					? config.maxNudgesPerRequest
+					: DEFAULT_NUDGE_MAX_PER_REQUEST,
+	};
 }
 
 // ---------------------------------------------------------------------------

@@ -81,6 +81,9 @@ describe("tool_result inactivity nudge", () => {
 		runTools(handlers.tool_result!, sid, mutations(MUTATIONS_TO_NUDGE));
 		assert.equal(sent.length, 1);
 
+		// Update task status so fingerprint differs from the first nudge
+		setTasks(sid, ["in_progress"]);
+
 		runTools(handlers.tool_result!, sid, mutations(MUTATIONS_TO_NUDGE - 1));
 		assert.equal(sent.length, 1, "counter restarts from zero after the nudge");
 

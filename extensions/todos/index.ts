@@ -18,31 +18,38 @@ import { makeOverlayLoader, prewarmOverlay, type OverlayImporter } from "./loade
 import {
 	clearActiveRenderSession,
 	evictSession,
+	getActiveDelegations,
 	getActiveRenderSession,
+	getActiveRequestId,
 	getJudgeState,
+	getLastNudgeFingerprint,
 	getNudgeState,
+	getNudgesInRequest,
 	getRenderState,
 	getTodos,
+	incrementNudgesInRequest,
 	replaceState,
 	replayFromBranch,
-	resetEnforceRetries,
 	resetTurnJudgeState,
 	setActiveRenderSession,
 	setJudgeState,
+	setLastNudgeFingerprint,
 	setNudgeState,
-	setReminderCount,
+	settleDelegation,
 	sid,
+	startDelegation,
+	startNewUserRequest,
 } from "./core/store.ts";
 import { registerTodoTool } from "./tool.ts";
 import { registerTodosCommand } from "./command.ts";
 import { coordinateSettle } from "./lifecycle/settle-coordinator.ts";
 import {
 	buildInactivityNudgeMessage,
-	DEFAULT_NUDGE_THRESHOLD,
 	recordToolExecution,
 	shouldSendInactivityNudge,
 	type NudgeState,
 } from "./lifecycle/nudge.ts";
+import { computeTaskFingerprint } from "./lifecycle/reminder.ts";
 import {
 	extractShellCommand,
 	isTrackedEditPath,
@@ -52,7 +59,7 @@ import {
 	resolveValidationSuccess,
 } from "./judge/judge.ts";
 import { extractText } from "./judge/nested-judge.ts";
-import { getEffectiveValidationPatterns } from "./config.ts";
+import { getEffectiveValidationPatterns, getNudgeConfig } from "./config.ts";
 import { TOOL_NAME } from "./types.ts";
 import type { TodosOverlay } from "./overlay/widget.ts";
 
@@ -92,10 +99,6 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 	let uiCtx: ExtensionUIContext | undefined;
 	const uiSessions = new Map<string, ExtensionUIContext>();
 	let lifecycleGeneration = 0;
-	// Completion reminders sent per session during the current user-initiated run.
-	const reminderCounters = new Map<string, number>();
-	// Inactivity nudge state per session. An absent slot means the default state.
-	const nudgeStates = new Map<string, NudgeState>();
 
 	async function updateTodoOverlay(
 		resetCompletedDisplayState = false,
@@ -225,26 +228,56 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 	// Reads getRenderState() at render time; do NOT call replayFromBranch here
 	// (branch is stale — message_end runs after tool_execution_end).
 	pi.on("tool_execution_end", async (event) => {
-		if (event.toolName !== TOOL_NAME || event.isError) return;
-		try {
-			await updateTodoOverlay();
-		} catch (e) {
-			console.warn(`[todos] overlay refresh failed (will retry on next update): ${formatError(e)}`);
+		if (event.toolName === TOOL_NAME && !event.isError) {
+			try {
+				await updateTodoOverlay();
+			} catch (e) {
+				console.warn(`[todos] overlay refresh failed (will retry on next update): ${formatError(e)}`);
+			}
+		} else if (event.toolName === "SubagentWorkflow" || event.toolName === "run_workflow") {
+			const text = extractText((event as any).result?.content ?? (event as any).result);
+			const match = text.match(/Task ID:\s*(wf_[a-zA-Z0-9]+)/i);
+			if (match?.[1]) {
+				startDelegation(getActiveRenderSession() || "", match[1]);
+			}
 		}
 	});
+
+	// Register subagent event listeners on pi.events if available
+	if (typeof (pi as any).events?.on === "function") {
+		const events = (pi as any).events;
+		events.on("subagents:started", (data: { id?: string }) => {
+			if (data?.id) {
+				startDelegation(getActiveRenderSession() || "", data.id);
+			}
+		});
+		events.on("subagents:completed", (data: { id?: string; result?: string }) => {
+			if (data?.id) {
+				settleDelegation(getActiveRenderSession() || "", data.id, {
+					status: "completed",
+					resultPreview: typeof data.result === "string" ? data.result : undefined,
+				});
+			}
+		});
+		events.on("subagents:failed", (data: { id?: string; error?: string }) => {
+			if (data?.id) {
+				settleDelegation(getActiveRenderSession() || "", data.id, {
+					status: "failed",
+					error: typeof data.error === "string" ? data.error : undefined,
+				});
+			}
+		});
+	}
 
 	// Evaluate the lazy graph after startup while Pi's boot-time dependency
 	// paths are still stable. Loads no widget; stays deferred until a
 	// foreground session has visible tasks. unref avoids holding the process.
 	prewarmOverlay(loadTodoOverlay);
 
-	pi.on("agent_start", async (_event, ctx) => {
+	pi.on("agent_start", async (_event, _ctx) => {
 		todoOverlay?.hideCompletedTasksFromPreviousTurn();
-		try {
-			resetTurnJudgeState(sid(ctx));
-		} catch {
-			// Fail-open
-		}
+		// resetTurnJudgeState is NOT called here because Pi calls agent_start on
+		// continuations, which would wipe unverified edits and bypass enforcement.
 	});
 
 	// Tracks edit paths, validation commands, and consecutive mutating tool calls per session.
@@ -277,8 +310,52 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 			// 2. Inactivity nudge tracking
 			const hasActiveTodos = getTodos(id).some((t) => t.status === "pending" || t.status === "in_progress");
 			const previous = getNudgeState(id);
-			let nudge = recordToolExecution({ ...previous, hasActiveTodos }, event.toolName, Boolean(event.isError));
-			if (shouldSendInactivityNudge(nudge, DEFAULT_NUDGE_THRESHOLD)) {
+			const patterns = getEffectiveValidationPatterns(ctx.cwd);
+			const nudgeConfig = getNudgeConfig();
+
+			let todoAction: string | undefined;
+			let todoChanged: boolean | undefined;
+			if (event.toolName === TOOL_NAME) {
+				const input = event.input as Record<string, unknown> | undefined;
+				todoAction = typeof input?.action === "string" ? input.action : undefined;
+				const text = extractText(event.content);
+				if (text.startsWith("No change:")) {
+					todoChanged = false;
+				} else if (
+					text.startsWith("Updated #") ||
+					text.startsWith("Created #") ||
+					text.startsWith("Deleted #") ||
+					text.startsWith("Cleared ")
+				) {
+					todoChanged = true;
+				}
+			}
+
+			let nudge = recordToolExecution(
+				{ ...previous, hasActiveTodos },
+				event.toolName,
+				{
+					isError: Boolean(event.isError),
+					input: event.input,
+					action: todoAction,
+					changed: todoChanged,
+					validationPatterns: patterns,
+				},
+			);
+
+			const currentFp = computeTaskFingerprint(getTodos(id), getActiveRequestId(id));
+			const lastFp = getLastNudgeFingerprint(id);
+			const nudgesInReq = getNudgesInRequest(id);
+
+			if (
+				shouldSendInactivityNudge(nudge, {
+					threshold: nudgeConfig.threshold,
+					maxPerRequest: nudgeConfig.maxPerRequest,
+					nudgesInRequest: nudgesInReq,
+					currentFingerprint: currentFp,
+					lastFingerprint: lastFp,
+				})
+			) {
 				pi.sendMessage(
 					{
 						customType: "todos-nudge",
@@ -288,6 +365,8 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 					{ deliverAs: "steer" },
 				);
 				nudge = { ...nudge, mutationCount: 0 };
+				incrementNudgesInRequest(id);
+				setLastNudgeFingerprint(id, currentFp);
 			}
 			setNudgeState(id, nudge);
 		} catch (e) {
@@ -297,14 +376,26 @@ export default function (pi: ExtensionAPI, importOverlay: OverlayImporter = () =
 
 	// A new user prompt starts a fresh reminder & enforce retry budget.
 	pi.on("before_agent_start", (event, ctx) => {
-		if (event.messageType === "user") {
-			try {
-				const id = sid(ctx);
-				setReminderCount(id, 0);
-				resetEnforceRetries(id);
-			} catch {
-				// Fail-open
+		try {
+			const id = sid(ctx);
+			if (event.messageType === "user") {
+				startNewUserRequest(id, (event as any).prompt ?? "");
+				resetTurnJudgeState(id);
+			} else if (event.messageType === "custom") {
+				const msg = (event as any).message;
+				if (msg?.customType === "subagent-notification" || msg?.customType === "workflow-result") {
+					const details = msg.details;
+					if (details?.id) {
+						settleDelegation(id, details.id, {
+							status: details.status ?? "completed",
+							resultPreview: details.resultPreview,
+							error: details.error,
+						});
+					}
+				}
 			}
+		} catch {
+			// Fail-open
 		}
 	});
 

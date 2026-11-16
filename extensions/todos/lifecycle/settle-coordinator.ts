@@ -17,6 +17,7 @@ import {
 	getJudgeMode,
 	getNestedJudgeSettings,
 	getPrewalkTemplate,
+	getReminderConfig,
 } from "../config.ts";
 import {
 	evaluateRun,
@@ -30,20 +31,30 @@ import {
 } from "../judge/nested-judge.ts";
 import {
 	buildReminderMessage,
+	computeTaskFingerprint,
+	getActionableTasks,
 	shouldRemindPendingTodos,
 } from "./reminder.ts";
 import {
+	getActiveDelegations,
+	getActiveRequestId,
+	getActiveRequestTaskIds,
 	getEnforceRetries,
+	getInterventionCount,
 	getJudgeState,
+	getLastRemindedFingerprint,
 	getReminderCount,
 	getTodos,
+	hasActiveUserRequest,
 	incrementEnforceRetries,
+	incrementInterventions,
+	setLastRemindedFingerprint,
 	setReminderCount,
 	sid,
 } from "../core/store.ts";
 
 export const ENFORCE_MAX_RETRIES = 2;
-export const REMINDER_MAX_RETRIES = 3;
+export const REMINDER_MAX_RETRIES = 1;
 
 export function lastAssistantText(messages: readonly unknown[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -52,6 +63,39 @@ export function lastAssistantText(messages: readonly unknown[]): string {
 		return extractText(m.content);
 	}
 	return "";
+}
+
+export function detectStructuredWaiting(event: AgentBeforeSettleEvent): boolean {
+	if (Array.isArray(event.entries)) {
+		for (const entry of event.entries) {
+			const e = entry as unknown as Record<string, unknown>;
+			if (e.customType === "needs-decision" || e.customType === "ask_question") {
+				return true;
+			}
+			if (typeof e.content === "string" && e.content.includes("needs-decision")) {
+				return true;
+			}
+		}
+	}
+	const messages = event.context?.llmMessages;
+	if (Array.isArray(messages)) {
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const m = messages[i] as Record<string, unknown>;
+			if (m?.role !== "assistant") continue;
+			const toolCalls = m.toolCalls as Array<{ name?: string }> | undefined;
+			if (Array.isArray(toolCalls)) {
+				if (toolCalls.some((tc) => tc?.name === "ask_question" || tc?.name === "ask-user")) {
+					return true;
+				}
+			}
+			const text = extractText(m.content);
+			if (text.includes("needs-decision")) {
+				return true;
+			}
+			break;
+		}
+	}
+	return false;
 }
 
 async function judgeNested(
@@ -124,6 +168,11 @@ export async function coordinateSettle(
 		return;
 	}
 
+	const reminderConfig = getReminderConfig();
+	const maxInterventions = reminderConfig.maxInterventions ?? 2;
+	const maxReminderContinuations = reminderConfig.maxContinuations ?? 1;
+	const currentInterventions = getInterventionCount(id);
+
 	// -------------------------------------------------------------------------
 	// 1. Code Integrity Gate (task-judge)
 	// -------------------------------------------------------------------------
@@ -156,13 +205,14 @@ export async function coordinateSettle(
 		if (mode !== "off" && evaluation.decision === "tidak_terverifikasi") {
 			if (mode === "enforce") {
 				const used = getEnforceRetries(id);
-				if (used >= ENFORCE_MAX_RETRIES) {
+				if (used >= ENFORCE_MAX_RETRIES || currentInterventions >= maxInterventions) {
 					ctx.ui?.notify?.(
 						"Batas retry enforce task-judge tercapai; sesi diselesaikan tanpa validasi sukses.",
 						"warning",
 					);
 				} else {
 					incrementEnforceRetries(id);
+					incrementInterventions(id);
 					ctx.ui?.notify?.(
 						"Penyelesaian ditolak task-judge (mode enforce): file diedit tanpa validasi sukses setelah edit terakhir.",
 						"error",
@@ -198,21 +248,46 @@ export async function coordinateSettle(
 	// 2. Pending Task Gate (todos reminder)
 	// -------------------------------------------------------------------------
 	try {
+		const updatedInterventions = getInterventionCount(id);
+		if (updatedInterventions >= maxInterventions) {
+			return;
+		}
+
 		const tasks = getTodos(id);
-		if (tasks.some((t) => t.status === "pending" || t.status === "in_progress")) {
+		const activeDelegations = getActiveDelegations(id);
+		const activeRequestTaskIds = getActiveRequestTaskIds(id);
+		const isUserReqActive = hasActiveUserRequest(id);
+		const actionableTasks = getActionableTasks(tasks, activeDelegations, activeRequestTaskIds, isUserReqActive);
+
+		if (actionableTasks.length > 0) {
 			const reminderCount = getReminderCount(id);
 			const lastText = lastAssistantText(event.context.llmMessages);
+			const structuredWaiting = detectStructuredWaiting(event);
+			const currentFingerprint = computeTaskFingerprint(actionableTasks, getActiveRequestId(id));
+			const lastFingerprint = getLastRemindedFingerprint(id);
+
 			if (
 				shouldRemindPendingTodos({
 					tasks,
 					lastAssistantText: lastText,
+					structuredWaiting,
 					reminderCount,
-					maxRetries: REMINDER_MAX_RETRIES,
+					maxRetries: maxReminderContinuations,
+					totalInterventions: updatedInterventions,
+					maxInterventions,
+					activeDelegations,
+					activeRequestTaskIds,
+					hasActiveUserRequest: isUserReqActive,
+					lastFingerprint,
+					currentFingerprint,
 				})
 			) {
 				setReminderCount(id, reminderCount + 1);
-				const pendingCount = tasks.filter((t) => t.status === "pending").length;
-				const inProgressCount = tasks.filter((t) => t.status === "in_progress").length;
+				incrementInterventions(id);
+				setLastRemindedFingerprint(id, currentFingerprint);
+
+				const pendingCount = actionableTasks.filter((t) => t.status === "pending").length;
+				const inProgressCount = actionableTasks.filter((t) => t.status === "in_progress").length;
 				return {
 					entries: [
 						...(event.entries ?? []),
