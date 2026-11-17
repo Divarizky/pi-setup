@@ -38,6 +38,26 @@ Mode otomatis jika `.workspace/project-meta.md` tersedia dan user tidak meminta 
 
 Ketiadaan project metadata bukan alasan untuk menghentikan workflow biasa. Skill kompleks yang menetapkan Project wajib boleh menghentikan workflow sampai `setup-workflow` selesai.
 
+## Execution Policy
+
+Execution Policy menentukan tingkat otonomi eksekusi agent dalam menjalankan antrean tugas (task queue) dan transisi langkah workflow. Terpisah dari Work Modes (Universal vs Project), Execution Policy mengatur interaksi loop runtime:
+
+### Interactive (default)
+
+Mode interaktif standar untuk sesi kerja kolaboratif dengan pengguna.
+
+- Memerlukan konfirmasi per-task (misalnya prompt `TASK-N eligible. Kerjakan? (y/n)`).
+- Penawaran commit dan pemilihan langkah berikutnya dikomunikasikan secara transparan di chat.
+- Pengguna memegang kendali penuh atas setiap iterasi dan percabangan alur.
+
+### Autonomous (event-driven/batch worker)
+
+Mode otonom untuk background worker, batch job, event-driven runner (misal worker the-orchest), atau eksekusi batch mandiri.
+
+- Melewati prompt per-task `(y/n)`: langsung mengambil dan mengeksekusi task eligible berikutnya dari antrean (`### Queue`) secara berurutan hingga queue habis atau terpicu Escape Hatch.
+- Wajib berhenti di [HITL Safety Checkpoint](#safety-checkpoint) untuk aksi-aksi yang bersifat state-changing dan irreversible (misalnya push remote git, penghapusan file/data kritis, modifikasi issue GitHub publik bila membutuhkan konfirmasi, atau aksi berisiko tinggi).
+- Jika terjadi kegagalan berulang yang memicu Escape Hatch, autonomous execution berhenti, mencatat failure signal (jalur Loop 4), dan melaporkan status atau meminta keputusan via channel status worker tanpa memblokir proses secara pasif.
+
 ## Context Resolution
 
 Aturan operasional ada di [shared/COMMON.md#context-resolver](shared/COMMON.md#context-resolver). Baca sumber dalam urutan berikut, hanya jika tersedia:
@@ -57,9 +77,12 @@ Jangan mengarang isi context yang tidak tersedia. Nyatakan keterbatasannya bila 
 
 ```text
 ask-me
-  ├─ fitur kecil → implement → code-review → git-commit
-  ├─ fitur besar → to-requirements → to-tasks → [opsional: github-issue] → implement → code-review → git-commit
-  ├─ bug sulit → bug-diagnosis → code-review → git-commit
+  ├─ fitur kecil → implement → code-review ─┬─ [pass] ──────────────────────────→ git-commit ──→ Loop 4 (capture gotchas + agent-memory)
+  │                                         └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnosis ──┘
+  ├─ fitur besar → to-requirements → to-tasks → [opsional: github-issue]
+  │                 └→ implement → code-review ─┬─ [pass] ───────────────────────→ git-commit ──→ Loop 4 (capture gotchas + agent-memory)
+  │                                             └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnosis ──┘
+  ├─ bug sulit → bug-diagnosis → code-review → git-commit ──→ Loop 4 (capture gotchas + agent-memory)
   ├─ merge conflict → merge-conflict → git-commit
   ├─ desain belum jelas → prototype (project mode: work card via to-requirements pattern dulu) → to-tasks / implement
   ├─ arsitektur → improve-architecture → to-tasks / implement (refactor satu langkah boleh langsung implement)
@@ -70,6 +93,15 @@ ask-me
 `github-issue` setelah `to-tasks` hanya berjalan jika user memilih membuat issue. Jika tidak, lanjut ke cek eligible dan tawaran `implement` (y/n) seperti di `to-tasks` Step 5 (hanya jika ada task eligible). Untuk issue level fitur di Project mode, `implement` mencentang checkbox task di issue setiap task Done (dengan konfirmasi).
 
 `setup-workflow` adalah persiapan opsional untuk workflow biasa, tetapi wajib sebelum `project-migration`.
+
+### Review Escalation & Loop 4
+
+- **Eskalasi code-review (Loop 3 → bug-diagnosis)**: Jika `code-review` mengembalikan verdict `CHANGES_REQUESTED` 2x berturut-turut pada temuan axis Correctness/Safety (keparahan P0/P1), alur otomatis dieskalasi ke `bug-diagnosis` (maksimal 1x eskalasi sebelum Escape Hatch) untuk investigasi mendalam dan perbaikan terarah pada scope task terkait. Temuan Spec atau Standards tetap diselesaikan dalam siklus implementasi biasa (Step 3).
+- **Jalur Loop 4 (Capture Gotchas & Memory)**: Pada akhir workflow (setelah commit/task Done) atau saat Escape Hatch terpicu akibat siklus gagal berulang:
+  - Ringkas temuan gotchas dan root cause kegagalan (1–3 kalimat konkret: asumsi keliru, celah konteks, atau aturan terlewat).
+  - Simpan ke section `## Gotchas` pada `.workspace/context/CONTEXT.md` (Project mode).
+  - Simpan ke `agent-memory` (`memory save --type note --sources ...`) bila CLI atau skill agent-memory tersedia.
+  - Usulkan perbaikan guardrail atau aturan (`AGENTS.md`, `CODE_STYLE.md`, `SECURITY.md`) bila ditemukan celah kebijakan berulang.
 
 ## Safety Checkpoint
 
