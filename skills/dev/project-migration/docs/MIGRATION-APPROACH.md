@@ -20,7 +20,7 @@ Kode existing dipindah ke project baru, diubah seperlunya (update dependency, fi
 
 **Contoh**: Express.js versi lama → Express.js versi baru. Copy file, update import, fix breaking changes — logic tidak ditulis ulang.
 
-**Konsekuensi ke flow**: Migration Plan (Step 5) lebih dekat proses `bug-diagnosis` — jaga behavior identik, test characterization dulu sebelum ubah apapun.
+**Konsekuensi ke flow**: Migration Plan (Step 5) lebih dekat proses `bug-diagnose` — jaga behavior identik, test characterization dulu sebelum ubah apapun.
 
 ## Questions for the User
 

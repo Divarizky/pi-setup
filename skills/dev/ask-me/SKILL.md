@@ -23,7 +23,7 @@ Baca `../WORKFLOW.md` hanya ketika jawaban mengarah ke pekerjaan coding/project.
 General Grill tidak dibatasi pada project, coding, atau domain tertentu.
 
 ### Off-Ramps
-- Bug → `bug-diagnosis`
+- Bug → `bug-diagnose`
 - Merge conflict → `merge-conflict`
 - Arsitektur → `improve-architecture` (catat, jangan perbaiki sekarang)
 - Sesi panjang → `handoff`
@@ -43,7 +43,7 @@ Urutan prioritas:
 |--------|-------|
 | "tambah fitur baru", "buat halaman baru", "mau bikin X" — no breakdown | → **Step 2 (Grill)** |
 | "kerjakan task X", "lanjut task berikutnya", "implement task dari work card" | `implement` |
-| "error", "bug", "crash", "gagal", "lambat", stack trace | `bug-diagnosis` |
+| "error", "bug", "crash", "gagal", "lambat", stack trace | `bug-diagnose` |
 | "resolve conflict", "ada conflict", "CONFLICT", "konflik merge" | `merge-conflict` |
 | "buat requirements", "tulis spec", "dokumentasikan requirement fitur ini", "susun requirement fitur ini" | `to-requirements` |
 | "pecah jadi task", "breakdown plan ini", "buat daftar task" | `to-tasks` |
@@ -183,7 +183,7 @@ Status: routed | waiting-confirmation
 |-------|--------|
 | Single-session | Grill + implement kecil selesai 1 sesi |
 | Multi-session | Grill dalam + to-requirements + to-tasks: 1 sesi, no compact tengah; handoff sebelum tutup; implement per task di sesi fresh |
-| Bug di tengah feature | 1. handoff feature context 2. bug-diagnosis terpisah 3. handoff fix 4. balik ke feature |
+| Bug di tengah feature | 1. handoff feature context 2. bug-diagnose terpisah 3. handoff fix 4. balik ke feature |
 | Compact vs Handoff | Normal → lanjut; Thread sama penuh → compact; Ganti task/phase → handoff; Tengah phase → handoff (no compact) |
 
 ## Auto-Trigger Rules

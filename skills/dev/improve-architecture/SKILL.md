@@ -76,7 +76,7 @@ Setelah laporan → berhenti, tanya kandidat mana mau di-interview. User pilih s
 **Periodic maintenance** — tiap beberapa hari, bukan step dalam chain. Kandidat yang disetujui dan butuh lebih dari satu langkah → `to-tasks`; refactor satu langkah → langsung `implement`.
 
 Kombinasi relevan:
-- `bug-diagnosis` — temuan arsitektur saat debug jadi kandidat
+- `bug-diagnose` — temuan arsitektur saat debug jadi kandidat
 - `code-review` — temuan arsitektur saat review, lanjut ke sini
 - `implement` — cek deepening dulu sebelum implementasi area kompleks
 - `project-migration` — health check sebelum migrasi

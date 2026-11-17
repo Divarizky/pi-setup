@@ -22,7 +22,7 @@ Personal Pi Coding Agent setup. Instalasi global Pi berada di `~/.pi/agent` (ata
 **Skills (17)**
 
 - `ask-me` — Grill + router (main entry for ambiguous requests)
-- `bug-diagnosis` — 6-phase disciplined bug diagnosis
+- `bug-diagnose` — 6-phase disciplined bug diagnosis
 - `code-review` — Dual-axis review (Standards + Spec)
 - `git-commit` — Conventional commits with review gate
 - `github-issue` — Pembuatan issue GitHub terstruktur dari task, requirement, atau bug diagnosis
@@ -57,7 +57,7 @@ flowchart TD
     %% Cabang Alur
     ASK -->|Fitur Besar| REQ[to-requirements<br/><i>EARS + Work Card F-id</i>]:::build
     ASK -->|Fitur Kecil| IMP[implement<br/><i>TDD Red-Green-Refactor</i>]:::build
-    ASK -->|Bug Sulit| BUG[bug-diagnosis<br/><i>Vertical Repro + RCA</i>]:::build
+    ASK -->|Bug Sulit| BUG[bug-diagnose<br/><i>Vertical Repro + RCA</i>]:::build
     ASK -->|Desain Ragu| PROTO[prototype<br/><i>LOGIC / UI Spike</i>]:::build
     ASK -->|Debt / Coupling| ARCH[improve-architecture<br/><i>Audit & Refactor Scan</i>]:::build
     ASK -->|Conflict Aktif| CONF[merge-conflict<br/><i>Guided Hunk Resolution</i>]:::build

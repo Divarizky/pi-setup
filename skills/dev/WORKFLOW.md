@@ -78,16 +78,16 @@ Jangan mengarang isi context yang tidak tersedia. Nyatakan keterbatasannya bila 
 ```text
 ask-me
   ├─ fitur kecil → implement → code-review ─┬─ [pass] ──────────────────────────→ git-commit ──→ Loop 4 (capture gotchas + agent-memory)
-  │                                         └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnosis ──┘
+  │                                         └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnose ──┘
   ├─ fitur besar → to-requirements → to-tasks → [opsional: github-issue]
   │                 └→ implement → code-review ─┬─ [pass] ───────────────────────→ git-commit ──→ Loop 4 (capture gotchas + agent-memory)
-  │                                             └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnosis ──┘
-  ├─ bug sulit → bug-diagnosis → code-review → git-commit ──→ Loop 4 (capture gotchas + agent-memory)
+  │                                             └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnose ──┘
+  ├─ bug sulit → bug-diagnose → code-review → git-commit ──→ Loop 4 (capture gotchas + agent-memory)
   ├─ merge conflict → merge-conflict → git-commit
   ├─ desain belum jelas → prototype (project mode: work card via to-requirements pattern dulu) → to-tasks / implement
   ├─ arsitektur → improve-architecture → to-tasks / implement (refactor satu langkah boleh langsung implement)
-  ├─ migrasi → setup-workflow → project-migration → implement / bug-diagnosis
-  └─ buat issue GitHub → github-issue (dari task, requirement, atau bug-diagnosis)
+  ├─ migrasi → setup-workflow → project-migration → implement / bug-diagnose
+  └─ buat issue GitHub → github-issue (dari task, requirement, atau bug-diagnose)
 ```
 
 `github-issue` setelah `to-tasks` hanya berjalan jika user memilih membuat issue. Jika tidak, lanjut ke cek eligible dan tawaran `implement` (y/n) seperti di `to-tasks` Step 5 (hanya jika ada task eligible). Untuk issue level fitur di Project mode, `implement` mencentang checkbox task di issue setiap task Done (dengan konfirmasi).
@@ -96,7 +96,7 @@ ask-me
 
 ### Review Escalation & Loop 4
 
-- **Eskalasi code-review (Loop 3 → bug-diagnosis)**: Jika `code-review` mengembalikan verdict `CHANGES_REQUESTED` 2x berturut-turut pada temuan axis Correctness/Safety (keparahan P0/P1), alur otomatis dieskalasi ke `bug-diagnosis` (maksimal 1x eskalasi sebelum Escape Hatch) untuk investigasi mendalam dan perbaikan terarah pada scope task terkait. Temuan Spec atau Standards tetap diselesaikan dalam siklus implementasi biasa (Step 3).
+- **Eskalasi code-review (Loop 3 → bug-diagnose)**: Jika `code-review` mengembalikan verdict `CHANGES_REQUESTED` 2x berturut-turut pada temuan axis Correctness/Safety (keparahan P0/P1), alur otomatis dieskalasi ke `bug-diagnose` (maksimal 1x eskalasi sebelum Escape Hatch) untuk investigasi mendalam dan perbaikan terarah pada scope task terkait. Temuan Spec atau Standards tetap diselesaikan dalam siklus implementasi biasa (Step 3).
 - **Jalur Loop 4 (Capture Gotchas & Memory)**: Pada akhir workflow (setelah commit/task Done) atau saat Escape Hatch terpicu akibat siklus gagal berulang:
   - Ringkas temuan gotchas dan root cause kegagalan (1–3 kalimat konkret: asumsi keliru, celah konteks, atau aturan terlewat).
   - Simpan ke section `## Gotchas` pada `.workspace/context/CONTEXT.md` (Project mode).
@@ -123,7 +123,7 @@ Klasifikasi risiko dan detail confirmation gate mengikuti [shared/PROMPT-DESIGN.
 | Fitur kecil, behavior jelas | `implement` |
 | requirements/spec | `to-requirements` |
 | Breakdown task | `to-tasks` |
-| Error/bug sulit | `bug-diagnosis` |
+| Error/bug sulit | `bug-diagnose` |
 | Desain belum pasti | `prototype` |
 | Refactor/arsitektur | `improve-architecture` |
 | Migrasi project | `project-migration` |

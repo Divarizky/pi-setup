@@ -58,7 +58,7 @@ Klasifikasi dependency tiap kandidat (sama table di `improve-architecture`).
 Pecah per modul, bukan big-bang kode (kecuali `cutover_strategy: bigbang` — soal rilis akhir, bukan cara tulis kode).
 
 - `rewrite` → tiap slice ikuti `implement` (spec ulang, baca `../shared/TDD.md`)
-- `port` → tiap slice ikuti `bug-diagnosis` mindset (characterization test dulu, gunakan boundary/RED rules dari `../shared/TDD.md`, jaga behavior identik)
+- `port` → tiap slice ikuti `bug-diagnose` mindset (characterization test dulu, gunakan boundary/RED rules dari `../shared/TDD.md`, jaga behavior identik)
 - `phased` → urutkan slice per fitur, definisikan cara 2 sistem jalan bersamaan (routing, data sync)
 - `bigbang` → urutkan slice bebas berdasarkan risk register, no koordinasi 2 sistem
 
@@ -87,4 +87,4 @@ Tawarkan ADR kalau user tolak pendekatan migrasi dengan alasan load-bearing. Ski
 
 ## Other Suggested Skills
 
-[Workflow](../WORKFLOW.md) — Deepening/refactor tanpa pindah project → `improve-architecture`. Perubahan kecil, tidak sentuh struktur modul → `ask-me` grill → `implement`. Bug fix project existing → `bug-diagnosis`.
+[Workflow](../WORKFLOW.md) — Deepening/refactor tanpa pindah project → `improve-architecture`. Perubahan kecil, tidak sentuh struktur modul → `ask-me` grill → `implement`. Bug fix project existing → `bug-diagnose`.

@@ -1,5 +1,5 @@
 ---
-name: bug-diagnosis
+name: bug-diagnose
 description: "Diagnosis loop disiplin 6-phase untuk bug sulit (reproduce, minimise, hypothesise, instrument, fix, regression-test). Manual invoke atau route eksplisit; jangan gunakan untuk fix sepele. Pilih diagnosis-only atau diagnosis + fix sebelum mulai."
 disable-model-invocation: true
 ---
@@ -167,4 +167,4 @@ Tidak jalan otomatis (`disable-model-invocation: true`) — selalu butuh invoke 
 
 ## Other Suggested Skills
 
-[Workflow](../WORKFLOW.md) — `bug-diagnosis` temuan arsitektur → `improve-architecture`.
+[Workflow](../WORKFLOW.md) — `bug-diagnose` temuan arsitektur → `improve-architecture`.

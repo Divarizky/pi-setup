@@ -1,6 +1,6 @@
 ---
 name: github-issue
-description: "Susun dan buat GitHub issue dari task, requirement, hasil bug-diagnosis, atau ide user. Preview + confirmation gate sebelum `gh issue create`. Dipanggil oleh user atau route workflow. Jangan gunakan untuk membuat PR, mengubah issue existing, atau push kode."
+description: "Susun dan buat GitHub issue dari task, requirement, hasil bug-diagnose, atau ide user. Preview + confirmation gate sebelum `gh issue create`. Dipanggil oleh user atau route workflow. Jangan gunakan untuk membuat PR, mengubah issue existing, atau push kode."
 disable-model-invocation: true
 ---
 
@@ -42,7 +42,7 @@ Sumber, sesuai urutan prioritas:
 
 1. **Work card** (`.workspace/work/F-<id>.md`, Project mode) atau requirement yang ditempelkan user. Jika `status: draft`, tanya dulu: buat issue sekarang atau approve requirement dulu.
 2. **Task** dari section `## Tasks` pada work card, atau checklist task di percakapan. Task harus punya `Done` dan `Ref`.
-3. **Hasil bug-diagnosis** di percakapan: observed/expected behavior, reproduksi, environment, dan root cause. Root cause hanya masuk sebagai hipotesis kecuali sudah terverifikasi.
+3. **Hasil bug-diagnose** di percakapan: observed/expected behavior, reproduksi, environment, dan root cause. Root cause hanya masuk sebagai hipotesis kecuali sudah terverifikasi.
 4. **Ide ad-hoc** dari percakapan. Ide tentatif tidak dijadikan issue; minta user menyatakan scope dan done criteria.
 
 Tipe issue menentukan label dan pola judul:
@@ -222,7 +222,7 @@ Jika status `complete`, tampilkan URL issue di baris pertama dan `Issue ref: <ow
 - Dipanggil dari Step 5 `to-tasks` atas pilihan user: setelah selesai atau dibatalkan, kembali ke langkah cek eligible di `to-tasks`.
 - Task yang sudah berbentuk issue dan siap dikerjakan → `implement` (user yang memulai; skill ini tidak auto-invoke).
 - Requirement belum approved → `to-requirements`.
-- Bug belum didiagnosis → `bug-diagnosis`.
+- Bug belum didiagnosis → `bug-diagnose`.
 - Cek progres → `status`.
 
 <critical>

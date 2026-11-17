@@ -1,6 +1,6 @@
 ---
 name: implement
-description: "Eksekusi implementasi (TDD, chain ke code-review). Dipanggil eksplisit atau melalui route workflow. Jangan gunakan untuk bug sulit — gunakan bug-diagnosis."
+description: "Eksekusi implementasi (TDD, chain ke code-review). Dipanggil eksplisit atau melalui route workflow. Jangan gunakan untuk bug sulit — gunakan bug-diagnose."
 disable-model-invocation: true
 ---
 
@@ -140,10 +140,10 @@ Review **SETELAH semua task batch selesai** — sekali untuk seluruh diff batch.
 **Review ada temuan:**
 - Task tetap `### In Progress`
 - No commit suggestion
-- **Eskalasi ke `bug-diagnosis`**: jika `code-review` mengembalikan verdict `CHANGES_REQUESTED` 2x berturut-turut pada temuan **Correctness/Safety (P0/P1)**, eskalasikan task ke `bug-diagnosis` (gunakan mode **diagnosis + fix** pada scope task terkait). Maksimal 1x eskalasi sebelum [Escape Hatch](../shared/COMMON.md#escape-hatch).
-- Temuan pada axis **Spec** atau **Standards** TIDAK dieskalasikan ke `bug-diagnosis`; WAJIB tetap kembali ke Step 3 untuk perbaikan langsung.
+- **Eskalasi ke `bug-diagnose`**: jika `code-review` mengembalikan verdict `CHANGES_REQUESTED` 2x berturut-turut pada temuan **Correctness/Safety (P0/P1)**, eskalasikan task ke `bug-diagnose` (gunakan mode **diagnosis + fix** pada scope task terkait). Maksimal 1x eskalasi sebelum [Escape Hatch](../shared/COMMON.md#escape-hatch).
+- Temuan pada axis **Spec** atau **Standards** TIDAK dieskalasikan ke `bug-diagnose`; WAJIB tetap kembali ke Step 3 untuk perbaikan langsung.
 - **Review Cycle & Escape Hatch**: kembali ke Step 3, perbaiki kode/test, dan ulang Step 4. Maksimal **3 siklus review→fix** akumulatif — jika masih ada temuan blocking → [Escape Hatch](../shared/COMMON.md#escape-hatch): stop, tanya user lanjut perbaiki/handoff/batal.
-- Batch paralel: temuan diidentifikasi per task → task terlibat kembali Step 3 (atau eskalasi ke `bug-diagnosis` bila memenuhi syarat); task lain yang bersih lanjut. Temuan menyebar tak jelas → semua batch kembali Step 3 sequential.
+- Batch paralel: temuan diidentifikasi per task → task terlibat kembali Step 3 (atau eskalasi ke `bug-diagnose` bila memenuhi syarat); task lain yang bersih lanjut. Temuan menyebar tak jelas → semua batch kembali Step 3 sequential.
 
 ### Sync GitHub Issue (Project mode, opsional)
 
@@ -233,4 +233,4 @@ Nemu arsitektur signifikan (tidak terkait task) → catat: path, deskripsi, sara
 
 `to-requirements`→`to-tasks`→`implement`→`code-review`. Setelah `code-review`:
 - Pass → kembali Step 5 `implement` (bila policy `autonomous`, lanjut task berikutnya hingga queue habis atau Escape Hatch; usulkan Harness Signal jika siklus review >= 2)
-- Fail → kembali Step 3 `implement` (perbaiki, review ulang; eskalasi ke `bug-diagnosis` jika `CHANGES_REQUESTED` 2x berturut-turut pada P0/P1 Correctness/Safety)
+- Fail → kembali Step 3 `implement` (perbaiki, review ulang; eskalasi ke `bug-diagnose` jika `CHANGES_REQUESTED` 2x berturut-turut pada P0/P1 Correctness/Safety)
