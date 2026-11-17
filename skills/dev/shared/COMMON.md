@@ -135,10 +135,15 @@ Untuk tool yang mendukung `write_scope`/padanan, isi dari estimasi file/direktor
 ### Escape Hatch
 
 Setelah maks **3 siklus gagal** (hypothesis→instrument→gagal, atau RED→GREEN stuck):
-1. Stop loop
-2. Tanya user: "3 siklus gagal. Opsi: (a) lanjut coba baru, (b) minta bantuan, (c) batalkan/handoff"
-3. User pilih → reset counter (a), handoff (b), atau abort (c)
-4. Jangan loop forever.
+1. **Stop loop**
+2. **Capture Failure Signal**:
+   - Sebelum stop atau handoff, wajib meringkas root cause kegagalan (1-3 kalimat konkret: asumsi salah, celah konteks, atau rule terlewat).
+   - Dalam **Project mode**, catat ringkasan tersebut ke section `## Gotchas` pada `.workspace/context/CONTEXT.md`.
+   - Jika skill/CLI `agent-memory` tersedia, simpan juga ke agent-memory via `memory save --type note --sources ...`.
+   - Dalam **Universal mode**, jangan menulis file ke `.workspace/`.
+3. **Tanya user**: "3 siklus gagal. Opsi: (a) lanjut coba baru, (b) minta bantuan, (c) batalkan/handoff"
+4. **User pilih** → reset counter (a), handoff (b), atau abort (c)
+5. Jangan loop forever.
 ```
 
 ---
