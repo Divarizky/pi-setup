@@ -71,6 +71,46 @@ describe("built-in agent presets", () => {
     expect(config).toMatchObject({ model: "local/explorer", thinking: "low", maxTurns: 12 });
   });
 
+  it("overrides skills, extensions, tools, and operational flags in default agent config", () => {
+    const parsed = parsePresetYaml(`explore:
+  tools: [read, grep]
+  skills: false
+  extensions: false
+  context: isolated
+  background: true
+  workspace: worktree
+`);
+    expect(parsed.diagnostics).toEqual([]);
+    setBuiltinPresets(parsed.presets);
+    const config = buildAgentRegistry(new Map()).get("explore");
+    expect(config).toMatchObject({
+      builtinToolNames: ["read", "grep"],
+      skills: false,
+      extensions: false,
+      inheritContext: false,
+      runInBackground: true,
+      isolation: "worktree",
+    });
+  });
+
+  it("verifies skills: false, extensions: false, and tools in a preset override general agent config", () => {
+    const parsed = parsePresetYaml(`general:
+  tools: [read, bash]
+  skills: false
+  extensions: false
+  context: inherit
+  workspace: main
+`);
+    expect(parsed.diagnostics).toEqual([]);
+    setBuiltinPresets(parsed.presets);
+    const config = buildAgentRegistry(new Map()).get("general");
+    expect(config?.builtinToolNames).toEqual(["read", "bash"]);
+    expect(config?.skills).toBe(false);
+    expect(config?.extensions).toBe(false);
+    expect(config?.inheritContext).toBe(true);
+    expect(config?.isolation).toBe("off");
+  });
+
   it("supports project-over-global precedence", () => {
     writeFileSync(join(tempDir, "subagents.yaml"), "general:\n  model: global-model\n");
     const project = mkdtempSync(join(tempDir, "project-"));

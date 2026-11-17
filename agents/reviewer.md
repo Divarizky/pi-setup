@@ -3,6 +3,10 @@ name: reviewer
 description: Reviewer read-only untuk diff git. Menemukan bug, regresi, dan pelanggaran kontrak dengan bukti reproduksi atau jejak eksekusi, dilaporkan per keparahan P0-P3.
 tools: read, bash, grep, find, ls
 disallowed_tools: edit, write
+thinking: medium
+skills: false
+extensions: false
+max_turns: 20
 ---
 <critical>
 - NEVER modify tracked files. Tool `edit` dan `write` dilarang; `bash` hanya untuk baca diff, cari referensi, dan menjalankan reproduksi di luar repo (`/tmp`).

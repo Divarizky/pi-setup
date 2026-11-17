@@ -51,10 +51,11 @@ Jika Universal mode memakai instruksi langsung atau checklist di chat, jangan me
 2. Untuk **setiap** kandidat, inspeksi kode secukupnya dan perkirakan `write_scope`: path relatif file/direktori yang kemungkinan berubah, termasuk test, konfigurasi, migrasi, generated files, dan shared entry points. Bandingkan setiap pasang scope, beserta efek bersama seperti schema/API yang dipakai task lain. Jika estimasi belum bisa dipersempit atau ada overlap/ketergantungan baru, keluarkan kandidat yang konflik; jika tersisa <2, jalankan sequential. Laporkan alasan perubahan keputusan. Jangan menganggap `write_scope` yang kosong atau tidak diketahui berarti tidak overlap.
 3. Periksa apakah tool yang terdeteksi mendukung coding, isolasi kerja yang diperlukan, dan pengambilan hasil. Jika mendukung `write_scope`/padanan, teruskan scope eksplisit per agent; jika tidak, tulis batasnya di brief. Jangan menganggap parameter scope saja menegakkan isolasi. Jika worktree/candidate perlu diintegrasikan, rencanakan verifikasi dan integrasi hasil sebelum review; jangan anggap perubahan agent otomatis muncul di checkout utama. Bila prasyarat isolasi atau integrasi tidak terpenuhi, jalankan sequential. Jika tool mensyaratkan Git bersih untuk spawn/integrasi dan pemindahan status di Step 2 akan mengotori checkout, jangan lanjutkan batch: pilih sequential atau minta user menyepakati alur integrasi yang menjaga checkout bersih. Jangan mengubah work card/tracker untuk mengejar preflight.
 4. Setelah batch final lolos preflight, jalankan Step 2 lalu spawn subagent per task → jalankan **Step 3 (TDD) saja**. Brief: deskripsi task + Done criteria + `write_scope`, selalu baca aturan canonical `../shared/TDD.md`; baca vocabulary tambahan jika tersedia. Instruksi:
+   - Wajib jalankan local test/lint sanity check dalam batas `write_scope` sebelum melaporkan selesai ke sesi utama
    - **JANGAN** update work card atau tracker (single-writer: sesi utama)
    - **JANGAN** commit
    - **JANGAN** review
-   - Laporkan: path file yang benar-benar berubah, test pass/fail, done criteria terpenuhi/tidak
+   - Laporkan: path file yang benar-benar berubah, hasil local test/lint sanity check, test pass/fail, done criteria terpenuhi/tidak
 5. Sesi utama cek hasil dan file yang benar-benar berubah terhadap `write_scope`; bila ada perubahan di luar scope, konflik, atau hasil belum terintegrasi, jangan stage/review/nyatakan Done. Selesaikan dengan user atau kerjakan sequential sesuai scope yang disepakati.
 
 ### Sub-Agent Error Handling
@@ -91,22 +92,18 @@ Adjust by type:
 
 ### Deterministic Pre-Review Gate
 
-Sebelum staging dan delegasi ke `code-review`, jalankan deterministic pre-review gate stack-agnostic untuk memastikan kode lolos verifikasi dasar secara otomatis. Jika gate gagal, DILARANG memanggil `code-review` dan WAJIB kembali ke Step 3 untuk perbaikan.
+Sebelum staging dan delegasi ke `code-review`, jalankan deterministic pre-review gate non-LLM untuk memastikan kode lolos verifikasi dasar secara otomatis. Jika gate gagal, DILARANG memanggil `code-review` dan WAJIB kembali ke Step 3 untuk perbaikan.
 
-Urutan prioritas deteksi dan eksekusi gate:
-1. **Command dari docs project** — periksa dan jalankan perintah verifikasi/test/lint dari `CODE_STYLE.md` atau `AGENTS.md` jika tersedia.
-2. **Auto-detect manifest** — jika tidak ada perintah di docs, deteksi manifest project di root:
-   - `package.json` → jalankan script check/test/lint yang tersedia (mis. `npm run check`, `npm test`, atau `npm run lint`).
-   - `pyproject.toml` / `setup.py` / `requirements.txt` → jalankan test/linter yang tersedia (mis. `pytest`, `python -m unittest`, `ruff check`, atau `mypy`).
-   - `go.mod` → jalankan `go test ./...` atau `go vet ./...`.
-   - `Cargo.toml` → jalankan `cargo test` atau `cargo check`.
-3. **Fallback sanity check** — jika repo tidak memiliki manifest atau test runner, jalankan sanity check syntax pada file yang disentuh agar tidak deadlock:
-   - Python: `python3 -m py_compile <file>`
-   - JavaScript/Node: `node --check <file>`
-   - Shell script: `bash -n <file>`
-   - Git diff: `git diff --check`
+Jalankan script gate (1 command):
+- `node ../scripts/pre-review-gate.mjs` (atau `node ~/.agents/skills/dev/scripts/pre-review-gate.mjs`, gunakan `--cmd "<command>"` jika `CODE_STYLE.md`/`AGENTS.md` menetapkan perintah verifikasi khusus).
+- `node ../scripts/cleanup-gate.mjs` (atau `node ~/.agents/skills/dev/scripts/cleanup-gate.mjs`) untuk memastikan tidak ada sisa `[DEBUG-`, stub, atau secret di diff.
 
-Hanya lanjutkan ke staging setelah gate lolos (exit 0).
+Script `pre-review-gate.mjs` otomatis menjalankan urutan deteksi berikut:
+1. **Command dari docs project** — via `--cmd` jika ada perintah verifikasi/test/lint di `CODE_STYLE.md` atau `AGENTS.md`.
+2. **Auto-detect manifest** — `package.json` (`typecheck`, `check`, `lint`, `test`, `tsc --noEmit`), `pyproject.toml`/`requirements.txt` (`ruff`, `mypy`, `pytest`), `go.mod` (`go vet`, `go test`), `Cargo.toml` (`cargo check`, `cargo test`).
+3. **Fallback sanity check** — jika tanpa manifest, cek syntax file tersentuh (`py_compile`, `node --check`, `bash -n`) + `git diff --check`.
+
+Hanya lanjutkan ke staging setelah kedua gate lolos (exit 0).
 
 ### Stage Changes
 

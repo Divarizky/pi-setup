@@ -2634,23 +2634,31 @@ describe("agent-runner abort signal forwarding", () => {
   });
 });
 
-// resolveDefaultModel picks the model a subagent runs on. Every failure here is
-// SILENT BY DESIGN: an unresolvable or unavailable `model:` deliberately falls
-// back to the parent's model rather than erroring, because a user's frontmatter
-// pin shouldn't hard-fail a spawn. That makes the availability filter untestable
-// through observed behavior — a broken check just means every model-pinned agent
-// quietly runs on the parent's model, costing whatever the parent costs.
+// resolveDefaultModel picks the model a subagent runs on. An unresolvable or
+// unavailable `model:` logs a warning and falls back to the parent's model rather
+// than erroring, because a user's frontmatter pin shouldn't hard-fail a spawn.
 //
 // Exported for this suite because model resolution is otherwise only observed
 // indirectly through a real session.
 describe("resolveDefaultModel", () => {
+  let warnSpy: any;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
   const parent = { provider: "anthropic", id: "parent-model" } as any;
-  const haiku = { provider: "anthropic", id: "claude-haiku-4-5" } as any;
+  const haiku = { provider: "anthropic", id: "claude-haiku-4-5", name: "Claude Haiku 4.5" } as any;
 
   /** Registry whose `find` always succeeds; `getAvailable` is what varies. */
   function registry(available?: any[]) {
     return {
       find: vi.fn((provider: string, id: string) => ({ provider, id }) as any),
+      getAll: vi.fn(() => [haiku]),
       getAvailable: available ? () => available : undefined,
     };
   }
@@ -2659,6 +2667,7 @@ describe("resolveDefaultModel", () => {
     const r = registry([haiku]);
     expect(resolveDefaultModel(parent, r, "anthropic/claude-haiku-4-5"))
       .toEqual({ provider: "anthropic", id: "claude-haiku-4-5" });
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it("falls back to the parent when the model is NOT in the available set", () => {
@@ -2667,6 +2676,7 @@ describe("resolveDefaultModel", () => {
     // auth error from deep inside createAgentSession instead of a clean fallback.
     const r = registry([haiku]);
     expect(resolveDefaultModel(parent, r, "openai/gpt-5")).toBe(parent);
+    expect(warnSpy).toHaveBeenCalled();
   });
 
   it("trusts `find` when the registry cannot enumerate availability", () => {
@@ -2674,24 +2684,35 @@ describe("resolveDefaultModel", () => {
     const r = registry(undefined);
     expect(resolveDefaultModel(parent, r, "anthropic/claude-haiku-4-5"))
       .toEqual({ provider: "anthropic", id: "claude-haiku-4-5" });
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it("falls back to the parent when the registry cannot find the model", () => {
     const r = { find: vi.fn(() => undefined), getAvailable: undefined };
     expect(resolveDefaultModel(parent, r as any, "anthropic/nope")).toBe(parent);
+    expect(warnSpy).toHaveBeenCalled();
   });
 
-  it("falls back to the parent for a model string with no provider prefix", () => {
+  it("resolves short or fuzzy model names when available", () => {
     const r = registry([haiku]);
-    expect(resolveDefaultModel(parent, r, "haiku")).toBe(parent);
-    expect(r.find).not.toHaveBeenCalled();
+    expect(resolveDefaultModel(parent, r, "haiku"))
+      .toEqual({ provider: "anthropic", id: "claude-haiku-4-5" });
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("warns and falls back to the parent for unknown models", () => {
+    const r = registry([haiku]);
+    expect(resolveDefaultModel(parent, r, "nonexistent-model")).toBe(parent);
+    expect(warnSpy).toHaveBeenCalled();
   });
 
   it("returns the parent model when no model is configured", () => {
     expect(resolveDefaultModel(parent, registry([haiku]), undefined)).toBe(parent);
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it("returns undefined when neither a config model nor a parent model exists", () => {
     expect(resolveDefaultModel(undefined, registry([haiku]), undefined)).toBeUndefined();
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 });

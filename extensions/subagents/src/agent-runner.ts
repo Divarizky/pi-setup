@@ -23,6 +23,7 @@ import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
 import { buildMemoryBlock, buildReadOnlyMemoryBlock } from "./memory.js";
+import { type ModelRegistry, resolveModel } from "./model-resolver.js";
 import { createNestedSubagentTools, getMaxSubagentDepth, type NestedAgentManager } from "./nested-tools.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { preloadSkills } from "./skill-loader.js";
@@ -359,26 +360,29 @@ const graceTurns = 2 as const;
  */
 export function resolveDefaultModel(
   parentModel: Model<any> | undefined,
-  registry: { find(provider: string, modelId: string): Model<any> | undefined; getAvailable?(): Model<any>[] },
+  registry: ModelRegistry | { find(provider: string, modelId: string): Model<any> | undefined; getAvailable?(): Model<any>[]; getAll?(): Model<any>[] },
   configModel?: string,
 ): Model<any> | undefined {
   if (configModel) {
-    const slashIdx = configModel.indexOf("/");
-    if (slashIdx !== -1) {
-      const provider = configModel.slice(0, slashIdx);
-      const modelId = configModel.slice(slashIdx + 1);
+    const reg: ModelRegistry = {
+      find: (provider, modelId) => registry.find(provider, modelId),
+      getAll: () => {
+        const list = typeof (registry as any).getAll === "function"
+          ? (registry as any).getAll()
+          : (registry.getAvailable?.() ?? []);
+        return list.map((m: any) => (m && typeof m.name !== "string" ? { ...m, name: m.id ?? "" } : m));
+      },
+      getAvailable: registry.getAvailable
+        ? () => registry.getAvailable!().map((m: any) => (m && typeof m.name !== "string" ? { ...m, name: m.id ?? "" } : m))
+        : undefined,
+    };
 
-      // Build a set of available model keys for fast lookup
-      const available = registry.getAvailable?.();
-      const availableKeys = available
-        ? new Set(available.map((m: any) => `${m.provider}/${m.id}`))
-        : undefined;
-      const isAvailable = (p: string, id: string) =>
-        !availableKeys || availableKeys.has(`${p}/${id}`);
-
-      const found = registry.find(provider, modelId);
-      if (found && isAvailable(provider, modelId)) return found;
+    const resolved = resolveModel(configModel, reg);
+    if (typeof resolved === "string") {
+      console.warn(resolved);
+      return parentModel;
     }
+    return resolved;
   }
 
   return parentModel;

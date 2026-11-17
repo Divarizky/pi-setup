@@ -47,6 +47,12 @@ export function buildAgentRegistry(userAgents: Map<string, AgentConfig>): Map<st
       model: preset.model ?? config.model,
       thinking: preset.thinking ?? config.thinking,
       maxTurns: preset.maxTurns ?? config.maxTurns,
+      builtinToolNames: preset.tools ?? config.builtinToolNames,
+      skills: preset.skills ?? config.skills,
+      extensions: preset.extensions ?? config.extensions,
+      inheritContext: preset.context === "inherit" ? true : preset.context === "isolated" ? false : config.inheritContext,
+      runInBackground: preset.background ?? config.runInBackground,
+      isolation: preset.workspace === "worktree" ? "worktree" : preset.workspace === "main" ? "off" : config.isolation,
     } : config);
   }
   for (const [name, config] of userAgents) registry.set(name, config);

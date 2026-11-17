@@ -64,7 +64,7 @@ describe("agent type registry", () => {
       const config = getAgentConfig("explore");
       expect(config?.name).toBe("explore");
       expect(config?.model).toBeUndefined();
-      expect(config?.thinking).toBe("xhigh");
+      expect(config?.thinking).toBe("low");
     });
 
     it("resolveType returns canonical key or undefined", () => {
@@ -92,7 +92,7 @@ describe("agent type registry", () => {
     it("Explore inherits model (no hardcoded model in config)", () => {
       const cfg = getAgentConfig("explore");
       expect(cfg?.model).toBeUndefined();
-      expect(cfg?.thinking).toBe("xhigh");
+      expect(cfg?.thinking).toBe("low");
     });
 
     it("default agents are marked isDefault", () => {

@@ -49,6 +49,10 @@ Gunakan Context Resolver dari `../shared/COMMON.md`. Baca `AGENTS.md` (root), `C
 
 Project mode tidak memiliki artifact diagnosis khusus. Jangan membuat atau memperbarui artifact workflow kecuali ada kontrak ownership yang eksplisit; Universal mode selalu chat-only.
 
+### Hierarchical Localization (Agentless)
+
+Persempit kandidat file yang bermasalah menggunakan `grep`/`find` atau sub-agent read-only `explore` hingga tersisa paling banyak 3–5 file sebelum membaca isi berkas secara penuh (*full file contents*) di sesi reasoning utama. Hindari membaca seluruh isi file sekaligus tanpa penyaringan awal.
+
 ## Phase 1 — Reproduce
 
 **Tight loop = skill ini.** Cari sinyal pass/fail cepat, deterministik, repeatable. Tanpa sinyal jelas → tidak ketemu akar masalah.
@@ -120,7 +124,7 @@ Laporkan test yang tidak dijalankan, terutama test di luar scope atau full suite
 ### Instrumentation Cleanup Gate
 
 Sebelum validasi dinyatakan selesai atau melanjutkan ke tahap berikutnya:
-Verifikasi secara deterministik pada `git diff` bahwa tidak ada sisa probe dengan prefix `[DEBUG-` atau log sementara / print debug yang tertinggal dalam berkas kode sumber maupun test (kecuali probe disetujui dipertahankan). Jika masih ditemukan sisa probe/log sementara, bersihkan seluruhnya dan ulangi verifikasi diff sebelum validasi final dinyatakan lulus.
+Jalankan script deterministik `node ../scripts/cleanup-gate.mjs` (atau `node ~/.agents/skills/dev/scripts/cleanup-gate.mjs`) pada root repo untuk memindai `git diff` dari sisa probe `[DEBUG-`, placeholder stub, atau secret (kecuali probe disetujui dipertahankan). Jika script exit 1, bersihkan seluruh temuan dan jalankan ulang hingga exit 0 sebelum validasi final dinyatakan lulus.
 
 ### Chain to Code Review
 

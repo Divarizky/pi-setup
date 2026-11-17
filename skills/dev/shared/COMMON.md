@@ -60,10 +60,12 @@ Gunakan `work_root` untuk mencari file project. Jangan scan seluruh filesystem.
 
 ### 2. Determine Mode
 
+Untuk resolusi cepat dalam 1 call, jalankan `node ../scripts/context-resolver.mjs` (atau `node ~/.agents/skills/dev/scripts/context-resolver.mjs`) guna mendeteksi mode, keberadaan stack docs (`hasCodeStyle`, `hasSecurity`, `hasDatabase`, `hasApi`), serta work card aktif (`### In Progress` & `### Queue`).
+
 Ikuti aturan [WORKFLOW.md](../WORKFLOW.md#mode-selection):
 
 - User meminta mode tertentu → ikuti permintaan tersebut.
-- Marker `.workspace/project-meta.md` tersedia → Project mode.
+- Marker `.workspace/project-meta.md` (atau direktori `.workspace/`) tersedia → Project mode.
 - Marker tidak tersedia → Universal mode.
 
 ### 3. Read Sources Conditionally
