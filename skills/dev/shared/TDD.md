@@ -37,6 +37,9 @@ Prioritaskan critical path + logic kompleks, bukan coverage.
 - **Validasi RED** — pastikan test gagal karena behavior belum ada atau salah,
   bukan karena syntax error, setup rusak, dependency hilang, atau test tidak
   dapat dijalankan. Jika penyebabnya bukan behavior, perbaiki test/setup dulu.
+- **Validasi Independen** — sebelum menganggap GREEN valid, expected value pada
+  assertion harus berasal dari contoh spec, literal konkret, atau perhitungan
+  manual — bukan menyalin ekspresi/rumus yang sama dari kode implementasi.
 - **Satu vertical slice per siklus** — default-nya satu seam, satu test utama,
   dan satu implementasi minimal. Beberapa assertion/setup diperbolehkan jika
   masih memverifikasi satu behavior dan tidak memperluas slice.
