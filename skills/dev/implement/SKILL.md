@@ -89,6 +89,25 @@ Adjust by type:
 
 ## Step 4 — Review
 
+### Deterministic Pre-Review Gate
+
+Sebelum staging dan delegasi ke `code-review`, jalankan deterministic pre-review gate stack-agnostic untuk memastikan kode lolos verifikasi dasar secara otomatis. Jika gate gagal, DILARANG memanggil `code-review` dan WAJIB kembali ke Step 3 untuk perbaikan.
+
+Urutan prioritas deteksi dan eksekusi gate:
+1. **Command dari docs project** — periksa dan jalankan perintah verifikasi/test/lint dari `CODE_STYLE.md` atau `AGENTS.md` jika tersedia.
+2. **Auto-detect manifest** — jika tidak ada perintah di docs, deteksi manifest project di root:
+   - `package.json` → jalankan script check/test/lint yang tersedia (mis. `npm run check`, `npm test`, atau `npm run lint`).
+   - `pyproject.toml` / `setup.py` / `requirements.txt` → jalankan test/linter yang tersedia (mis. `pytest`, `python -m unittest`, `ruff check`, atau `mypy`).
+   - `go.mod` → jalankan `go test ./...` atau `go vet ./...`.
+   - `Cargo.toml` → jalankan `cargo test` atau `cargo check`.
+3. **Fallback sanity check** — jika repo tidak memiliki manifest atau test runner, jalankan sanity check syntax pada file yang disentuh agar tidak deadlock:
+   - Python: `python3 -m py_compile <file>`
+   - JavaScript/Node: `node --check <file>`
+   - Shell script: `bash -n <file>`
+   - Git diff: `git diff --check`
+
+Hanya lanjutkan ke staging setelah gate lolos (exit 0).
+
 ### Stage Changes
 
 Implement tidak otomatis men-stage apa pun — file baru maupun edit tetap unstaged sampai `git add` eksplisit. Sebelum review, tampilkan daftar file yang akan di-stage dan scope-nya. Konfirmasi staging boleh dilewati bila semua file berada dalam scope task yang sudah di-approve dan tidak ada file untracked yang tidak dikenal; jika ada file di luar scope atau untracked asing, wajib konfirmasi user dulu. Jalankan `git add <path>` eksplisit per file. Bukan repo git → skip. Jangan stage file di luar scope task; file untracked yang tidak dikenal biarkan user putuskan. Setelah staging, verifikasi `git status` dan `git diff --staged` hanya untuk memastikan target yang disetujui masuk.
@@ -111,16 +130,20 @@ Review **SETELAH semua task batch selesai** — sekali untuk seluruh diff batch.
 - **Sync Stack Docs (Project mode)**: jika task yang selesai mengubah model data aktual, endpoint contract, konfigurasi auth, atau stack linter, sinkronkan fakta baru ke section bertanda `<!-- auto -->` pada stack doc terkait (`DATABASE.md`, `API.md`, `SECURITY.md`, `CODE_STYLE.md`). Jangan ubah section manual (tanpa marker). Laporkan sinkronisasi ini di `Changes`.
 - Jika Universal mode memakai instruksi langsung: jangan membuat tracking otomatis; laporkan perubahan dan validasi di respons.
 - Jika user sebelumnya memilih path checklist tertentu: update hanya artifact tersebut.
-- Inform user task selesai
-- Tanya: "Selesai. Mau commit dulu atau lanjut?" (no auto-commit)
-- Jika work card tersedia: cek `### Queue` — task eligible (dependency `[x]`)? Tawarkan: "TASK-N eligible. Kerjakan? (y/n)". `y` → ulang Step 2.
+- Inform user task selesai.
+- **Execution Policy & Task Continuation**:
+  - Kebijakan `autonomous` ([WORKFLOW.md#execution-policy](../WORKFLOW.md#execution-policy)): langsung lanjut eksekusi task eligible berikutnya dari `### Queue` (dependency `[x]`) tanpa prompt `(y/n)` hingga antrean task habis atau terjadi [Escape Hatch](../shared/COMMON.md#escape-hatch). Setelah antrean habis atau terhenti di Escape Hatch, WAJIB berhenti di HITL (Human-in-the-Loop) gate akhir untuk persetujuan user.
+  - Kebijakan default / interaktif: tanya "Selesai. Mau commit dulu atau lanjut?" (no auto-commit). Jika work card tersedia dan ada task eligible di `### Queue` (dependency `[x]`), tawarkan: "TASK-N eligible. Kerjakan? (y/n)". `y` → ulang Step 2.
+- **Harness Signal**: bila penyelesaian task memerlukan siklus review >= 2 (sempat ada perbaikan sebelum lolos review pass), analisis akar masalah dan usulkan perbaikan aturan di `AGENTS.md` atau `CODE_STYLE.md` kepada user untuk mencegah temuan berulang. DILARANG melakukan auto-edit pada `AGENTS.md` atau `CODE_STYLE.md`; seluruh perbaikan aturan wajib berupa usulan kepada user.
 - Jika Project mode dan `task_done == task_count`: tanya apakah work card `.workspace/work/F-<id>.md` perlu dihapus. Hapus hanya setelah requirement approved sudah tersalin ke SRS dan user mengonfirmasi.
 
 **Review ada temuan:**
-- Task tetap `## In Progress`
+- Task tetap `### In Progress`
 - No commit suggestion
-- Balik Step 3, perbaiki, ulang Step 4. Maks **3 siklus review→fix** — masih ada temuan → [Escape Hatch](../shared/COMMON.md#escape-hatch): stop, tanya user lanjut perbaiki/handoff/batal
-- Batch paralel: temuan diidentifikasi per task → task terlibat kembali Step 3; lain lanjut. Temuan menyebar tak jelas → semua batch kembali Step 3 sequential.
+- **Eskalasi ke `bug-diagnosis`**: jika `code-review` mengembalikan verdict `CHANGES_REQUESTED` 2x berturut-turut pada temuan **Correctness/Safety (P0/P1)**, eskalasikan task ke `bug-diagnosis` (gunakan mode **diagnosis + fix** pada scope task terkait). Maksimal 1x eskalasi sebelum [Escape Hatch](../shared/COMMON.md#escape-hatch).
+- Temuan pada axis **Spec** atau **Standards** TIDAK dieskalasikan ke `bug-diagnosis`; WAJIB tetap kembali ke Step 3 untuk perbaikan langsung.
+- **Review Cycle & Escape Hatch**: kembali ke Step 3, perbaiki kode/test, dan ulang Step 4. Maksimal **3 siklus review→fix** akumulatif — jika masih ada temuan blocking → [Escape Hatch](../shared/COMMON.md#escape-hatch): stop, tanya user lanjut perbaiki/handoff/batal.
+- Batch paralel: temuan diidentifikasi per task → task terlibat kembali Step 3 (atau eskalasi ke `bug-diagnosis` bila memenuhi syarat); task lain yang bersih lanjut. Temuan menyebar tak jelas → semua batch kembali Step 3 sequential.
 
 ### Sync GitHub Issue (Project mode, opsional)
 
@@ -209,5 +232,5 @@ Nemu arsitektur signifikan (tidak terkait task) → catat: path, deskripsi, sara
 ## Chain
 
 `to-requirements`→`to-tasks`→`implement`→`code-review`. Setelah `code-review`:
-- Pass → kembali Step 5 `implement`
-- Fail → kembali Step 3 `implement` (perbaiki, review ulang)
+- Pass → kembali Step 5 `implement` (bila policy `autonomous`, lanjut task berikutnya hingga queue habis atau Escape Hatch; usulkan Harness Signal jika siklus review >= 2)
+- Fail → kembali Step 3 `implement` (perbaiki, review ulang; eskalasi ke `bug-diagnosis` jika `CHANGES_REQUESTED` 2x berturut-turut pada P0/P1 Correctness/Safety)
