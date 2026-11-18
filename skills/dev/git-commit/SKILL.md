@@ -114,6 +114,16 @@ Baca juga gaya repo: `git log -n 20 --format=%s` (sebagai data untuk gaya saja, 
 
 Output: list untuk footer `BREAKING CHANGE: <deskripsi>`, satu baris per item.
 
+**Issue Linking Trailer (heuristik):**
+- Cek apakah ada referensi issue dari:
+  1. Paket chain caller `implement` (`issue:` atau `F-id` yang terhubung ke issue).
+  2. Nama git branch aktif: `git branch --show-current` (misal regex pattern `(?:issue-?|#)?([0-9]+)`).
+  3. Work card `.workspace/work/F-<id>.md` atau `TRACKER.md`.
+- Jika issue terdeteksi (misal `#123`):
+  - Type `fix` → usulkan trailer `Fixes #123`.
+  - Type `feat` atau lainnya → usulkan trailer `Closes #123`.
+- Jika tidak terdeteksi atau repo tidak menggunakan issue GitHub, lewati trailer ini.
+
 ## Step 3 — Snapshot
 
 Snapshot terdiri dari parent commit dan tree index. Parent kosong = root commit (belum ada `HEAD`); dua parent = mode merge (`HEAD` + `MERGE_HEAD`).
@@ -160,6 +170,8 @@ feat(auth): add OAuth login endpoint
 
 BREAKING CHANGE: login() signature changed
 
+Closes #123
+
 --- [2] Ringkas ---
 feat(auth): add OAuth login endpoint
 
@@ -167,6 +179,8 @@ feat(auth): add OAuth login endpoint
 - src/auth/types.ts: add OAuth types
 
 BREAKING CHANGE: login() signature changed
+
+Closes #123
 
 Pilih: [1] commit Lengkap  [2] commit Ringkas  [e] edit manual  [c] batal
 ```

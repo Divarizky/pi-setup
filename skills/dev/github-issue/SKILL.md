@@ -1,25 +1,30 @@
 ---
 name: github-issue
-description: "Susun dan buat GitHub issue dari task, requirement, hasil bug-diagnose, atau ide user. Preview + confirmation gate sebelum `gh issue create`. Dipanggil oleh user atau route workflow. Jangan gunakan untuk membuat PR, mengubah issue existing, atau push kode."
+description: "Susun, buat, update comment, atau tutup GitHub issue. Preview + confirmation gate sebelum aksi remote `gh issue`. Dipanggil oleh user atau route workflow. Jangan gunakan untuk membuat PR atau push kode."
 disable-model-invocation: true
 ---
 
 <critical>
-- MUST tampilkan preview lengkap dan menunggu konfirmasi eksplisit sebelum `gh issue create`.
+- MUST tampilkan preview lengkap dan menunggu konfirmasi eksplisit sebelum menjalankan `gh issue create`, `gh issue comment`, atau `gh issue close`.
 - MUST cek visibilitas repo target; jika `PUBLIC`, MUST minta konfirmasi tambahan.
-- NEVER tulis token, secret, atau isi work card private ke body issue tanpa redaksi dan persetujuan user.
-- NEVER menulis file workflow (work card, SRS, TRACKER); skill ini hanya membuat issue dan menampilkan hasilnya.
+- NEVER tulis token, secret, atau isi work card private ke issue atau komentar tanpa redaksi dan persetujuan user.
+- NEVER menulis file workflow (work card, SRS, TRACKER); skill ini hanya berinteraksi dengan GitHub issue dan menampilkan hasilnya.
 </critical>
 
 # GitHub Issue
 
-Ubah pekerjaan yang sudah jelas menjadi GitHub issue yang bisa dikerjakan orang atau agent lain tanpa konteks percakapan. Pembuatan issue adalah aksi publik dan tidak bisa di-undo secara bersih, sehingga selalu lewat preview dan konfirmasi.
+Kelola lifecycle GitHub issue: buat issue baru dari requirement/task/bug-diagnose, kirim update progress via komentar, atau tutup issue yang sudah terselesaikan. Interaksi dengan issue remote adalah aksi publik dan state-changing, sehingga selalu melalui preview, redaksi, dan konfirmasi.
 
 ## Invocation
 
-Dipanggil eksplisit, melalui route `ask-me`, atau dari Step 5 `to-tasks` atas pilihan user: "buat issue", "bikin issue github", "file bug report", "convert task ke issue", "buat issue dari task ini".
+Dipanggil eksplisit, melalui route `ask-me`, dari Step 5 `to-tasks`, atau dari completion gate `implement`: "buat issue", "bikin issue github", "file bug report", "convert task ke issue", "update issue #...", "tutup issue #...", "close issue".
 
-Jangan dipakai untuk: membuat PR, mengedit atau menutup issue existing (pengecualian: sinkronisasi checkbox oleh `implement` di Project mode, dengan konfirmasi sendiri), comment pada issue, membuat label, atau push kode.
+Jangan dipakai untuk: membuat PR, membuat label kustom baru di repo, atau push kode git.
+
+## Operations
+1. **create** (default) — susun dan terbitkan issue baru dari requirement, task, atau bug-diagnose.
+2. **comment** — tambahkan komentar update/progress pada issue existing.
+3. **close** — tutup issue dengan atau tanpa komentar penyelesaian akhir.
 
 ## Prerequisites
 
@@ -191,6 +196,60 @@ gh issue view <ISSUE_NUMBER> --repo <owner/repo> --json number,title,state,url,l
 
 Tampilkan URL issue di chat. Skill ini NEVER menulis referensi issue ke work card, `TRACKER.md`, atau file workflow lain. Jika user ingin menyimpan referensi, beri tahu bahwa itu di luar skill ini. Saat dipanggil dari `to-tasks` (issue level fitur), `to-tasks` yang menulis `issue:` ke `TRACKER.md`, dan `implement` yang mencentang checkbox saat task Done.
 
+## Flow: Comment and Close Existing Issue
+
+Gunakan sub-alur ini saat dipanggil dengan target issue existing (misal dipanggil dari Step 5 `implement` saat `task_done == task_count` atau permintaan eksplisit user "update/close issue #<number>").
+
+### 1. Identify Target & Fetch Issue
+1. Ambil nomor issue `<number>` dan repo `<owner/repo>`.
+2. Validasi status:
+```bash
+gh issue view <number> --repo <owner/repo> --json number,title,state,url,visibility
+```
+Jika issue tidak ditemukan atau state `CLOSED` saat berniat close ulang, lapor ke user dan stop.
+
+### 2. Draft Comment & Redact
+Susun draft komentar penyelesaian atau progress:
+- Ringkasan perubahan / behavior yang diselesaikan.
+- Daftar acceptance criteria / task yang terpenuhi (`- [x] ...`).
+- Hasil verifikasi dan test pass.
+- Commit hash terkait (jika sudah ada commit).
+
+Lakukan redaksi data sensitif (token, API key, password, secret) sebelum preview, mengikuti aturan [Redaksi Sebelum Preview](#redaksi-sebelum-preview).
+
+### 3. Preview and Confirmation Gate
+Tampilkan preview tindakan:
+```text
+Target repo : <owner/repo> (visibility: PUBLIC | PRIVATE)
+Issue       : #<number> - <title>
+Tindakan    : <close dengan komentar | komentar saja | close tanpa komentar>
+Komentar    :
+<isi markdown komentar>
+```
+Jika visibilitas `PUBLIC`, berikan peringatan baris: "Repo publik: komentar/status ini terlihat semua orang." lalu minta konfirmasi tambahan.
+Minta keputusan melalui `ask_user` (Kirim / Ubah / Batal). Tanpa `ask_user`, tunggu konfirmasi eksplisit di chat.
+
+### 4. Execute Remote Action
+Tulis komentar ke file sementara jika ada komentar: `COMMENT_FILE="$(mktemp)"` menggunakan tool `write`.
+
+- **Close dengan komentar:**
+```bash
+gh issue close <number> --repo <owner/repo> --comment "$(<COMMENT_FILE)"
+rm -f "$COMMENT_FILE"
+```
+- **Komentar saja:**
+```bash
+gh issue comment <number> --repo <owner/repo> --body-file "$COMMENT_FILE"
+rm -f "$COMMENT_FILE"
+```
+- **Close tanpa komentar:**
+```bash
+gh issue close <number> --repo <owner/repo>
+```
+
+### 5. Validate Action
+Jalankan `gh issue view <number> --repo <owner/repo> --json state,comments` untuk memastikan aksi berhasil (state berubah atau komentar terbaru tercatat). Laporkan URL issue dan status akhir di respons.
+
 ## Stop Conditions
 
 - `gh auth status` gagal, repo target tidak jelas, atau remote bukan GitHub: stop dan jelaskan.
@@ -226,8 +285,8 @@ Jika status `complete`, tampilkan URL issue di baris pertama dan `Issue ref: <ow
 - Cek progres → `status`.
 
 <critical>
-- MUST tampilkan preview lengkap dan menunggu konfirmasi eksplisit sebelum `gh issue create`.
+- MUST tampilkan preview lengkap dan menunggu konfirmasi eksplisit sebelum menjalankan `gh issue create`, `gh issue comment`, atau `gh issue close`.
 - MUST cek visibilitas repo target; jika `PUBLIC`, MUST minta konfirmasi tambahan.
-- NEVER tulis token, secret, atau isi work card private ke body issue tanpa redaksi dan persetujuan user.
-- NEVER menulis file workflow (work card, SRS, TRACKER); skill ini hanya membuat issue dan menampilkan hasilnya.
+- NEVER tulis token, secret, atau isi work card private ke issue atau komentar tanpa redaksi dan persetujuan user.
+- NEVER menulis file workflow (work card, SRS, TRACKER); skill ini hanya berinteraksi dengan GitHub issue dan menampilkan hasilnya.
 </critical>
