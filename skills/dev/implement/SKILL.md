@@ -50,7 +50,7 @@ Jika Universal mode memakai instruksi langsung atau checklist di chat, jangan me
 1. Ambil kandidat dari `### Queue` (maks **3**, urutan priority). Periksa ulang semua `Depends` sudah berada di `### Done` dengan `[x]`, `Parallel: yes`, `subagent_supported == true`, sekurangnya dua kandidat, serta batas concurrency tool/platform. Jika kondisi gagal, jalankan satu task eligible secara sequential. Jangan menaikkan `Parallel: no` menjadi `yes` diam-diam; jika penanda sudah basi, usulkan revisi task kepada user.
 2. Untuk **setiap** kandidat, inspeksi kode secukupnya dan perkirakan `write_scope`: path relatif file/direktori yang kemungkinan berubah, termasuk test, konfigurasi, migrasi, generated files, dan shared entry points. Bandingkan setiap pasang scope, beserta efek bersama seperti schema/API yang dipakai task lain. Jika estimasi belum bisa dipersempit atau ada overlap/ketergantungan baru, keluarkan kandidat yang konflik; jika tersisa <2, jalankan sequential. Laporkan alasan perubahan keputusan. Jangan menganggap `write_scope` yang kosong atau tidak diketahui berarti tidak overlap.
 3. Periksa apakah tool yang terdeteksi mendukung coding, isolasi kerja yang diperlukan, dan pengambilan hasil. Jika mendukung `write_scope`/padanan, teruskan scope eksplisit per agent; jika tidak, tulis batasnya di brief. Jangan menganggap parameter scope saja menegakkan isolasi. Jika worktree/candidate perlu diintegrasikan, rencanakan verifikasi dan integrasi hasil sebelum review; jangan anggap perubahan agent otomatis muncul di checkout utama. Bila prasyarat isolasi atau integrasi tidak terpenuhi, jalankan sequential. Jika tool mensyaratkan Git bersih untuk spawn/integrasi dan pemindahan status di Step 2 akan mengotori checkout, jangan lanjutkan batch: pilih sequential atau minta user menyepakati alur integrasi yang menjaga checkout bersih. Jangan mengubah work card/tracker untuk mengejar preflight.
-4. Setelah batch final lolos preflight, jalankan Step 2 lalu spawn subagent per task → jalankan **Step 3 (TDD) saja**. Brief: deskripsi task + Done criteria + `write_scope`, selalu baca aturan canonical `../shared/TDD.md`; baca vocabulary tambahan jika tersedia. Instruksi:
+4. Setelah batch final lolos preflight, jalankan Step 2 lalu spawn subagent `build` (`workspace: worktree`, `write_scope` eksplisit, branch ternormalisasi `<type>/<feature-slug>` tanpa token `F-N` atau `TASK-N`) per task → jalankan **Step 3 (TDD) saja**. Brief: deskripsi task + Done criteria + `write_scope`, selalu baca aturan canonical `../shared/TDD.md`; baca vocabulary tambahan jika tersedia. Instruksi:
    - Wajib jalankan local test/lint sanity check dalam batas `write_scope` sebelum melaporkan selesai ke sesi utama
    - **JANGAN** update work card atau tracker (single-writer: sesi utama)
    - **JANGAN** commit
@@ -76,7 +76,7 @@ Adjust by type:
 
 ### Escape Hatch
 
-[Template](../shared/COMMON.md#escape-hatch) — max 3 siklus RED→GREEN gagal → tanya user: (a) skip test, (b) minta bantuan, (c) batalkan. Catat alasan kalau skip.
+[Template](../shared/COMMON.md#escape-hatch) — max 3 siklus RED→GREEN gagal → panggil subagent `debugger` (`zenith-router/cc/claude-sonnet-5-5`, `thinking: medium`) untuk menghasilkan *Capture Failure Signal* (root cause 1–3 kalimat), lalu tanya user: (a) skip test, (b) minta bantuan, (c) batalkan. Catat alasan kalau skip.
 
 ### Implementation Notes
 
@@ -92,7 +92,7 @@ Adjust by type:
 
 ### Deterministic Pre-Review Gate
 
-Sebelum staging dan delegasi ke `code-review`, jalankan deterministic pre-review gate non-LLM untuk memastikan kode lolos verifikasi dasar secara otomatis. Jika gate gagal, DILARANG memanggil `code-review` dan WAJIB kembali ke Step 3 untuk perbaikan.
+Sebelum staging dan delegasi ke `code-review`, jalankan deterministic pre-review gate non-LLM untuk memastikan kode lolos verifikasi dasar secara otomatis. Jika berjalan dengan subagent/worktree, delegasikan eksekusi gate ke subagent `verifier` (read-only) agar hasil terverifikasi independen dari `build`. Jika gate gagal, DILARANG memanggil `code-review` dan WAJIB kembali ke Step 3 untuk perbaikan.
 
 Jalankan script gate (1 command):
 - `node ../scripts/pre-review-gate.mjs` (atau `node ~/.agents/skills/dev/scripts/pre-review-gate.mjs`, gunakan `--cmd "<command>"` jika `CODE_STYLE.md`/`AGENTS.md` menetapkan perintah verifikasi khusus).

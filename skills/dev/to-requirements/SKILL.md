@@ -69,6 +69,7 @@ supersedes: <F-id/version sebelumnya>  # opsional, jangan pakai path work card
 
 ## Clarifications
 <!-- Jawaban atas ambiguitas dari grill/draft. Tiap sesi bertanggal; jangan dihapus saat revisi. -->
+<!-- Jika masih ada aspek belum pasti saat penulisan draf, tandai eksplisit dengan `[NEEDS CLARIFICATION: <pertanyaan/asumsi>]`. -->
 ### Session <YYYY-MM-DD>
 - Q: <pertanyaan> → A: <jawaban>
 
@@ -188,8 +189,9 @@ Sebelum kasih ke user, cek:
 8. **Story check**: setiap User Story punya Priority (P1–P3), `Why this priority`, dan `Independent Test`.
 9. **Edge & REQ check**: setiap Edge Case punya `Penanganan`; setiap `REQ-xx` dipetakan ke minimal satu AC; setiap AC dipetakan ke `REQ-xx` atau `GR-xx`.
 10. **Clarification & SC check**: jawaban di `Clarifications` tidak bertentangan dengan AC, REQ, atau Assumptions; setiap `SC-xx` terukur (angka, persentase, atau kondisi yang bisa diuji).
+11. **Clarification Clearance check**: periksa marker `[NEEDS CLARIFICATION]` di seluruh draf (bisa dicek via `context-resolver.mjs`). Work card **DILARANG** berstatus `approved` jika masih ada marker `[NEEDS CLARIFICATION]` yang belum diselesaikan (`needsClarificationCount > 0`).
 
-Ada gap → tanyakan user, jangan publish dulu.
+Ada gap atau marker terbuka → selesaikan bersama user terlebih dahulu, jangan publish sebagai approved.
 
 ## Step 5 — Present and Approve
 
@@ -205,8 +207,11 @@ Draft work card: ditampilkan di chat, v<version>
 [ringkasan — Problem + Solution + Acceptance Criteria]
 
 Status sekarang: draft
+Needs clarification: <jumlah marker terbuka atau 0>
 Pilih: [1] Approve saja  [2] Approve + lanjut to-tasks  [3] Revisi
 ```
+
+> **Approval Gate**: Opsi [1] dan [2] hanya valid jika `needsClarificationCount == 0`. Jika masih terdapat ambiguitas bertanda `[NEEDS CLARIFICATION]`, alur wajib memilih [3] Revisi untuk mengklarifikasi poin tersebut.
 
 - **[1]** → Project: update `status: approved` di frontmatter, jalankan Step 6 (sinkronisasi SRS). Universal: catat `status: approved` di respons + kontribusi SRS di chat. Beri tahu cara invoke `to-tasks` kapan saja.
 - **[2]** → lakukan [1], lalu langsung **chain to-tasks** (lihat bawah) tanpa pertanyaan tambahan.

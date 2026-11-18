@@ -153,7 +153,9 @@ Urutan `### Queue`: priority critical→high→medium→low. Sama level: unblock
 - **Group heading**: `## Tasks` dengan subheading `### Queue`/`### In Progress`/`### Done`/`### Superseded` — dipakai `implement` & `status` untuk navigasi
 - **Pindah task**: `### Queue`→`### In Progress`: cut baris, paste ke bawah subheading `### In Progress` (checkbox `[ ]`). `### In Progress`→`### Done`: cut, paste ke bawah subheading `### Done` (append bawah), `[ ]`→`[x]`
 
-### Pre-Writing Validation
+### Pre-Writing Validation & Consistency Check
+Sebelum menulis ke work card atau menampilkan checklist final:
+- **Traceability & Coverage Check (ala Spec-Kit Analyze)**: Cocokkan seluruh `AC-xx` dan `REQ-xx` dari requirements terhadap `[Ref]` seluruh task. 100% Acceptance Criteria dan Functional Requirements wajib memiliki minimal satu task penanggung jawab. Jika terdapat `Coverage Gap` (AC/REQ yang belum terpetakan, bisa diverifikasi otomatis via `context-resolver.mjs`), stop dan tambahkan task penutup gap tersebut sebelum approval.
 - Setiap TASK-ID di `Depends:` beneran ada di file
 - Setiap task memiliki `[Ref]` di heading; breakdown dari requirements tidak boleh memakai `[none]`
 - Setiap task memiliki baris `Depends:` dan baris `Done:` dengan minimal 2 kriteria
@@ -161,8 +163,9 @@ Urutan `### Queue`: priority critical→high→medium→low. Sama level: unblock
 - `Parallel:` valid (`yes|no`)
 - Tidak ada dependency cycle (re-check setelah finalisasi)
 - Done criteria tidak ambigu (no "seharusnya", "kiranya", "work properly")
+- **Branch Naming Normalization**: Ketika task dieksekusi di worktree terisolasi, nama branch git wajib menggunakan slug fitur bersih `<type>/<feature-slug>` (misal `feat/cart-checkout`, `fix/auth-token`), dilarang membawa token internal workflow (`F-N`, `TASK-N`).
 
-Invalid → tanya user, jangan tulis dulu.
+Invalid atau terdapat coverage gap → tanya user, jangan tulis dulu.
 
 ### Backtrack to to-requirements
 Spec bolong saat breakdown — AC ambigu, konflik antar kriteria, atau ada behavior tak terdefinisi — → stop, jangan nebak sendiri. Balik ke `to-requirements`: perbaiki requirements (bump version), approve ulang, baru lanjut breakdown dengan spec yang sehat.

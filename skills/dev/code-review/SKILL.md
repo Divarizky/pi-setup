@@ -90,8 +90,8 @@ Message Chains vs Middle Man adalah trade-off, bukan dua aturan mutlak: hide del
 ### Model & Agent Routing
 
 Diferensiasikan alokasi model/agent per axis review:
-- **Correctness/Safety**: gunakan sub-agent `reviewer` atau model dengan effort sedang (*medium effort* reasoning).
-- **Standards** & **Spec**: gunakan model cepat/hemat (*low effort* / fast model) atau sub-agent `general`.
+- **Correctness/Safety**: gunakan sub-agent `reviewer`; untuk diff `< 50` baris (non-API/auth/DB) gunakan default `zenith-router/cc/claude-haiku-5-5` (`thinking: high`), dan untuk diff `≥ 50` baris atau menyentuh API/auth/DB eskalasi ke `zenith-router/cc/claude-sonnet-5-5` (`thinking: medium`).
+- **Standards** & **Spec**: gunakan sub-agent `reviewer` (`zenith-router/cc/claude-haiku-5-5`, `thinking: high`) atau `explore` (`zenith-router/cc/claude-haiku-5-5`, `thinking: low`).
 
 ### Fast-Path Review Threshold
 

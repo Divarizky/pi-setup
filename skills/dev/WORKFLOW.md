@@ -94,6 +94,12 @@ ask-me
 
 `setup-workflow` adalah persiapan opsional untuk workflow biasa, tetapi wajib sebelum `project-migration`.
 
+### Spec Quality & Branch Normalization Gates
+
+- **Clarification Clearance Gate (`to-requirements`)**: Dilarang menyetujui spec (`status: approved`) bila masih memiliki marker terbuka `[NEEDS CLARIFICATION: ...]`. Ambiguitas harus diselesaikan sebelum beralih ke perancangan teknis.
+- **Traceability & Coverage Gate (`to-tasks`)**: 100% Acceptance Criteria (`AC-xx`) dan Functional Requirements (`REQ-xx`) wajib terpetakan dalam `[Ref]` minimal satu task. Celah coverage (`Coverage Gap`) harus ditutup sebelum implementasi dimulai.
+- **Normalized Branch Convention**: Isolasi git worktree wajib menggunakan format branch bersih `<type>/<feature-slug>` (misal `feat/cart-checkout`, `fix/login-crash`), bersih dari token internal workflow seperti `F-N` dan `TASK-N`. Identitas task internal tetap dikelola di task store/ZTP channel secara terpisah.
+
 ### Review Escalation & Loop 4
 
 - **Eskalasi code-review (Loop 3 → bug-diagnose)**: Jika `code-review` mengembalikan verdict `CHANGES_REQUESTED` 2x berturut-turut pada temuan axis Correctness/Safety (keparahan P0/P1), alur otomatis dieskalasi ke `bug-diagnose` (maksimal 1x eskalasi sebelum Escape Hatch) untuk investigasi mendalam dan perbaikan terarah pada scope task terkait. Temuan Spec atau Standards tetap diselesaikan dalam siklus implementasi biasa (Step 3).
