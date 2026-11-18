@@ -3,7 +3,9 @@ name: reviewer
 description: Reviewer read-only untuk diff git. Menemukan bug, regresi, dan pelanggaran kontrak dengan bukti reproduksi atau jejak eksekusi, dilaporkan per keparahan P0-P3.
 tools: read, bash, grep, find, ls
 disallowed_tools: edit, write
-thinking: medium
+model: zenith-router/cc/claude-haiku-5-5
+thinking: high
+task_policy: scout
 skills: false
 extensions: false
 max_turns: 20

@@ -1,0 +1,16 @@
+explore:
+  model: zenith-router/cc/claude-haiku-5-5
+  thinking: low
+  max_turns: 30
+
+build:
+  model: zenith-router/cc/claude-sonnet-5-5
+  thinking: medium
+  context: isolated
+  workspace: worktree
+  max_turns: 30
+
+general:
+  model: zenith-router/cc/claude-haiku-5-5
+  thinking: medium
+  max_turns: 20
