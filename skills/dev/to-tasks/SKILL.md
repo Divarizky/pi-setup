@@ -79,6 +79,9 @@ Sebelum breakdown, cari 1-2 smell kecil di area langsung disentuh fitur. **Bukan
 - Blocked by: None / TASK-xxx
 - User stories covered: <MUST/SHOULD/NICE dari requirements, atau "N/A — split task">
 - Ref: <ID Acceptance Criteria / User Story dari requirements yang dicover slice ini, mis. "AC-01, AC-03" — none untuk split>
+- Risk: low / medium / high
+- Surfaces: [core] / [ui] / [database] / [security]
+- Tier: light / standard / heavy
 - Scope: <deskripsi singkat end-to-end behavior>
 - Layers: <layer yang ditembus — frontend, backend, DB, infra>
 - Uncertainty: low / medium / high (opsional — flag butuh research)
@@ -122,18 +125,18 @@ Persistence: chat-only (Universal mode)
 ## Tasks
 
 ### Queue
-- [ ] TASK-<nomor> | [<AC/US>] <deskripsi end-to-end, boleh memuat path atau identifier> | Priority: critical|high|medium|low | Parallel: yes|no
+- [ ] TASK-<nomor> | [<AC/US>] <deskripsi end-to-end, boleh memuat path atau identifier> | Priority: critical|high|medium|low | Parallel: yes|no | Tier: light|standard|heavy
     Depends: <TASK-ID dipisah koma, atau "none">
     Done: <kriteria konkret pertama — terukur>; <kriteria konkret kedua — cara verifikasi selesai>
 
 ### In Progress
-- [ ] TASK-<nomor> | [<AC/US>] <deskripsi end-to-end, boleh memuat path atau identifier> | Priority: critical|high|medium|low | Parallel: yes|no
+- [ ] TASK-<nomor> | [<AC/US>] <deskripsi end-to-end, boleh memuat path atau identifier> | Priority: critical|high|medium|low | Parallel: yes|no | Tier: light|standard|heavy
     Depends: <TASK-ID dipisah koma, atau "none">
     Done: <kriteria konkret pertama — terukur>; <kriteria konkret kedua — cara verifikasi selesai>
     (cut dari Queue, paste ke sini — checkbox tetap [ ])
 
 ### Done
-- [x] TASK-<nomor> | [<AC/US>] <deskripsi end-to-end, boleh memuat path atau identifier> | Priority: critical|high|medium|low | Parallel: yes|no
+- [x] TASK-<nomor> | [<AC/US>] <deskripsi end-to-end, boleh memuat path atau identifier> | Priority: critical|high|medium|low | Parallel: yes|no | Tier: light|standard|heavy
     Depends: <TASK-ID dipisah koma, atau "none">
     Done: <kriteria konkret pertama — terukur>; <kriteria konkret kedua — cara verifikasi selesai>
     (cut dari In Progress, ganti [ ] jadi [x])

@@ -29,6 +29,15 @@ Mode otomatis jika `.workspace/project-meta.md` tersedia dan user tidak meminta 
 - Gunakan work card `.workspace/work/F-<id>.md`, SRS, tracker, dan handoff untuk lintas sesi. Work card boleh dihapus setelah requirement approved tersimpan di SRS dan task selesai.
 - Artifact yang sudah ada dibaca sebelum membuat atau memperbaruinya.
 
+### Express Lane (Daily Fast-Track)
+
+Jalur cepat resmi untuk kebutuhan pengerjaan harian dengan risiko rendah (`Risk: Low`, estimasi perubahan `< 50` baris, tidak menyentuh area sensitif auth/security/database).
+
+- Alur ringkas: `ask-me` / instruksi langsung → `implement` → `checks.mjs` → `triage.mjs` → `code-review` (`fast-path`) → `git-commit`.
+- Melewati kewajiban scaffold/update formal `.workspace/context/SRS.md` dan `TRACKER.md`.
+- Menggunakan tier model ringan (`light`), menghemat token dan context window secara masif.
+- Tetap wajib lolos deterministic gate `checks.mjs` dan `cleanup-gate.mjs` sebelum commit.
+
 ### Mode Selection
 
 1. Skill yang menetapkan Project wajib (`project-migration`) → arahkan ke `setup-workflow` jika marker belum tersedia.
@@ -77,8 +86,9 @@ Jangan mengarang isi context yang tidak tersedia. Nyatakan keterbatasannya bila 
 
 ```text
 ask-me
-  ├─ fitur kecil → implement → code-review ─┬─ [pass] ──────────────────────────→ git-commit ──→ Loop 4 (capture gotchas + agent-memory)
-  │                                         └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnose ──┘
+  ├─ Express Lane (fitur kecil/tweak <50 LOC) → implement → checks.mjs → triage.mjs → code-review (fast-path) → git-commit
+  ├─ fitur reguler → implement → code-review ─┬─ [pass] ──────────────────────────→ git-commit ──→ Loop 4 (capture gotchas + agent-memory)
+  │                                           └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnose ──┘
   ├─ fitur besar → to-requirements → to-tasks → [opsional: github-issue]
   │                 └→ implement → code-review ─┬─ [pass] ───────────────────────→ git-commit ──→ Loop 4 (capture gotchas + agent-memory)
   │                                             └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnose ──┘

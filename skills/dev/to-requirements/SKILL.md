@@ -67,6 +67,10 @@ supersedes: <F-id/version sebelumnya>  # opsional, jangan pakai path work card
 ```markdown
 # F-01 — <Feature Title>
 
+**Risk Level:** low | medium | high
+**Surfaces:** [core] | [ui] | [database] | [security]
+**Recommended Tier:** light | standard | heavy
+
 ## Clarifications
 <!-- Jawaban atas ambiguitas dari grill/draft. Tiap sesi bertanggal; jangan dihapus saat revisi. -->
 <!-- Jika masih ada aspek belum pasti saat penulisan draf, tandai eksplisit dengan `[NEEDS CLARIFICATION: <pertanyaan/asumsi>]`. -->

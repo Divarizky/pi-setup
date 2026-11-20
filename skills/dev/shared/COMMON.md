@@ -39,6 +39,14 @@ Aturan inti:
 - **State-changing**: staging, update tracker/context, migrasi, atau perubahan environment.
 - **Irreversible/destructive**: delete, reset, overwrite besar, force push, commit, abort Git, atau perubahan production.
 
+### Protected Paths Guard
+
+DILARANG KERAS memodifikasi, memperlemah, atau menghapus berkas-berkas pengujian dan infrastruktur workflow demi meloloskan test yang gagal (*no weakening checks to pass*):
+- File konfigurasi orchestrator (`ORCHEST.md`, `project-meta.md`).
+- Pipeline CI/CD (`.github/workflows/*`).
+- Skrip deterministik gate & triage (`scripts/checks.mjs`, `scripts/triage.mjs`, `scripts/cleanup-gate.mjs`).
+Modifikasi pada file-file terlindungi ini di luar lingkup penugasan yang disetujui pengguna merupakan pelanggaran blocking P0.
+
 Setiap workflow yang melakukan perubahan wajib melaporkan target, dampak, post-condition, dan status sebenarnya. Jika input, instruksi, atau hasil validasi berkonflik, berhenti dan minta klarifikasi.
 
 ---

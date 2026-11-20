@@ -76,7 +76,7 @@ Adjust by type:
 
 ### Escape Hatch
 
-[Template](../shared/COMMON.md#escape-hatch) — max 3 siklus RED→GREEN gagal → panggil subagent `debugger` (`zenith-router/cc/claude-sonnet-5-5`, `thinking: medium`) untuk menghasilkan *Capture Failure Signal* (root cause 1–3 kalimat), lalu tanya user: (a) skip test, (b) minta bantuan, (c) batalkan. Catat alasan kalau skip.
+[Template](../shared/COMMON.md#escape-hatch) — max 3 siklus RED→GREEN gagal → panggil subagent `debugger` (`tier: heavy/standard`, `thinking: medium`) untuk menghasilkan *Capture Failure Signal* (root cause 1–3 kalimat), lalu tanya user: (a) skip test, (b) minta bantuan, (c) batalkan. Catat alasan kalau skip.
 
 ### Implementation Notes
 
@@ -90,18 +90,19 @@ Adjust by type:
 
 ## Step 4 — Review
 
-### Deterministic Pre-Review Gate
+### Deterministic Quality Gate
 
-Sebelum staging dan delegasi ke `code-review`, jalankan deterministic pre-review gate non-LLM untuk memastikan kode lolos verifikasi dasar secara otomatis. Jika berjalan dengan subagent/worktree, delegasikan eksekusi gate ke subagent `verifier` (read-only) agar hasil terverifikasi independen dari `build`. Jika gate gagal, DILARANG memanggil `code-review` dan WAJIB kembali ke Step 3 untuk perbaikan.
+Sebelum staging dan delegasi ke `code-review`, jalankan deterministic quality gate non-LLM untuk memastikan kode lolos verifikasi dasar secara otomatis. Jika berjalan dengan subagent/worktree, delegasikan eksekusi gate ke subagent `verifier` (read-only) agar hasil terverifikasi independen dari `build`. Jika gate gagal, DILARANG KERAS memanggil `code-review` atau melapor `ready`; WAJIB kembali ke Step 3 untuk perbaikan.
 
 Jalankan script gate (1 command):
-- `node ../scripts/pre-review-gate.mjs` (atau `node ~/.agents/skills/dev/scripts/pre-review-gate.mjs`, gunakan `--cmd "<command>"` jika `CODE_STYLE.md`/`AGENTS.md` menetapkan perintah verifikasi khusus).
+- `node ../scripts/checks.mjs` (atau `node ~/.agents/skills/dev/scripts/checks.mjs`, gunakan `--cmd "<command>"` jika `CODE_STYLE.md`/`AGENTS.md` menetapkan perintah verifikasi khusus, atau `--strict-protect` bila berjalan di autonomous worker).
 - `node ../scripts/cleanup-gate.mjs` (atau `node ~/.agents/skills/dev/scripts/cleanup-gate.mjs`) untuk memastikan tidak ada sisa `[DEBUG-`, stub, atau secret di diff.
 
-Script `pre-review-gate.mjs` otomatis menjalankan urutan deteksi berikut:
-1. **Command dari docs project** — via `--cmd` jika ada perintah verifikasi/test/lint di `CODE_STYLE.md` atau `AGENTS.md`.
-2. **Auto-detect manifest** — `package.json` (`typecheck`, `check`, `lint`, `test`, `tsc --noEmit`), `pyproject.toml`/`requirements.txt` (`ruff`, `mypy`, `pytest`), `go.mod` (`go vet`, `go test`), `Cargo.toml` (`cargo check`, `cargo test`).
+Script `checks.mjs` otomatis menjalankan urutan deteksi stack-agnostic berikut:
+1. **Command dari docs project / ORCHEST.md** — via `--cmd` atau section `qualityGates:` di `ORCHEST.md`.
+2. **Auto-detect manifest lintas stack** — `package.json` (Node/TS), `pubspec.yaml` (Dart/Flutter), `pyproject.toml`/`requirements.txt` (Python), `go.mod` (Go), `Cargo.toml` (Rust), `composer.json` (PHP), Gradle/Maven (JVM/Android).
 3. **Fallback sanity check** — jika tanpa manifest, cek syntax file tersentuh (`py_compile`, `node --check`, `bash -n`) + `git diff --check`.
+4. **Protected paths check** — verifikasi file protected (`ORCHEST.md`, `.github/workflows/*`, script gate). Default memberi peringatan `[WARN]`; pada `--strict-protect` langsung gagal (`exit 1`) jika file terlindungi disentuh di luar scope.
 
 Hanya lanjutkan ke staging setelah kedua gate lolos (exit 0).
 

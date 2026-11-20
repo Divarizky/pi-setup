@@ -54,14 +54,17 @@ Diff kosong → stop, beri tahu user tidak ada perubahan.
 
 ### Staged Completeness Pre-Check (source `staged`)
 
-Jalankan `node ../scripts/review-preflight.mjs --source staged` (atau `node ~/.agents/skills/dev/scripts/review-preflight.mjs --source <staged|uncommitted|ref>`) untuk memeriksa status working tree, merekam `parents` & `tree` snapshot, serta menentukan `reviewRouting` (`fast-path` vs `multi-axis`) dalam satu call.
+Jalankan `node ../scripts/triage.mjs --source staged` (atau `node ~/.agents/skills/dev/scripts/triage.mjs --source <staged|uncommitted|ref>`) untuk memeriksa status working tree, merekam `parents` & `tree` snapshot, serta menentukan `surfaces`, `riskTier`, `recommendedTier`, dan `reviewRouting` (`fast-path` vs `multi-axis`) dalam satu call.
 
 Aturan kelengkapan (dari output script atau `git status --porcelain=v1`):
 - `unstagedFiles` atau `untrackedFiles` tidak kosong → ada perubahan di luar staged diff.
 - Jika caller `git-commit` sudah mendapat persetujuan eksplisit untuk `staged-only`, lanjutkan review **index saja** dan sebutkan file di luar scope. Jangan stage file.
 - Selain itu tampilkan daftar file dan minta pilihan: stage manual lalu jalankan ulang, lanjut review staged-only, atau batal. Pilihan staged-only harus eksplisit; jangan stage otomatis karena file untracked mungkin berisi secret.
 
-Setelah pilihan scope selesai, untuk source `staged` gunakan `parents` (`HEAD` + `MERGE_HEAD`) dan `tree` (`git write-tree`) dari `review-preflight.mjs`. Bila caller mengirim snapshot, bandingkan string `parents` utuh dan `tree`. Setelah review, verifikasi ulang snapshot dengan `node ../scripts/review-preflight.mjs --verify-tree <tree>`. Jika berubah atau tidak cocok, verdict `BLOCKED`. Cantumkan parents dan tree itu di output. Pada mode merge (`isMerge: true`), diff `staged` dihitung terhadap parent pertama (`HEAD`); sebutkan batas itu di laporan.
+Setelah pilihan scope selesai, untuk source `staged` gunakan `parents` (`HEAD` + `MERGE_HEAD`) dan `tree` (`git write-tree`) dari `triage.mjs`. Bila caller mengirim snapshot, bandingkan string `parents` utuh dan `tree`. Setelah review, verifikasi ulang snapshot dengan `node ../scripts/triage.mjs --verify-tree <tree>`. Jika berubah atau tidak cocok, verdict `BLOCKED`. Cantumkan parents dan tree itu di output. Pada mode merge (`isMerge: true`), diff `staged` dihitung terhadap parent pertama (`HEAD`); sebutkan batas itu di laporan.
+
+### Fast-Rejection on Broken Gate
+Sebelum menganalisis logika bisnis atau standar penulisan kode, pastikan `checks.mjs` telah lolos. Jika test suite gagal atau build broken: **Langsung keluarkan verdict `CHANGES_REQUESTED (P0)`** dengan bukti log error build/test dan jangan habiskan token menganalisis diff lebih lanjut. Kode yang belum lolos build/test tidak layak direview.
 
 ## Step 2 — Find Spec Sources
 
@@ -89,16 +92,32 @@ Message Chains vs Middle Man adalah trade-off, bukan dua aturan mutlak: hide del
 
 ### Model & Agent Routing
 
-Diferensiasikan alokasi model/agent per axis review:
-- **Correctness/Safety**: gunakan sub-agent `reviewer`; untuk diff `< 50` baris (non-API/auth/DB) gunakan default `zenith-router/cc/claude-haiku-5-5` (`thinking: high`), dan untuk diff `≥ 50` baris atau menyentuh API/auth/DB eskalasi ke `zenith-router/cc/claude-sonnet-5-5` (`thinking: medium`).
-- **Standards** & **Spec**: gunakan sub-agent `reviewer` (`zenith-router/cc/claude-haiku-5-5`, `thinking: high`) atau `explore` (`zenith-router/cc/claude-haiku-5-5`, `thinking: low`).
+Diferensiasikan alokasi model/agent per axis review menggunakan tiering abstrak:
+- **Correctness/Safety**: gunakan sub-agent `reviewer`; untuk diff `< 50` baris (non-API/auth/DB) gunakan tier `light` (`thinking: high`), dan untuk diff `≥ 50` baris atau menyentuh surface `database`/`security` eskalasi ke tier `standard` atau `heavy` (`thinking: medium`).
+- **Standards** & **Spec**: gunakan sub-agent `reviewer` (tier `light`, `thinking: high`) atau `explore` (tier `light`, `thinking: low`).
 
 ### Fast-Path Review Threshold
 
-Jika total diff < 50 baris dan tidak menyentuh kontrak API, auth/security, maupun schema database:
-- Gabungkan review **Standards** dan **Correctness/Safety** ke dalam 1 sub-agent `reviewer` untuk menghemat token.
+Jika total diff < 50 baris dan tidak menyentuh kontrak API, auth/security, maupun schema database (`reviewRouting: "fast-path"` dari `triage.mjs`):
+- Gabungkan review **Standards** dan **Correctness/Safety** ke dalam 1 sub-agent `reviewer` (tier `light`) untuk menghemat token dan context window.
 - Sub-agent gabungan tetap memisahkan hasil temuan per-axis dalam laporannya.
-Jika diff ≥ 50 baris atau menyentuh API contracts, auth/security, atau DB schemas, jalankan sub-agent secara terpisah sesuai aturan default.
+Jika diff ≥ 50 baris atau menyentuh surface `database`/`security`, jalankan sub-agent secara terpisah dengan tier `standard`/`heavy`.
+
+### Conditional Surface Checklists (Stack-Agnostic)
+
+Aktifkan evaluasi checklist tambahan berikut sesuai array `surfaces` dari output `triage.mjs`:
+- **Surface `ui`**:
+  - *State completeness*: penanganan state loading, empty, error, dan data success yang konsisten.
+  - *Responsive & layout*: boundary layout aman, tidak ada unhandled overflow atau broken viewport.
+  - *Accessibility*: semantic markup/roles, kontras warna yang wajar, label interaktif.
+- **Surface `database`**:
+  - *Migration safety*: keberadaan skema rollback/down-migration yang aman tanpa data loss tak terduga.
+  - *Query efficiency*: hindari N+1 query loops, missing index pada kolom join/filter utama.
+  - *Transaction boundary*: operasi mutasi multi-tabel dibungkus transaksi atomik, minim lock contention.
+- **Surface `security`**:
+  - *Input validation*: sanitasi data eksternal, bebas celah injection (SQLi, XSS, SSRF, command injection).
+  - *Auth & Permissions*: penegakan boundary autentikasi/otorisasi yang ketat pada endpoint/action.
+  - *Secrets & Privacy*: bebas hardcoded token/secret/kredensial, sanitasi data PII pada log output.
 
 ### Review Execution
 

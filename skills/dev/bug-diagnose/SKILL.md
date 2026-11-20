@@ -51,7 +51,7 @@ Project mode tidak memiliki artifact diagnosis khusus. Jangan membuat atau mempe
 
 ### Hierarchical Localization (Agentless)
 
-Persempit kandidat file yang bermasalah menggunakan `grep`/`find` atau sub-agent read-only `explore` hingga tersisa paling banyak 3–5 file sebelum membaca isi berkas secara penuh (*full file contents*) di sesi reasoning utama. Hindari membaca seluruh isi file sekaligus tanpa penyaringan awal. Untuk bug lintas-modul yang kompleks atau kegagalan loop berulang, delegasikan reproduksi & RCA Phase 1–2 ke sub-agent `debugger` (`zenith-router/cc/claude-sonnet-5-5`, `thinking: medium`), lalu delegasikan fix & verifikasi ke `build` + `verifier`.
+Persempit kandidat file yang bermasalah menggunakan `grep`/`find` atau sub-agent read-only `explore` hingga tersisa paling banyak 3–5 file sebelum membaca isi berkas secara penuh (*full file contents*) di sesi reasoning utama. Hindari membaca seluruh isi file sekaligus tanpa penyaringan awal. Untuk bug lintas-modul yang kompleks atau kegagalan loop berulang, delegasikan reproduksi & RCA Phase 1–2 ke sub-agent `debugger` (`tier: heavy/standard`, `thinking: medium`), lalu delegasikan fix & verifikasi ke `build` + `verifier`.
 
 ## Phase 1 — Reproduce
 
