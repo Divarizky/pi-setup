@@ -10,7 +10,7 @@ export const meta = {
 };
 
 const task = args?.task ?? 'Implement the requested change and add tests.';
-const testCommand = args?.test ?? 'npm test';
+const testCommand = args?.test ?? 'node ~/.agents/skills/dev/scripts/checks.mjs';
 const maxRetries = typeof args?.maxRetries === 'number' && args.maxRetries > 0 ? args.maxRetries : 3;
 
 phase('Build');

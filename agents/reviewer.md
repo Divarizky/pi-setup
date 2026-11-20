@@ -18,6 +18,9 @@ max_turns: 20
 
 Audit diff yang diberikan oleh pemanggil. Baca diff, lalu baca isi berkas penuh di sekitar setiap hunk. Jangan menilai hunk dari potongan diff saja.
 
+## Fast-Rejection on Broken Gate
+Sebelum menganalisis logika bisnis atau standar penulisan kode, pastikan gate/test suite telah lolos. Jika test suite gagal atau build broken: **Langsung keluarkan verdict `CHANGES_REQUESTED (P0)`** dengan bukti log error build/test dan jangan habiskan token menganalisis diff lebih lanjut. Kode yang belum lolos build/test tidak layak direview.
+
 ## Keparahan & Keyakinan
 
 - **P0**: crash fatal, RCE, kebocoran kredensial/rahasia, korupsi/kehilangan data, deadlock.
@@ -34,6 +37,12 @@ Jika hunk mengubah signature fungsi, tipe data publik, nama ekspor, skema, atau 
 1. Cari semua titik panggil dan konsumen dengan `grep`/`rg` di seluruh repo.
 2. Telusuri setiap konsumen yang terdampak dan periksa apakah asumsinya masih benar.
 3. Laporkan konsumen yang rusak sebagai temuan dengan `path:line` konsumen, bukan hanya `path:line` definisi.
+
+## Surface Checklists (bila terdeteksi di prompt/triage)
+
+- **UI**: Validasi layout overflow/responsive, semantic elements, keyboard & a11y navigation, dan penanganan state (loading/empty/error).
+- **Database**: Validasi migrasi aman & reversible, indeks untuk query/filter baru, transaksi atomic pada multi-write, dan pencegahan table lock.
+- **Security**: Validasi validasi/sanitasi input tak tepercaya, otorisasi di service boundary, pencegahan token/secret leak di log/response, dan proteksi dari injection/IDOR/SSRF.
 
 ## Prosedur
 

@@ -2,7 +2,7 @@
  * dev-review-panel.js — Parallel code-review panel aligned with dev/code-review axes.
  *
  * Correctness/Safety escalates to sonnet-5-5; Standards & Spec run on haiku-5-5 high.
- * args: { target?: string, spec?: string }
+ * args: { target?: string, spec?: string, surfaces?: string | string[] }
  */
 export const meta = {
   name: 'dev-review-panel',
@@ -12,13 +12,19 @@ export const meta = {
 
 const target = args?.target ?? 'git diff --staged';
 const specNote = args?.spec ? `\n\nSpec / Done criteria:\n${args.spec}` : '';
+const surfaceList = Array.isArray(args?.surfaces)
+  ? args.surfaces.join(', ')
+  : (typeof args?.surfaces === 'string' && args.surfaces ? args.surfaces : null);
+const surfaceNote = surfaceList
+  ? `\n\nActive Triage Surfaces: ${surfaceList}. Apply surface checklists (UI: layout/overflow/a11y/states, Database: migration/indexes/transactions, Security: auth/injection/secrets).`
+  : '';
 
 phase('Review');
 
 const [correctness, standardsSpec] = await parallel([
   () =>
     agent(
-      `Audit Correctness/Safety for: ${target}. Focus on bugs, regressions, security, data loss, concurrency, and cross-boundary tracing.${specNote}`,
+      `Audit Correctness/Safety for: ${target}. Focus on bugs, regressions, security, data loss, concurrency, and cross-boundary tracing.${specNote}${surfaceNote}`,
       {
         label: 'review:correctness',
         subagent_type: 'reviewer',
@@ -28,7 +34,7 @@ const [correctness, standardsSpec] = await parallel([
     ),
   () =>
     agent(
-      `Audit Standards and Spec compliance for: ${target}. Report clear rule violations, smell baseline issues, and missing Done criteria.${specNote}`,
+      `Audit Standards and Spec compliance for: ${target}. Report clear rule violations, smell baseline issues, and missing Done criteria.${specNote}${surfaceNote}`,
       {
         label: 'review:standards-spec',
         subagent_type: 'reviewer',
