@@ -70,6 +70,18 @@ Built-in roles are intentionally small:
 | `build` | Focused implementation and validation |
 | `general` | General multi-step work |
 
+### Repository Custom Agents (`agents/*.md`)
+
+In addition to built-in types, the repository provides specialized custom agent definitions (routed through Zenith Router provider endpoints `zenith-router/cc/*`):
+
+| Agent | File | Model | Task Policy | Allowed Tools | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| `debugger` | `agents/debugger.md` | `claude-sonnet-5-5` | scout | `read`, `bash`, `grep`, `find`, `ls` | Read-only Root Cause Analysis circuit breaker when test/gate loops fail repeatedly or across complex boundaries. |
+| `general` | `agents/general.md` | `claude-haiku-5-5` | flexible | All (skills & extensions enabled) | Fallback agent for cross-domain or ad-hoc tasks requiring skills or MCP tools. |
+| `planner` | `agents/planner.md` | `claude-opus-5-5` | scout | `read`, `bash`, `grep`, `find`, `ls` | Read-only plan and verification contract architect before implementation; establishes vertical slices and gate commands. |
+| `reviewer` | `agents/reviewer.md` | `claude-haiku-5-5` | scout | `read`, `bash`, `grep`, `find`, `ls` | Read-only git diff auditor with fast-rejection on broken gates, cross-boundary tracing, and domain surface checklists (`UI`, `Database`, `Security`). |
+| `verifier` | `agents/verifier.md` | `claude-haiku-5-5` | scout | `read`, `bash`, `grep`, `find`, `ls` | Independent read-only verification runner executing tests, typecheck, and lint with real process exit codes. |
+
 ## Workflows
 
 `SubagentWorkflow` runs a deterministic JavaScript script in a worker. Scripts begin with a literal metadata block and can use `agent`, `parallel`, `pipeline`, `phase`, `log`, `gate`, and `workflow`.
@@ -92,40 +104,49 @@ const findings = await parallel([
 return findings;
 ```
 
-Saved workflows live in `.pi/workflows/<name>.js`, `.agents/workflows/<name>.js`, or the global workflow directory. A workflow can resume from its own journal, and `gate` verifies a child command before cleanup.
+Saved workflows live in `.pi/workflows/<name>.js`, `.agents/workflows/<name>.js`, or the global workflow directory (`~/.pi/agent/workflows/`). A workflow can resume from its own journal, and `gate` verifies a child command before cleanup.
+
+The repository includes production workflow scripts in `workflows/`:
+- `workflows/dev-review-panel.js`: Runs parallel review axes (`review:correctness` on `claude-sonnet-5-5` and `review:standards-spec` on `claude-haiku-5-5`) with triage surface checklists, then synthesizes findings into a single `PASS`/`FAIL` verdict.
+- `workflows/gated-implement.js`: Autonomous loop engineering executing `build` with a deterministic quality gate (`checks.mjs`), up to 3 bounded resume cycles on test failure, and fallback escalation to `debugger` for RCA.
 
 See [docs/workflows.md](docs/workflows.md) for the complete grammar.
 
 ## Per-type presets
 
-Open `/subagents` → `Settings` and edit the `model`, `max turns`, or `thinking` row for `explore`, `build`, or `general`. Changes are written to `.pi/subagents.yaml` and loaded again when Settings opens or the extension starts.
+Open `/subagents` → `Settings` and edit the `model`, `max turns`, or `thinking` row for `explore`, `build`, or `general`. Changes are written to `.pi/subagents.yaml` (or project-level `.pi/subagents.yaml`) and loaded again when Settings opens or the extension starts.
 
-The file is also editable directly:
+The file is also editable directly. For example, the current repository default in `subagents.yaml`:
 
 ```yaml
 explore:
-  model: anthropic/claude-haiku-4-5
+  model: zenith-router/cc/claude-haiku-5-5
   thinking: low
-  max_turns: 40
+  max_turns: 30
 
 build:
+  model: zenith-router/cc/claude-sonnet-5-5
+  thinking: medium
   context: isolated
   workspace: worktree
+  max_turns: 30
 
 general:
-  background: true
+  model: zenith-router/cc/claude-haiku-5-5
+  thinking: medium
+  max_turns: 20
 ```
 
 Presets change operational policy only. They cannot create custom agent identities, prompts, or tools.
 
 ## Settings
 
-Persisted settings are limited to these nine keys:
+Persisted settings support the following keys:
 
 | Key | Meaning |
 | --- | --- |
 | `maxConcurrent` | Background concurrency limit |
-| `defaultMaxTurns` | Default turn limit; `0` means unlimited |
+| `defaultMaxTurns` | Default turn limit; `0` means unlimited (repository default: `20`) |
 | `worktreeIsolation` | Whether worktree isolation is available |
 | `backgroundByDefault` | Default spawn mode |
 | `widgetMode` | `all`, `background`, or `off` |
@@ -135,7 +156,7 @@ Persisted settings are limited to these nine keys:
 | `workflowsEnabled` | Register the workflow tool |
 | `agentControl` | Enable durable scout/ship task control and candidate delivery |
 
-Settings are project-local in `.pi/subagents.json`; global defaults are read from the pi agent directory.
+Settings are project-local in `.pi/subagents.json`; global defaults are read from `subagents.json` in the pi agent directory.
 
 ## Mentions and UI
 
