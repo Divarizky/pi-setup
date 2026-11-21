@@ -20,9 +20,9 @@ Script memasang repository langsung ke direktori global Pi:
 - Windows: `$HOME\.pi\agent`
 - Override resmi Pi: `PI_CODING_AGENT_DIR`
 
-Script menjalankan `npm ci` di staging lalu hanya menempatkan resource runtime Pi (`AGENTS.md`, `extensions/`, `prompts/`, `themes/`, dan `node_modules/`) ke agent directory. Folder `skills/` dipasang ke `~/.agents/skills/`, bukan ke agent directory. Metadata Git, README, lockfile, `package.json`, TypeScript config, dan script installer tidak ikut dideploy.
+Script menjalankan `npm ci` di staging lalu hanya menempatkan resource runtime Pi (`AGENTS.md`, `extensions/`, `agents/`, `prompts/`, `themes/`, `APPEND_SYSTEM.md`, `SYSTEM.md`, dan `node_modules/`) ke agent directory. Folder `skills/` dipasang ke `~/.agents/skills/`, bukan ke agent directory. Metadata Git, README, lockfile, `package.json`, TypeScript config, dan script installer tidak ikut dideploy.
 
-State pribadi seperti `auth.json`, `settings.json`, session, model store, `bin/`, `npm/`, `run-summaries.config.json`, dan konfigurasi `.pi/subagents.*` tidak ditimpa. Pada mode repair, skill lama di `~/.pi/agent/skills/` yang belum ada di `~/.agents/skills/` dipindahkan ke sana. Skill lain di `~/.agents/skills/`, termasuk skill eksternal, tidak diganti; hanya skill yang ada di repo ini yang ditimpa.
+State pribadi seperti `auth.json`, `settings.json`, session, model store, `bin/`, `npm/`, `run-summaries.config.json`, dan konfigurasi `.pi/subagents.*` tidak ditimpa. Berkas orkestrasi `workflows/` (`dev-review-panel.js`, `gated-implement.js`) dan template preset `subagents.yaml`/`subagents.json` disertakan di root repositori (langsung tersedia bila menggunakan metode klon manual, atau dapat disalin manual/dikonfigurasi per-project di `.pi/workflows/` dan `.pi/subagents.*`). Pada mode repair, skill lama di `~/.pi/agent/skills/` yang belum ada di `~/.agents/skills/` dipindahkan ke sana. Skill lain di `~/.agents/skills/`, termasuk skill eksternal, tidak diganti; hanya skill yang ada di repo ini yang ditimpa.
 
 ## Instal manual
 
@@ -85,7 +85,11 @@ npm run test:subagents
 npm run test:code-protection
 npm run test:todos
 npm run test:task-judge
+npm run test:task-judge-fp
+npm run test:zenith-router
+npm run test:ui-customization
 npm run test:audit-sessions
+npm run test:classify-cache-breaks
 npm run sync:runtime
 ```
 
