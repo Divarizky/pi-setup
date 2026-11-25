@@ -267,31 +267,58 @@ test("Rule bawaan: git-commit-push mendeteksi git commit/push dan melewatkan per
   assert.equal(matchToolCondition(rule, testInput).matched, false);
 });
 
-test("Rule bawaan: secret-in-write mendeteksi penulisan secret/token dan melewatkan konten biasa", () => {
+test("Rule bawaan: secret-in-write mendeteksi literal secret di env, JSON, YAML, dan JS/TS", () => {
   const rules = loadRules(RULES_DIR);
   const rule = findRule(rules, "secret-in-write");
   assert.equal(rule.action, "block");
 
-  // Kasus positif: API key format sk- atau generic secret
-  const secretInput = JSON.stringify({
-    path: ".env",
-    content: "sk-proj-1234567890abcdef1234567890abcdef",
-  });
-  const matchSecret = matchToolCondition(rule, secretInput);
-  assert.equal(matchSecret.matched, true);
+  const positives = [
+    { path: ".env", content: "API_KEY=[REDACTED:credential_assignment]" },
+    { path: "config.json", content: 'token: "[REDACTED:credential_assignment]"' },
+    { path: "config.yaml", content: "password: 'SuperSecret123456'" },
+    { path: "src/config.ts", content: "const password = 'SuperSecret123456';" },
+    { path: "src/config.ts", content: "const token = 'sk-123456789012345678901234';" },
+    { path: "src/config.ts", content: "const token = 'ghp_12345678901234567890';" },
+    { path: "src/config.ts", content: "const apiKey = '[REDACTED:aws_access_key]';" },
+  ];
+  for (const input of positives) {
+    assert.equal(
+      matchToolCondition(rule, JSON.stringify(input)).matched,
+      true,
+      `harus memblokir secret literal di ${input.path}: ${input.content}`,
+    );
+  }
 
-  const tokenInput = JSON.stringify({
-    path: "config.json",
-    content: 'apiKey: "12345678abcdefgh"',
-  });
-  assert.equal(matchToolCondition(rule, tokenInput).matched, true);
-
-  // Kasus negatif: konten kode biasa tanpa secret
   const normalInput = JSON.stringify({
     path: "src/main.ts",
     content: "export const serverPort = 8080;\nconsole.log(serverPort);",
   });
   assert.equal(matchToolCondition(rule, normalInput).matched, false);
+});
+
+test("Rule bawaan: secret-in-write tidak memicu false positive pada properti, ekspresi, HTML, atau prosa", () => {
+  const rules = loadRules(RULES_DIR);
+  const rule = findRule(rules, "secret-in-write");
+  const negatives = [
+    "credentials.accessToken",
+    "accessToken !== currentAccessToken",
+    "conn.token === expectedToken",
+    "const config = { token: [REDACTED:credential_assignment] };",
+    "const config = { accessToken };",
+    '<input type="password" autocomplete="current-password" />',
+    "url.password || url.hash",
+    "token comparison",
+    "token validation",
+    "password policy check",
+    "secret handling",
+  ];
+  for (const content of negatives) {
+    const matched = matchToolCondition(
+      rule,
+      JSON.stringify({ path: "src/example.ts", content }),
+    ).matched;
+    assert.equal(matched, false, `tidak boleh memicu: ${content}`);
+  }
 });
 
 test("Rule bawaan: tautology-test mendeteksi tes tautologi dan melewatkan tes semantik", () => {
