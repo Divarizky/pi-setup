@@ -17,7 +17,7 @@ Kelola lifecycle GitHub issue: buat issue baru dari requirement/task/bug-diagnos
 
 ## Invocation
 
-Dipanggil eksplisit, melalui route `ask-me`, dari Step 5 `to-tasks`, atau dari completion gate `implement`: "buat issue", "bikin issue github", "file bug report", "convert task ke issue", "update issue #...", "tutup issue #...", "close issue".
+Dipanggil eksplisit, melalui route `ask-me`, dari Step 5 `to-tasks`, atau dari completion gate `implement` dan `bug-diagnose`: "buat issue", "bikin issue github", "file bug report", "convert task ke issue", "update issue #...", "tutup issue #...", "close issue".
 
 Jangan dipakai untuk: membuat PR, membuat label kustom baru di repo, atau push kode git.
 
@@ -198,7 +198,7 @@ Tampilkan URL issue di chat. Skill ini NEVER menulis referensi issue ke work car
 
 ## Flow: Comment and Close Existing Issue
 
-Gunakan sub-alur ini saat dipanggil dengan target issue existing (misal dipanggil dari Step 5 `implement` saat `task_done == task_count` atau permintaan eksplisit user "update/close issue #<number>").
+Gunakan sub-alur ini saat dipanggil dengan target issue existing (misal dipanggil dari Step 5 `implement` saat `task_done == task_count`, completion gate `bug-diagnose` setelah fix lolos `code-review`, atau permintaan eksplisit user "update/close issue #<number>").
 
 ### 1. Identify Target & Fetch Issue
 1. Ambil nomor issue `<number>` dan repo `<owner/repo>`.

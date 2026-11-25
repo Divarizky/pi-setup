@@ -92,7 +92,7 @@ ask-me
   ├─ fitur besar → to-requirements → to-tasks → [opsional: github-issue]
   │                 └→ implement → code-review ─┬─ [pass] ───────────────────────→ git-commit ──→ Loop 4 (capture gotchas + agent-memory)
   │                                             └─ [2x CHANGES_REQUESTED (P0/P1)] ─→ bug-diagnose ──┘
-  ├─ bug sulit → bug-diagnose → code-review → git-commit ──→ Loop 4 (capture gotchas + agent-memory)
+  ├─ bug sulit → bug-diagnose → checks.mjs + cleanup-gate.mjs → code-review → [opsional: github-issue close] → git-commit ──→ Loop 4 (capture gotchas + agent-memory)
   ├─ merge conflict → merge-conflict → git-commit
   ├─ desain belum jelas → prototype (project mode: work card via to-requirements pattern dulu) → to-tasks / implement
   ├─ arsitektur → improve-architecture → to-tasks / implement (refactor satu langkah boleh langsung implement)
@@ -100,7 +100,7 @@ ask-me
   └─ buat/kelola issue GitHub → github-issue (create dari task/requirement, atau update/close saat selesai)
 ```
 
-`github-issue` setelah `to-tasks` hanya berjalan jika user memilih membuat issue. Jika tidak, lanjut ke cek eligible dan tawaran `implement` (y/n) seperti di `to-tasks` Step 5 (hanya jika ada task eligible). Untuk issue level fitur di Project mode, `implement` mencentang checkbox task di issue setiap task Done (dengan konfirmasi). Saat seluruh task fitur selesai (`task_done == task_count`), `implement` menjalankan completion gate untuk menawarkan penutupan issue atau pemberian komentar rekap via `github-issue`.
+`github-issue` setelah `to-tasks` hanya berjalan jika user memilih membuat issue. Jika tidak, lanjut ke cek eligible dan tawaran `implement` (y/n) seperti di `to-tasks` Step 5 (hanya jika ada task eligible). Untuk issue level fitur di Project mode, `implement` mencentang checkbox task di issue setiap task Done (dengan konfirmasi). Saat seluruh task fitur selesai (`task_done == task_count`), `implement` menjalankan completion gate untuk menawarkan penutupan issue atau pemberian komentar rekap via `github-issue`. Untuk alur `bug-diagnose` (mode `diagnosis + fix`) yang terhubung dengan `issue_ref`, completion gate juga menawarkan penutupan atau komentar RCA/fix via `github-issue` setelah lolos deterministic gate (`checks.mjs` dan `cleanup-gate.mjs`) serta `code-review` `PASS`.
 
 `setup-workflow` adalah persiapan opsional untuk workflow biasa, tetapi wajib sebelum `project-migration`.
 
