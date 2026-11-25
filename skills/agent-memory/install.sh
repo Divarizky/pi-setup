@@ -12,9 +12,18 @@ link() {  # link <src> <dst>: lewati bila src sudah sama dengan dst (source = fo
   ln -sfn "$1" "$2" && echo "OK $2"
 }
 link "$SRC" "$SKILLS/agent-memory"
-link "$SRC/bin/memory" "$HOME/.local/bin/memory"
+
+# Wrapper executable ~/.local/bin/memory
+cat <<EOF > "$HOME/.local/bin/memory"
+#!/bin/sh
+exec python3 "$SRC/memory.py" "\$@"
+EOF
+chmod +x "$HOME/.local/bin/memory"
+echo "OK $HOME/.local/bin/memory"
+
 [ -d "$HOME/.claude/skills" ] && link "$SRC" "$HOME/.claude/skills/agent-memory" || true
 [ -d "$HOME/.codex/skills" ] && link "$SRC" "$HOME/.codex/skills/agent-memory" || true
+[ -d "$HOME/.gemini/config/skills" ] && link "$SRC" "$HOME/.gemini/config/skills/agent-memory" || true
 
 # Hook SessionStart (read-only brief) untuk Claude dan Codex, merge tanpa menghapus yang ada.
 python3 - "$SRC" <<'EOF'

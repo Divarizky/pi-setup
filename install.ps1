@@ -44,6 +44,13 @@ try {
     Push-Location $AgentDir
     try { npm ci --ignore-scripts --no-audit --no-fund }
     finally { Pop-Location }
+    $MemInstaller = Join-Path $SkillsDir "agent-memory\install.ps1"
+    $LegacyMemInstaller = Join-Path $AgentDir "skills\agent-memory\install.ps1"
+    if (Test-Path -LiteralPath $MemInstaller) {
+      & $MemInstaller
+    } elseif (Test-Path -LiteralPath $LegacyMemInstaller) {
+      & $LegacyMemInstaller
+    }
     Write-Host "Pi setup selesai. Restart Pi untuk memuat extension dan skill."
     exit 0
   }
@@ -121,6 +128,11 @@ try {
       if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Recurse -Force }
       Copy-Item -LiteralPath $_.FullName -Destination $Destination -Recurse -Force
     }
+  }
+
+  $MemInstaller = Join-Path $SkillsDir "agent-memory\install.ps1"
+  if (Test-Path -LiteralPath $MemInstaller) {
+    & $MemInstaller
   }
 
   # Pindahkan skill lokal dari lokasi lama yang belum ada di tujuan (isinya sudah di-backup).

@@ -64,6 +64,11 @@ if [[ -d "$AGENT_DIR/.git" && "$REPAIR" == false ]]; then
   echo "Repository sudah ada: $AGENT_DIR"
   cd "$AGENT_DIR"
   npm ci --ignore-scripts --no-audit --no-fund
+  if [[ -f "$SKILLS_DIR/agent-memory/install.sh" ]]; then
+    sh "$SKILLS_DIR/agent-memory/install.sh"
+  elif [[ -f "$AGENT_DIR/skills/agent-memory/install.sh" ]]; then
+    sh "$AGENT_DIR/skills/agent-memory/install.sh"
+  fi
   echo "Pi setup selesai. Restart Pi untuk memuat extension dan skill."
   exit 0
 fi
@@ -131,6 +136,10 @@ for source in "$STAGE_DIR/repo/skills"/*; do
   rm -rf "${SKILLS_DIR:?}/$name"
   cp -a "$source" "$SKILLS_DIR/$name"
 done
+
+if [[ -f "$SKILLS_DIR/agent-memory/install.sh" ]]; then
+  sh "$SKILLS_DIR/agent-memory/install.sh"
+fi
 
 # Pindahkan skill lokal dari lokasi lama yang belum ada di tujuan (isinya sudah di-backup).
 if [[ "$REPAIR" == true && -d "$AGENT_DIR/skills" ]]; then

@@ -37,6 +37,7 @@ function Link-Skill($Target) {
 Link-Skill "$env:USERPROFILE\.agents\skills"
 Link-Skill "$env:USERPROFILE\.claude\skills"
 Link-Skill "$env:USERPROFILE\.codex\skills"
+Link-Skill "$env:USERPROFILE\.gemini\config\skills"
 
 # Hook SessionStart (read-only brief), merge tanpa menghapus yang ada.
 $Entry = @{ type = "command"; command = "memory brief --max-tokens 300"; timeout = 15 }
